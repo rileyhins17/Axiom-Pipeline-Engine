@@ -19,15 +19,15 @@
     }
   ],
   "vars": {
-    "APP_BASE_URL": "https://ops.getaxiom.ca",
-    "AUTH_ALLOWED_EMAILS": "",
-    "AUTH_ADMIN_EMAILS": "",
-    "RATE_LIMIT_WINDOW_SECONDS": "900",
-    "RATE_LIMIT_MAX_AUTH": "10",
-    "RATE_LIMIT_MAX_SCRAPE": "3",
+    "APP_BASE_URL": "http://localhost:3000",
+    "AUTH_ALLOWED_EMAILS": "aidan@getaxiom.ca,riley@getaxiom.ca",
+    "AUTH_ADMIN_EMAILS": "aidan@getaxiom.ca,riley@getaxiom.ca",
+    "RATE_LIMIT_WINDOW_SECONDS": "60",
+    "RATE_LIMIT_MAX_AUTH": "50",
+    "RATE_LIMIT_MAX_SCRAPE": "20",
     "RATE_LIMIT_MAX_EXPORT": "20",
     "SCRAPE_CONCURRENCY_LIMIT": "1",
-    "SCRAPE_TIMEOUT_MS": "90000"
+    "SCRAPE_TIMEOUT_MS": "600000"
   },
   "d1_databases": [
     {

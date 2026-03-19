@@ -212,7 +212,8 @@ async function collectTargets(
   try {
     const query = `${niche} in ${city}, Ontario`;
     await page.goto(`https://www.google.com/maps/search/${encodeURIComponent(query)}`, {
-      waitUntil: "domcontentloaded",
+      waitUntil: "commit",
+      timeout: 30000,
     });
 
     try {
@@ -254,7 +255,7 @@ async function collectTargets(
     sendEvent({ message: `[MAPS] Found ${placeLinks.length} listings. Extracting details...` });
 
     const targets: Target[] = [];
-    const chunkSize = 5;
+    const chunkSize = process.platform === "win32" ? 1 : 5;
 
     for (let index = 0; index < placeLinks.length; index += chunkSize) {
       const chunk = placeLinks.slice(index, index + chunkSize);
@@ -268,11 +269,11 @@ async function collectTargets(
           try {
             await detailPage.goto(place.url, {
               timeout: 15000,
-              waitUntil: "domcontentloaded",
+              waitUntil: "commit",
             });
             await detailPage.waitForSelector("h1", { timeout: 10000 });
 
-            return detailPage.evaluate(() => {
+            const details = await detailPage.evaluate(() => {
               const title = document.querySelector("h1")?.innerText || "";
               const webButton = document.querySelector('a[data-item-id="authority"]');
               const website =
@@ -303,6 +304,8 @@ async function collectTargets(
 
               return { address, category, phone, ratingText, title, website };
             });
+
+            return details;
           } catch {
             return null;
           } finally {
@@ -633,7 +636,19 @@ export async function GET(request: Request) {
         const model = createGeminiModel(env.GEMINI_API_KEY);
 
         browser = await launchAutomationBrowser();
+        (browser as unknown as { on?: (event: "disconnected", listener: () => void) => void }).on?.(
+          "disconnected",
+          () => {
+            sendEvent({ message: "[BROWSER] Chromium disconnected unexpectedly" });
+          },
+        );
         context = await browser.newContext({ locale: "en-CA" });
+        (context as unknown as { on?: (event: "close", listener: () => void) => void }).on?.(
+          "close",
+          () => {
+            sendEvent({ message: "[BROWSER] Browser context closed" });
+          },
+        );
 
         sendEvent({
           message: `[ENGINE] AXIOM ENGINE initialized for ${niche} in ${city} (R:${radius}km, D:${maxDepth})`,
