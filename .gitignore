@@ -38,6 +38,7 @@ preview*.cookies
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.pi.example
 .dev.vars
 .dev.vars.local
 

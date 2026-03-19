@@ -21,6 +21,7 @@
     "@google/generative-ai": "^0.24.1",
     "axios": "^1.13.5",
     "better-auth": "^1.5.5",
+    "better-sqlite3": "^12.8.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "exceljs": "^4.4.0",
@@ -36,6 +37,7 @@
   "devDependencies": {
     "@opennextjs/cloudflare": "^1.17.1",
     "@tailwindcss/postcss": "^4",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

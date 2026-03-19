@@ -12,7 +12,7 @@ const envSchema = z.object({
   GEMINI_API_KEY: z.string().optional(),
   RATE_LIMIT_MAX_AUTH: z.coerce.number().int().positive().default(10),
   RATE_LIMIT_MAX_EXPORT: z.coerce.number().int().positive().default(20),
-  RATE_LIMIT_MAX_SCRAPE: z.coerce.number().int().positive().default(3),
+  RATE_LIMIT_MAX_SCRAPE: z.coerce.number().int().nonnegative().default(3),
   RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().positive().default(900),
   SCRAPE_CONCURRENCY_LIMIT: z.coerce.number().int().positive().default(1),
   SCRAPE_TIMEOUT_MS: z.coerce.number().int().positive().default(90000),

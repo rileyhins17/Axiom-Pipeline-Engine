@@ -21,14 +21,25 @@ export function getAuth() {
   const env = getServerEnv();
   const bindings = getCloudflareBindings();
 
-  if (!bindings?.DB) {
-    throw new Error("Cloudflare D1 binding DB is required for Better Auth.");
+  // Determine database config — use CF D1 when available, local SQLite otherwise
+  let databaseConfig: { database: unknown };
+  if (bindings?.DB) {
+    databaseConfig = { database: bindings.DB };
+  } else {
+    // For local/Pi deployment, use the local SQLite database via better-sqlite3
+    // better-auth accepts a better-sqlite3 Database instance directly
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const BetterSqlite3 = require("better-sqlite3");
+    const dbPath = process.env.DATABASE_PATH || "./data/omniscient.db";
+    const localDb = new BetterSqlite3(dbPath);
+    localDb.pragma("journal_mode = WAL");
+    databaseConfig = { database: localDb };
   }
 
   return betterAuth({
     secret: env.BETTER_AUTH_SECRET,
     baseURL: env.APP_BASE_URL,
-    database: bindings.DB,
+    ...databaseConfig,
     trustedOrigins: getTrustedOrigins(),
     emailAndPassword: {
       enabled: true,

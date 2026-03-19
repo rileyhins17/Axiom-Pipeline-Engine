@@ -12,6 +12,16 @@ type RateLimitOptions = {
 };
 
 export async function consumeRateLimit(options: RateLimitOptions) {
+  // limit <= 0 means unlimited — bypass rate limiting entirely
+  if (options.limit <= 0) {
+    return {
+      allowed: true,
+      count: 0,
+      remaining: Infinity,
+      resetAt: new Date(Date.now() + options.windowSeconds * 1000),
+    };
+  }
+
   const prisma = getPrisma();
   const now = new Date();
   const windowMs = options.windowSeconds * 1000;

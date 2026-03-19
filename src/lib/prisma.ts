@@ -1,6 +1,6 @@
 import "server-only";
 
-import { getCloudflareBindings } from "@/lib/cloudflare";
+import { getDatabase as getDbHandle } from "@/lib/cloudflare";
 import type { D1DatabaseLike } from "@/lib/cloudflare";
 
 type SortDirection = "asc" | "desc";
@@ -285,15 +285,7 @@ function quoteIdentifier(identifier: string) {
 }
 
 function getDatabase(): D1DatabaseLike {
-  const bindings = getCloudflareBindings();
-
-  if (!bindings?.DB) {
-    throw new Error(
-      "Cloudflare D1 binding DB is not available. Run through OpenNext/Wrangler-backed dev or configure the DB binding.",
-    );
-  }
-
-  return bindings.DB;
+  return getDbHandle();
 }
 
 function normalizeDateString(value: string) {
