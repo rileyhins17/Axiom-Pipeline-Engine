@@ -28,6 +28,11 @@ import { useHuntStore } from "@/lib/hunt/hunt-store"
 
 const NICHE_PRESETS = ["Roofers", "Concrete", "Med-Spas", "Landscaping", "Plumbing", "HVAC", "Electricians", "Auto Detailing", "Commercial Cleaning", "Custom Cabinetry"]
 const CITY_PRESETS = ["Kitchener", "Waterloo", "Cambridge", "Guelph", "Hamilton", "London"]
+const SCAN_PRESETS = [
+    { label: "Quick Scan", radius: "5", depth: "1" },
+    { label: "Standard Scan", radius: "10", depth: "2" },
+    { label: "Deep Scan", radius: "15", depth: "4" },
+]
 
 function getJobStatusBadgeClass(status: QueueItem["status"]) {
     switch (status) {
@@ -68,6 +73,11 @@ function HuntInner() {
         setNiche("")
         setCity("")
     }
+
+    const applyScanPreset = useCallback((preset: typeof SCAN_PRESETS[number]) => {
+        setRadius(preset.radius)
+        setMaxDepth(preset.depth)
+    }, [])
 
     const retryQueuedJob = useCallback(async (jobId: string, mode: "retry" | "requeue" = "retry") => {
         const target = store.queue.find((item) => item.jobId === jobId);
@@ -186,6 +196,9 @@ function HuntInner() {
 
     // Compute avg job duration from done jobs roughly
     const avgJobDuration = 35; // placeholder or computed from logs
+    const activeScanPreset = SCAN_PRESETS.find(
+        (preset) => preset.radius === radius && preset.depth === maxDepth,
+    )?.label ?? null;
 
     const formatTime = (secs: number) => {
         const m = Math.floor(secs / 60).toString().padStart(2, "0")
@@ -293,8 +306,42 @@ function HuntInner() {
                                                     : "border-white/10 text-muted-foreground hover:border-cyan-500/30 hover:text-white"
                                                 }`}
                                             disabled={store.loading}
-                                        >{c}</button>
+                                    >{c}</button>
                                     ))}
+                                </div>
+                            </div>
+
+                            {/* Scan Presets */}
+                            <div className="space-y-1.5">
+                                <Label className="text-[11px] font-semibold flex items-center gap-1.5">
+                                    <Radar className="w-3.5 h-3.5 text-purple-400" />
+                                    Scan Preset
+                                </Label>
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                    {SCAN_PRESETS.map((preset) => {
+                                        const isActive = activeScanPreset === preset.label
+                                        return (
+                                            <button
+                                                key={preset.label}
+                                                type="button"
+                                                onClick={() => applyScanPreset(preset)}
+                                                className={`rounded-lg border px-3 py-2 text-left transition-all duration-200
+                                                    ${isActive
+                                                        ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300 shadow-sm shadow-emerald-500/10"
+                                                        : "border-white/10 bg-black/20 text-zinc-400 hover:border-cyan-500/30 hover:text-white"
+                                                    }`}
+                                                disabled={store.loading}
+                                            >
+                                                <div className="text-xs font-semibold">{preset.label}</div>
+                                                <div className="mt-0.5 text-[10px] font-mono uppercase tracking-wider opacity-80">
+                                                    R {preset.radius} km • D {preset.depth}
+                                                </div>
+                                            </button>
+                                        )
+                                    })}
+                                </div>
+                                <div className="text-[10px] text-zinc-600 font-mono">
+                                    {activeScanPreset ? `Preset active: ${activeScanPreset}` : "Manual values in use"}
                                 </div>
                             </div>
 
