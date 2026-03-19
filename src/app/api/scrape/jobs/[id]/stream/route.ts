@@ -14,6 +14,10 @@ function encodeSseEvent(encoder: TextEncoder, payload: unknown) {
   return encoder.encode(`data: ${JSON.stringify(payload)}\n\n`);
 }
 
+function encodeSseComment(encoder: TextEncoder, comment: string) {
+  return encoder.encode(`: ${comment}\n\n`);
+}
+
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   const authResult = await requireAdminApiSession(request);
   if ("response" in authResult) {
@@ -63,6 +67,8 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
         }
       };
 
+      let lastKeepAliveAt = Date.now();
+
       request.signal.addEventListener(
         "abort",
         () => {
@@ -103,6 +109,11 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
               eventType: event.eventType,
               jobId,
             });
+          }
+
+          if (!closed && Date.now() - lastKeepAliveAt >= 15000) {
+            controller.enqueue(encodeSseComment(encoder, "keepalive"));
+            lastKeepAliveAt = Date.now();
           }
 
           if (TERMINAL_STATUSES.has(currentJob.status)) {

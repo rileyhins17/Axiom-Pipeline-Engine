@@ -295,6 +295,7 @@ export const useHuntStore = create<HuntStore>((set, get) => ({
 
         await new Promise<void>((resolve, reject) => {
           let settled = false;
+          let streamDisconnectNotified = false;
           const finish = (result: "resolve" | "reject", error?: unknown) => {
             if (settled) return;
             settled = true;
@@ -306,7 +307,19 @@ export const useHuntStore = create<HuntStore>((set, get) => ({
           const eventSource = new EventSource(`/api/scrape/jobs/${remoteJobId}/stream`);
           set({ eventSource });
 
+          eventSource.onopen = () => {
+            if (settled) return;
+            if (streamDisconnectNotified) {
+              get().addLogEntry("[JOB] SSE stream reconnected.", "system");
+            }
+            streamDisconnectNotified = false;
+          };
+
           eventSource.onmessage = (event) => {
+            if (settled) {
+              return;
+            }
+
             const current = get();
             if (current.isCanceled) {
               finish("reject", new Error("canceled"));
@@ -370,18 +383,20 @@ export const useHuntStore = create<HuntStore>((set, get) => ({
           };
 
           eventSource.onerror = () => {
+            if (settled) {
+              return;
+            }
+
             const current = get();
             if (current.isCanceled) {
               finish("resolve");
               return;
             }
 
-            const msg = "[!!!] CRITICAL: SSE connection dropped.";
-            current.processSSEMessage(msg, {});
-            set((s) => ({
-              queue: s.queue.map((q) => (q.id === job.id ? { ...q, status: "failed" } : q)),
-            }));
-            finish("reject", new Error("SSE dropped"));
+            if (!streamDisconnectNotified) {
+              streamDisconnectNotified = true;
+              current.processSSEMessage("[JOB] SSE stream disconnected. Waiting to reconnect...", {});
+            }
           };
         });
       } catch (error) {
