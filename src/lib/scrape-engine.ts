@@ -709,7 +709,7 @@ export async function executeScrapeJob(input: ExecuteScrapeJobInput): Promise<Ex
         axiomWebsiteAssessment: assessment ? JSON.stringify(assessment) : null,
         businessName: target.businessName,
         callOpener: personalization.callOpener,
-        category: target.category,
+        category: target.category.trim() || input.niche.trim(),
         city: input.city,
         contactName: ownerName || null,
         dedupeKey: dedupe.key,

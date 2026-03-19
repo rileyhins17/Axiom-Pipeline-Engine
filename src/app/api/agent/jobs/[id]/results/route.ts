@@ -41,7 +41,20 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   }
 
   const lead = body.lead;
-  const validation = validateAgentLeadPayload(lead);
+  if (!lead || typeof lead !== "object" || Array.isArray(lead)) {
+    return NextResponse.json({ error: "Invalid lead payload" }, { status: 400 });
+  }
+
+  const normalizedLead = {
+    ...(lead as Record<string, unknown>),
+    category:
+      typeof (lead as Record<string, unknown>).category === "string" &&
+      String((lead as Record<string, unknown>).category).trim().length > 0
+        ? String((lead as Record<string, unknown>).category).trim()
+        : currentJob.niche,
+  };
+
+  const validation = validateAgentLeadPayload(normalizedLead);
 
   if (!validation.success) {
     return NextResponse.json({ error: validation.error }, { status: 400 });

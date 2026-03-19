@@ -64,10 +64,12 @@ export function isAdminEmail(email: string): boolean {
 
 export function getTrustedOrigins(): string[] {
   const env = getServerEnv();
-  const origins = new Set([env.APP_BASE_URL]);
+  const origins = new Set<string>();
 
   try {
     const appUrl = new URL(env.APP_BASE_URL);
+    origins.add(appUrl.origin);
+
     const isLoopback = appUrl.hostname === "localhost" || appUrl.hostname === "127.0.0.1";
 
     if (isLoopback) {
