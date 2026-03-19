@@ -1,6 +1,15 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+function Get-EnvValue {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    return [System.Environment]::GetEnvironmentVariable($Name, "Process")
+}
+
 function Import-WorkerEnvFile {
     param(
         [Parameter(Mandatory = $true)]
@@ -33,29 +42,11 @@ function Import-WorkerEnvFile {
             $value = $value.Substring(1, $value.Length - 2)
         }
 
-        $existing = (Get-Item "Env:$name" -ErrorAction SilentlyContinue).Value
+        $existing = Get-EnvValue -Name $name
         if ([string]::IsNullOrWhiteSpace($existing)) {
             Set-Item "Env:$name" $value
         }
     }
-}
-
-function Get-EnvValue {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Name
-    )
-
-    return [System.Environment]::GetEnvironmentVariable($Name, "Process")
-}
-
-function Escape-PowerShellSingleQuotedString {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Value
-    )
-
-    return $Value.Replace("'", "''")
 }
 
 $workerEnvFile = Join-Path $PSScriptRoot ".env.worker"
@@ -72,27 +63,13 @@ if ([string]::IsNullOrWhiteSpace($appUrl)) {
 }
 
 $workerScript = Join-Path $PSScriptRoot "start-worker.ps1"
-$workerScriptLiteral = Escape-PowerShellSingleQuotedString -Value $workerScript
-$workerCommand = @"
-try {
-    & '$workerScriptLiteral'
-}
-catch {
-    Write-Host ""
-    Write-Host "Worker failed to start." -ForegroundColor Red
-    Write-Host $_.Exception.Message -ForegroundColor Red
-}
-
-Read-Host "Press Enter to close this window"
-"@
-
 Start-Process -FilePath "powershell.exe" -ArgumentList @(
     "-NoLogo",
     "-NoExit",
     "-ExecutionPolicy",
     "Bypass",
-    "-Command",
-    $workerCommand
+    "-File",
+    $workerScript
 ) -WorkingDirectory $PSScriptRoot | Out-Null
 
 Start-Process $appUrl | Out-Null

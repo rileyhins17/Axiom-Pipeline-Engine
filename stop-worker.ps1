@@ -13,6 +13,7 @@ function Get-LocalWorkerProcessId {
 
     $process = Get-CimInstance Win32_Process |
         Where-Object {
+            $_.CommandLine -match "start-worker\.ps1" -or
             $_.CommandLine -match "local-scrape-worker\.ts" -or
             $_.CommandLine -match "npm run worker" -or
             $_.CommandLine -match "tsx scripts/local-scrape-worker\.ts"

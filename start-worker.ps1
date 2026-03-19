@@ -1,6 +1,15 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+function Get-EnvValue {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    return [System.Environment]::GetEnvironmentVariable($Name, "Process")
+}
+
 function Import-WorkerEnvFile {
     param(
         [Parameter(Mandatory = $true)]
@@ -33,20 +42,11 @@ function Import-WorkerEnvFile {
             $value = $value.Substring(1, $value.Length - 2)
         }
 
-        $existing = (Get-Item "Env:$name" -ErrorAction SilentlyContinue).Value
+        $existing = Get-EnvValue -Name $name
         if ([string]::IsNullOrWhiteSpace($existing)) {
             Set-Item "Env:$name" $value
         }
     }
-}
-
-function Get-EnvValue {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Name
-    )
-
-    return [System.Environment]::GetEnvironmentVariable($Name, "Process")
 }
 
 function Test-WorkerValue {
@@ -67,6 +67,13 @@ function Test-WorkerValue {
 }
 
 $workerEnvPath = Join-Path $PSScriptRoot ".env.worker"
+$workerEnvExamplePath = Join-Path $PSScriptRoot ".env.worker.example"
+if ((-not (Test-Path -LiteralPath $workerEnvPath)) -and (Test-Path -LiteralPath $workerEnvExamplePath)) {
+    Copy-Item -LiteralPath $workerEnvExamplePath -Destination $workerEnvPath
+    Write-Host "Created .env.worker from .env.worker.example. Fill in the local secret values before starting the worker." -ForegroundColor Yellow
+    Start-Process -FilePath "notepad.exe" -ArgumentList $workerEnvPath | Out-Null
+}
+
 Import-WorkerEnvFile -Path $workerEnvPath
 $defaultControlPlaneUrl = "https://operations.getaxiom.ca"
 
@@ -100,6 +107,9 @@ foreach ($name in $required) {
 }
 
 if ($missing.Count -gt 0) {
+    if (Test-Path -LiteralPath $workerEnvPath) {
+        Start-Process -FilePath "notepad.exe" -ArgumentList $workerEnvPath | Out-Null
+    }
     throw "Missing required environment variable(s): $($missing -join ', '). Create a local .env.worker file from .env.worker.example and fill in the values."
 }
 
