@@ -27,6 +27,23 @@ const HEARTBEAT_INTERVAL_MS = Number(process.env.HEARTBEAT_INTERVAL_MS || 15000)
 const ONCE = process.argv.includes("--once");
 let stopRequested = false;
 
+class ApiRequestError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "ApiRequestError";
+    this.status = status;
+  }
+}
+
+class JobFinishedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "JobFinishedError";
+  }
+}
+
 if (!CONTROL_PLANE_URL) {
   throw new Error("APP_BASE_URL is required.");
 }
@@ -89,10 +106,14 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
     }
   }
   if (!response.ok) {
-    throw new Error((parsed && parsed.error) || `Request failed with ${response.status}`);
+    throw new ApiRequestError(response.status, (parsed && parsed.error) || `Request failed with ${response.status}`);
   }
 
   return parsed as T;
+}
+
+function isJobFinishedApiError(error: unknown): boolean {
+  return error instanceof ApiRequestError && error.status === 409 && /Job already finished/i.test(error.message);
 }
 
 async function claimJob(): Promise<ClaimResponse> {
@@ -123,26 +144,50 @@ async function sendLog(jobId: string, payload: Record<string, unknown>) {
       payload,
     });
   } catch (error) {
+    if (isJobFinishedApiError(error)) {
+      throw new JobFinishedError(error instanceof Error ? error.message : "Job already finished");
+    }
     console.warn(`[worker] log delivery failed for ${jobId}:`, error);
   }
 }
 
 async function sendLead(jobId: string, lead: ScrapeLeadWriteInput) {
-  return postJson(`/api/agent/jobs/${jobId}/results`, {
-    lead,
-  });
+  try {
+    return await postJson(`/api/agent/jobs/${jobId}/results`, {
+      lead,
+    });
+  } catch (error) {
+    if (isJobFinishedApiError(error)) {
+      throw new JobFinishedError(error instanceof Error ? error.message : "Job already finished");
+    }
+    throw error;
+  }
 }
 
 async function completeJob(jobId: string, stats: Record<string, unknown>) {
-  return postJson(`/api/agent/jobs/${jobId}/complete`, {
-    stats,
-  });
+  try {
+    return await postJson(`/api/agent/jobs/${jobId}/complete`, {
+      stats,
+    });
+  } catch (error) {
+    if (isJobFinishedApiError(error)) {
+      throw new JobFinishedError(error instanceof Error ? error.message : "Job already finished");
+    }
+    throw error;
+  }
 }
 
 async function failJob(jobId: string, errorMessage: string) {
-  return postJson(`/api/agent/jobs/${jobId}/failed`, {
-    errorMessage,
-  });
+  try {
+    return await postJson(`/api/agent/jobs/${jobId}/failed`, {
+      errorMessage,
+    });
+  } catch (error) {
+    if (isJobFinishedApiError(error)) {
+      throw new JobFinishedError(error instanceof Error ? error.message : "Job already finished");
+    }
+    throw error;
+  }
 }
 
 async function runOneJob(job: NonNullable<ClaimResponse["job"]>, existingDedupeKeys: string[]) {
@@ -197,6 +242,11 @@ async function runOneJob(job: NonNullable<ClaimResponse["job"]>, existingDedupeK
     });
     console.log(`[worker] completed ${job.id}`);
   } catch (error) {
+    if (error instanceof JobFinishedError || isJobFinishedApiError(error)) {
+      console.log(`[worker] stopped ${job.id} because the control plane already finished it`);
+      return;
+    }
+
     if (cancelRequested && !timedOut) {
       console.log(`[worker] canceled while running ${job.id}`);
       return;

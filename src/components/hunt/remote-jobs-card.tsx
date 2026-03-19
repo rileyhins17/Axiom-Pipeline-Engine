@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Ban, Radar, Server, Sparkles } from "lucide-react";
+import { Ban, Radar, Server, Sparkles, Trash2 } from "lucide-react";
 
+import { useToast } from "@/components/ui/toast-provider";
 import { cn } from "@/lib/utils";
 
 type RemoteJobStatus = "pending" | "claimed" | "running" | "completed" | "failed" | "canceled";
@@ -56,10 +57,12 @@ function isActive(status: RemoteJobStatus) {
 }
 
 export function RemoteJobsCard() {
+  const { toast } = useToast();
   const [jobs, setJobs] = useState<RemoteJobSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyJobId, setBusyJobId] = useState<string | null>(null);
+  const [busyBulkAction, setBusyBulkAction] = useState<"stop-all" | "clear" | null>(null);
 
   const loadJobs = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -109,10 +112,61 @@ export function RemoteJobsCard() {
         ),
       );
       await loadJobs();
+      toast("Job canceled", { type: "info" });
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Unable to cancel job.", { type: "error" });
     } finally {
       setBusyJobId(null);
     }
-  }, [loadJobs]);
+  }, [loadJobs, toast]);
+
+  const stopAllJobs = useCallback(async () => {
+    if (!window.confirm("Cancel all pending, claimed, and running jobs?")) {
+      return;
+    }
+
+    setBusyBulkAction("stop-all");
+    try {
+      const response = await fetch("/api/scrape/jobs/stop-all", {
+        method: "POST",
+      });
+      const data = (await response.json().catch(() => null)) as { affectedCount?: number; error?: string } | null;
+      if (!response.ok) {
+        throw new Error(data?.error || "Unable to stop jobs.");
+      }
+
+      await loadJobs();
+      toast(`Stopped ${data?.affectedCount || 0} active job${data?.affectedCount === 1 ? "" : "s"}`, { type: "info" });
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Unable to stop jobs.", { type: "error" });
+    } finally {
+      setBusyBulkAction(null);
+    }
+  }, [loadJobs, toast]);
+
+  const clearRemoteJobs = useCallback(async () => {
+    if (!window.confirm("Delete completed, failed, and canceled jobs from the remote list?")) {
+      return;
+    }
+
+    setBusyBulkAction("clear");
+    try {
+      const response = await fetch("/api/scrape/jobs/clear", {
+        method: "POST",
+      });
+      const data = (await response.json().catch(() => null)) as { deletedCount?: number; error?: string } | null;
+      if (!response.ok) {
+        throw new Error(data?.error || "Unable to clear remote jobs.");
+      }
+
+      await loadJobs();
+      toast(`Cleared ${data?.deletedCount || 0} terminal job${data?.deletedCount === 1 ? "" : "s"}`, { type: "info" });
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Unable to clear remote jobs.", { type: "error" });
+    } finally {
+      setBusyBulkAction(null);
+    }
+  }, [loadJobs, toast]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -130,6 +184,7 @@ export function RemoteJobsCard() {
   }, [loadJobs]);
 
   const activeJobs = useMemo(() => jobs.filter((job) => isActive(job.status)), [jobs]);
+  const terminalJobs = useMemo(() => jobs.filter((job) => !isActive(job.status)), [jobs]);
   const visibleJobs = activeJobs.length > 0 ? activeJobs : jobs.slice(0, 4);
 
   if (!loading && visibleJobs.length === 0 && !error) {
@@ -154,6 +209,27 @@ export function RemoteJobsCard() {
             <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
             {activeJobs.length > 0 ? `${activeJobs.length} active` : `${jobs.length} total`}
           </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={stopAllJobs}
+            disabled={busyBulkAction !== null || activeJobs.length === 0}
+            className="inline-flex items-center gap-1.5 rounded-md border border-rose-500/20 bg-rose-500/5 px-2.5 py-1 text-[10px] font-mono uppercase tracking-wider text-rose-300 hover:bg-rose-500/10 transition-colors disabled:opacity-50"
+          >
+            <Ban className="w-3.5 h-3.5" />
+            {busyBulkAction === "stop-all" ? "Stopping" : `Stop All Jobs (${activeJobs.length})`}
+          </button>
+          <button
+            type="button"
+            onClick={clearRemoteJobs}
+            disabled={busyBulkAction !== null || terminalJobs.length === 0}
+            className="inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-1 text-[10px] font-mono uppercase tracking-wider text-zinc-300 hover:bg-white/[0.06] transition-colors disabled:opacity-50"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            {busyBulkAction === "clear" ? "Clearing" : `Clear Remote Jobs (${terminalJobs.length})`}
+          </button>
         </div>
 
         {error && jobs.length === 0 ? (

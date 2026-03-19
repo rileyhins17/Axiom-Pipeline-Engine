@@ -489,6 +489,34 @@ export async function cancelScrapeJob(
   return getScrapeJob(jobId);
 }
 
+export async function cancelAllActiveScrapeJobs(
+  reason = "Canceled by operator.",
+): Promise<number> {
+  const now = new Date();
+  const result = await runStatement(
+    `UPDATE "ScrapeJob"
+     SET "status" = 'canceled',
+         "errorMessage" = ?,
+         "heartbeatAt" = ?,
+         "finishedAt" = ?,
+         "updatedAt" = ?
+     WHERE "status" IN ('pending', 'claimed', 'running')
+       AND "finishedAt" IS NULL`,
+    [reason, now, now, now],
+  );
+
+  return Number(result.meta?.changes ?? 0);
+}
+
+export async function clearTerminalScrapeJobs(): Promise<number> {
+  const result = await runStatement(
+    `DELETE FROM "ScrapeJob"
+     WHERE "status" IN ('completed', 'failed', 'canceled')`,
+  );
+
+  return Number(result.meta?.changes ?? 0);
+}
+
 export async function resetScrapeJobForRetry(jobId: string): Promise<ScrapeJobRecord | null> {
   const now = new Date();
   await runStatement(
