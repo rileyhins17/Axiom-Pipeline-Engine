@@ -36,7 +36,7 @@ export async function POST(request: Request) {
     const job = await claimNextScrapeJob({
       agentName,
       maxActiveJobs: env.SCRAPE_CONCURRENCY_LIMIT,
-      staleBefore: new Date(Date.now() - env.SCRAPE_TIMEOUT_MS),
+      staleBefore: new Date(Date.now() - env.WORKER_HEARTBEAT_STALE_MS),
     });
 
     if (!job) {

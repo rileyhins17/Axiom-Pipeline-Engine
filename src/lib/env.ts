@@ -16,6 +16,7 @@ const envSchema = z.object({
   RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().positive().default(900),
   SCRAPE_CONCURRENCY_LIMIT: z.coerce.number().int().positive().default(1),
   SCRAPE_TIMEOUT_MS: z.coerce.number().int().positive().default(600000),
+  WORKER_HEARTBEAT_STALE_MS: z.coerce.number().int().positive().default(60000),
 });
 
 export type AppEnv = z.infer<typeof envSchema>;
@@ -40,6 +41,7 @@ export function getServerEnv(): AppEnv {
     RATE_LIMIT_WINDOW_SECONDS: bindings?.RATE_LIMIT_WINDOW_SECONDS ?? process.env.RATE_LIMIT_WINDOW_SECONDS,
     SCRAPE_CONCURRENCY_LIMIT: bindings?.SCRAPE_CONCURRENCY_LIMIT ?? process.env.SCRAPE_CONCURRENCY_LIMIT,
     SCRAPE_TIMEOUT_MS: bindings?.SCRAPE_TIMEOUT_MS ?? process.env.SCRAPE_TIMEOUT_MS,
+    WORKER_HEARTBEAT_STALE_MS: bindings?.WORKER_HEARTBEAT_STALE_MS ?? process.env.WORKER_HEARTBEAT_STALE_MS,
   });
 
   return cachedEnv;

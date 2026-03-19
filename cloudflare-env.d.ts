@@ -12,4 +12,5 @@ interface CloudflareEnv {
   RATE_LIMIT_MAX_EXPORT: string;
   SCRAPE_CONCURRENCY_LIMIT: string;
   SCRAPE_TIMEOUT_MS: string;
+  WORKER_HEARTBEAT_STALE_MS?: string;
 }

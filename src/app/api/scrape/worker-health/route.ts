@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { getServerEnv } from "@/lib/env";
 import { getWorkerHealth } from "@/lib/scrape-jobs";
 import { requireAdminApiSession } from "@/lib/session";
 
@@ -9,7 +10,8 @@ export async function GET(request: Request) {
     return authResult.response;
   }
 
-  const health = await getWorkerHealth();
+  const env = getServerEnv();
+  const health = await getWorkerHealth(Math.max(1, Math.floor(env.WORKER_HEARTBEAT_STALE_MS / 1000)));
 
   return NextResponse.json(
     {

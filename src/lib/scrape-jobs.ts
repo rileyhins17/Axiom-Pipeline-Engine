@@ -467,6 +467,9 @@ export async function listClaimableScrapeJobs(): Promise<ScrapeJobRecord[]> {
 }
 
 export async function getWorkerHealth(staleAfterSeconds = 60): Promise<WorkerHealthRecord> {
+  const staleBefore = new Date(Date.now() - staleAfterSeconds * 1000);
+  await recycleStaleScrapeJobs(staleBefore);
+
   const activeRow = await firstRow<Record<string, unknown>>(
     `SELECT * FROM "ScrapeJob"
      WHERE "status" IN ('claimed', 'running')
@@ -498,11 +501,14 @@ export async function getWorkerHealth(staleAfterSeconds = 60): Promise<WorkerHea
   const heartbeatAgeSeconds = lastHeartbeatAt
     ? Math.max(0, Math.floor((Date.now() - lastHeartbeatAt.getTime()) / 1000))
     : null;
-  const claimedJobStatus = String(fallbackRow.status || "pending") as ScrapeJobStatus;
   const online = Boolean(lastHeartbeatAt && heartbeatAgeSeconds !== null && heartbeatAgeSeconds <= staleAfterSeconds);
+  const claimedJobId = activeRow ? String(activeRow.id || "") || null : null;
+  const claimedJobStatus = activeRow
+    ? (String(activeRow.status || "pending") as ScrapeJobStatus)
+    : null;
 
   return {
-    claimedJobId: String(fallbackRow.id || "") || null,
+    claimedJobId,
     claimedJobStatus,
     heartbeatAgeSeconds,
     lastHeartbeatAt,
