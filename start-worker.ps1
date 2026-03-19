@@ -49,6 +49,23 @@ function Get-EnvValue {
     return [System.Environment]::GetEnvironmentVariable($Name, "Process")
 }
 
+function Test-WorkerValue {
+    param(
+        [AllowEmptyString()]
+        [string]$Value
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return $false
+    }
+
+    if ($Value -match '^<[^>]+>$') {
+        return $false
+    }
+
+    return $true
+}
+
 $workerEnvPath = Join-Path $PSScriptRoot ".env.worker"
 Import-WorkerEnvFile -Path $workerEnvPath
 $defaultControlPlaneUrl = "https://operations.getaxiom.ca"
@@ -74,11 +91,16 @@ if ([string]::IsNullOrWhiteSpace((Get-EnvValue -Name "AGENT_NAME"))) {
 }
 
 $required = @("APP_BASE_URL", "AGENT_SHARED_SECRET")
+$missing = @()
 foreach ($name in $required) {
     $value = Get-EnvValue -Name $name
-    if ([string]::IsNullOrWhiteSpace($value)) {
-        throw "Missing required environment variable '$name'. Create a local .env.worker file from .env.worker.example or set it in your shell."
+    if (-not (Test-WorkerValue -Value $value)) {
+        $missing += $name
     }
+}
+
+if ($missing.Count -gt 0) {
+    throw "Missing required environment variable(s): $($missing -join ', '). Create a local .env.worker file from .env.worker.example and fill in the values."
 }
 
 $workerProcess = Start-Process -FilePath "npm.cmd" -ArgumentList @("run", "worker") -PassThru -NoNewWindow

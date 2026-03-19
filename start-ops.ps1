@@ -49,6 +49,15 @@ function Get-EnvValue {
     return [System.Environment]::GetEnvironmentVariable($Name, "Process")
 }
 
+function Escape-PowerShellSingleQuotedString {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Value
+    )
+
+    return $Value.Replace("'", "''")
+}
+
 $workerEnvFile = Join-Path $PSScriptRoot ".env.worker"
 Import-WorkerEnvFile -Path $workerEnvFile
 $defaultAppUrl = "https://operations.getaxiom.ca"
@@ -63,12 +72,27 @@ if ([string]::IsNullOrWhiteSpace($appUrl)) {
 }
 
 $workerScript = Join-Path $PSScriptRoot "start-worker.ps1"
+$workerScriptLiteral = Escape-PowerShellSingleQuotedString -Value $workerScript
+$workerCommand = @"
+try {
+    & '$workerScriptLiteral'
+}
+catch {
+    Write-Host ""
+    Write-Host "Worker failed to start." -ForegroundColor Red
+    Write-Host $_.Exception.Message -ForegroundColor Red
+}
+
+Read-Host "Press Enter to close this window"
+"@
+
 Start-Process -FilePath "powershell.exe" -ArgumentList @(
+    "-NoLogo",
     "-NoExit",
     "-ExecutionPolicy",
     "Bypass",
-    "-File",
-    $workerScript
+    "-Command",
+    $workerCommand
 ) -WorkingDirectory $PSScriptRoot | Out-Null
 
 Start-Process $appUrl | Out-Null
