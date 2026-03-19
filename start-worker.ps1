@@ -40,33 +40,43 @@ function Import-WorkerEnvFile {
     }
 }
 
+function Get-EnvValue {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    return [System.Environment]::GetEnvironmentVariable($Name, "Process")
+}
+
 $workerEnvPath = Join-Path $PSScriptRoot ".env.worker"
 Import-WorkerEnvFile -Path $workerEnvPath
 $defaultControlPlaneUrl = "https://operations.getaxiom.ca"
 
-if ([string]::IsNullOrWhiteSpace($env:APP_BASE_URL)) {
-    $env:APP_BASE_URL = $env:CONTROL_PLANE_URL
+if ([string]::IsNullOrWhiteSpace((Get-EnvValue -Name "APP_BASE_URL"))) {
+    $env:APP_BASE_URL = Get-EnvValue -Name "CONTROL_PLANE_URL"
 }
 
-if ([string]::IsNullOrWhiteSpace($env:APP_BASE_URL)) {
+if ([string]::IsNullOrWhiteSpace((Get-EnvValue -Name "APP_BASE_URL"))) {
     $env:APP_BASE_URL = $defaultControlPlaneUrl
 }
 
-if ([string]::IsNullOrWhiteSpace($env:CONTROL_PLANE_URL)) {
+if ([string]::IsNullOrWhiteSpace((Get-EnvValue -Name "CONTROL_PLANE_URL"))) {
     $env:CONTROL_PLANE_URL = $env:APP_BASE_URL
 }
 
-if ([string]::IsNullOrWhiteSpace($env:WORKER_NAME)) {
+if ([string]::IsNullOrWhiteSpace((Get-EnvValue -Name "WORKER_NAME"))) {
     $env:WORKER_NAME = "local-worker"
 }
 
-if ([string]::IsNullOrWhiteSpace($env:AGENT_NAME)) {
+if ([string]::IsNullOrWhiteSpace((Get-EnvValue -Name "AGENT_NAME"))) {
     $env:AGENT_NAME = $env:WORKER_NAME
 }
 
 $required = @("APP_BASE_URL", "AGENT_SHARED_SECRET")
 foreach ($name in $required) {
-    if ([string]::IsNullOrWhiteSpace((Get-Item "Env:$name" -ErrorAction SilentlyContinue).Value)) {
+    $value = Get-EnvValue -Name $name
+    if ([string]::IsNullOrWhiteSpace($value)) {
         throw "Missing required environment variable '$name'. Create a local .env.worker file from .env.worker.example or set it in your shell."
     }
 }

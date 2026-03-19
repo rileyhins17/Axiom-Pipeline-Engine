@@ -40,13 +40,22 @@ function Import-WorkerEnvFile {
     }
 }
 
+function Get-EnvValue {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    return [System.Environment]::GetEnvironmentVariable($Name, "Process")
+}
+
 $workerEnvFile = Join-Path $PSScriptRoot ".env.worker"
 Import-WorkerEnvFile -Path $workerEnvFile
 $defaultAppUrl = "https://operations.getaxiom.ca"
 
-$appUrl = $env:APP_BASE_URL
+$appUrl = Get-EnvValue -Name "APP_BASE_URL"
 if ([string]::IsNullOrWhiteSpace($appUrl)) {
-    $appUrl = $env:CONTROL_PLANE_URL
+    $appUrl = Get-EnvValue -Name "CONTROL_PLANE_URL"
 }
 
 if ([string]::IsNullOrWhiteSpace($appUrl)) {
