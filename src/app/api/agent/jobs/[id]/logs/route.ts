@@ -4,7 +4,6 @@ import {
   isValidAgentEventType,
   isValidJobId,
   normalizeAgentName,
-  validateAgentProgressPayload,
   validateAgentStatusPayload,
 } from "@/lib/agent-protocol";
 import { appendScrapeJobEvent, getScrapeJob } from "@/lib/scrape-jobs";
@@ -50,20 +49,38 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   }
 
   const payload = (body.payload && typeof body.payload === "object" ? body.payload : body) as Record<string, unknown>;
-  const eventPayload = {
-    ...payload,
-    jobId,
-  };
+  const eventPayload: Record<string, unknown> = { jobId };
+
+  if (typeof payload.message === "string" && payload.message.trim()) {
+    eventPayload.message = payload.message.trim();
+  }
+
+  if (typeof payload.error === "string" && payload.error.trim()) {
+    eventPayload.error = payload.error.trim().slice(0, 4000);
+  }
+
+  if (payload.jobStatus !== undefined) {
+    eventPayload.jobStatus = payload.jobStatus;
+  }
+
+  if (typeof payload.progress === "number" && Number.isFinite(payload.progress)) {
+    eventPayload.progress = Math.max(0, Math.floor(payload.progress));
+  }
+
+  if (typeof payload.total === "number" && Number.isFinite(payload.total) && payload.total > 0) {
+    eventPayload.total = Math.floor(payload.total);
+  }
+
+  if (payload.stats && typeof payload.stats === "object" && !Array.isArray(payload.stats)) {
+    eventPayload.stats = payload.stats;
+  }
+
+  if (payload._done === true) {
+    eventPayload._done = true;
+  }
 
   if (eventType === "status") {
     const validation = validateAgentStatusPayload(eventPayload);
-    if (!validation.success) {
-      return NextResponse.json({ error: validation.error }, { status: 400 });
-    }
-  }
-
-  if (eventType === "progress") {
-    const validation = validateAgentProgressPayload(eventPayload);
     if (!validation.success) {
       return NextResponse.json({ error: validation.error }, { status: 400 });
     }
