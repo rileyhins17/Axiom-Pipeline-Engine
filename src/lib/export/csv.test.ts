@@ -123,10 +123,10 @@ test("CSV Exporter Formatting Tests", async (t) => {
         assert.ok(cqCol);
 
         const l1 = { email: "a@b.com", emailConfidence: 0.8, emailType: "owner", phone: "123", phoneConfidence: 0.9 } as Lead;
-        assert.equal(cqCol.resolve(l1), "E:0.8 (owner) P:0.9");
+        assert.equal(cqCol.resolve(l1), "Email owner 0.80 | Phone 0.90");
 
         const l2 = { email: null, phone: null } as Lead;
-        assert.equal(cqCol.resolve(l2), "E:- P:-");
+        assert.equal(cqCol.resolve(l2), "Email none n/a | Phone none n/a");
     });
 
     await t.test("Phone display and flag formatting are spreadsheet-safe", () => {

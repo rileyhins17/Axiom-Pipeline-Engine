@@ -3,6 +3,7 @@ import ExcelJS from "exceljs";
 import type { LeadRecord as Lead } from "../prisma";
 import {
     buildPainSummary,
+    formatContactQuality,
     formatJsonFlags,
     formatPainReadable,
     formatPhoneDigits,
@@ -72,16 +73,7 @@ export const callSheetXlsxCols: XlsxColumnDef[] = [
         resolve: l => l.email || "",
         hyperlink: l => l.email ? safeHyperlinkUrl(`mailto:${l.email}`) : undefined
     },
-    { header: "Contact Quality", width: 16, wrap: false, resolve: l => {
-        const eConf = l.emailConfidence !== null && l.emailConfidence !== undefined ? String(l.emailConfidence) : "";
-        const eType = l.emailType || "unknown";
-        const ePart = (l.email && eConf) ? `E:${eConf} (${eType})` : "E:-";
-
-        const pConf = l.phoneConfidence !== null && l.phoneConfidence !== undefined ? String(l.phoneConfidence) : "";
-        const pPart = (l.phone && pConf) ? `P:${pConf}` : "P:-";
-
-        return `${ePart} ${pPart}`;
-    }},
+    { header: "Contact Quality", width: 30, wrap: true, resolve: l => formatContactQuality(l) },
     { header: "Email Type", width: 14, wrap: false, resolve: l => l.emailType || "unknown" },
     { header: "Email Confidence", width: 14, wrap: false, resolve: l => l.emailConfidence ?? "" },
     { header: "Email Flags", width: 24, wrap: true, resolve: l => formatJsonFlags(l.emailFlags) },

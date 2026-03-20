@@ -3,6 +3,7 @@ import {
     CsvPreset,
     CsvColumnDef,
     buildPainSummary,
+    formatContactQuality,
     formatDate,
     formatJsonFlags,
     formatPainReadable,
@@ -49,16 +50,7 @@ const callSheetColumns: CsvColumnDef[] = [
     {
         key: "contact_quality",
         header: "Contact Quality",
-        resolve: (l: Lead) => {
-            const eConf = l.emailConfidence !== null && l.emailConfidence !== undefined ? String(l.emailConfidence) : "";
-            const eType = l.emailType || "unknown";
-            const ePart = (l.email && eConf) ? `E:${eConf} (${eType})` : "E:-";
-
-            const pConf = l.phoneConfidence !== null && l.phoneConfidence !== undefined ? String(l.phoneConfidence) : "";
-            const pPart = (l.phone && pConf) ? `P:${pConf}` : "P:-";
-
-            return `${ePart} ${pPart}`;
-        }
+        resolve: (l: Lead) => formatContactQuality(l)
     },
     { key: "email_type", header: "Email Type", resolve: (l: Lead) => l.emailType || "unknown" },
     { key: "email_confidence", header: "Email Confidence", resolve: (l: Lead) => l.emailConfidence ?? "" },

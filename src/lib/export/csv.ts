@@ -135,6 +135,26 @@ export function formatJsonFlags(value: string | null | undefined): string {
     }
 }
 
+function formatContactPart(
+    label: string,
+    confidence: number | null | undefined,
+    flags: string | null | undefined,
+): string {
+    const confidenceText = confidence !== null && confidence !== undefined ? confidence.toFixed(2) : "n/a";
+    const flagText = formatJsonFlags(flags);
+    return flagText && flagText !== "clean"
+        ? `${label} ${confidenceText} [${flagText}]`
+        : `${label} ${confidenceText}`;
+}
+
+export function formatContactQuality(lead: Pick<Lead, "emailConfidence" | "emailFlags" | "emailType" | "phoneConfidence" | "phoneFlags"> & { email?: string | null; phone?: string | null }): string {
+    const emailLabel = lead.email ? `Email ${lead.emailType || "unknown"}` : "Email none";
+    const phoneLabel = lead.phone ? "Phone" : "Phone none";
+    const emailPart = formatContactPart(emailLabel, lead.emailConfidence, lead.emailFlags);
+    const phonePart = formatContactPart(phoneLabel, lead.phoneConfidence, lead.phoneFlags);
+    return `${emailPart} | ${phonePart}`;
+}
+
 /**
  * Formats a date to ISO 8601 UTC (YYYY-MM-DD HH:mm).
  */
