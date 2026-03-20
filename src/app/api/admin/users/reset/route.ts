@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { writeAuditEvent } from "@/lib/audit";
 import { getClientIp, getDatabase } from "@/lib/cloudflare";
+import { assertTrustedRequestOrigin } from "@/lib/request-security";
 import { requireAdminApiSession } from "@/lib/session";
 
 type DeleteResult = {
@@ -19,6 +20,11 @@ export async function POST(request: Request) {
     const authResult = await requireAdminApiSession(request);
     if ("response" in authResult) {
       return authResult.response;
+    }
+
+    const originFailure = assertTrustedRequestOrigin(request);
+    if (originFailure) {
+      return originFailure;
     }
 
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;

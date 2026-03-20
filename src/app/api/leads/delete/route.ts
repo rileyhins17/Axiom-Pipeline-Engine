@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { writeAuditEvent } from "@/lib/audit";
 import { getClientIp } from "@/lib/cloudflare";
 import { getPrisma } from "@/lib/prisma";
+import { assertTrustedRequestOrigin } from "@/lib/request-security";
 import { requireAdminApiSession } from "@/lib/session";
 
 export async function DELETE(request: Request) {
@@ -10,6 +11,11 @@ export async function DELETE(request: Request) {
     const authResult = await requireAdminApiSession(request);
     if ("response" in authResult) {
       return authResult.response;
+    }
+
+    const originFailure = assertTrustedRequestOrigin(request);
+    if (originFailure) {
+      return originFailure;
     }
 
     const { id } = await request.json();
