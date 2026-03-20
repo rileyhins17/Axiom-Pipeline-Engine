@@ -133,6 +133,7 @@ test("CSV Exporter Formatting Tests", async (t) => {
         assert.equal(formatPhoneDisplay("12266471538"), "+1 (226) 647-1538");
         assert.equal(formatPhoneDisplay("(519) 555-1234"), "(519) 555-1234");
         assert.equal(formatJsonFlags(JSON.stringify(["free_provider", "personal_inbox"])), "free_provider; personal_inbox");
+        assert.equal(formatJsonFlags(JSON.stringify([])), "clean");
     });
 });
 

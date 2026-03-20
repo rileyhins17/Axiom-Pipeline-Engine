@@ -65,6 +65,11 @@ function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
 
+function cleanTextOrNull(value: string | null | undefined): string | null {
+  const clean = normalizeWhitespace(value || "");
+  return clean || null;
+}
+
 function normalizeWebsiteUrl(value: string): string {
   const clean = normalizeWhitespace(value);
   if (!clean) return "";
@@ -366,30 +371,50 @@ async function collectTargets(
             await detailPage.waitForSelector("h1", { timeout: 10000 });
 
             const details = await detailPage.evaluate(() => {
-              const title = document.querySelector("h1")?.innerText || "";
-              const webButton = document.querySelector('a[data-item-id="authority"]');
-              const website =
-                (webButton as HTMLAnchorElement | null)?.href ||
-                webButton?.getAttribute("href") ||
-                "";
-              const phoneButton = document.querySelector('button[data-item-id*="phone:tel:"]');
-              let phone = "";
-
-              if (phoneButton) {
-                phone = phoneButton.getAttribute("data-item-id")?.replace("phone:tel:", "") || "";
-              } else {
-                const fallbackButtons = Array.from(
-                  document.querySelectorAll('button[data-tooltip="Copy phone number"]'),
-                );
-                if (fallbackButtons.length > 0) {
-                  phone = (fallbackButtons[0] as HTMLElement).innerText;
+              const firstText = (selectors: string[]) => {
+                for (const selector of selectors) {
+                  const element = document.querySelector(selector);
+                  const text = (element as HTMLElement | null)?.innerText || element?.textContent || "";
+                  if (text && text.trim()) {
+                    return text.trim();
+                  }
                 }
-              }
+                return "";
+              };
 
-              const addressButton = document.querySelector('button[data-item-id="address"]');
-              const address = addressButton?.getAttribute("aria-label")?.replace("Address: ", "") || "";
-              const categoryButton = document.querySelector('button[jsaction="pane.rating.category"]');
-              const category = (categoryButton as HTMLElement | null)?.innerText || "";
+              const firstAttr = (selectors: string[], attr: string) => {
+                for (const selector of selectors) {
+                  const element = document.querySelector(selector) as HTMLElement | null;
+                  const value = element?.getAttribute(attr) || (element as HTMLAnchorElement | null)?.href || "";
+                  if (value && value.trim()) {
+                    return value.trim();
+                  }
+                }
+                return "";
+              };
+
+              const title = document.querySelector("h1")?.innerText || "";
+              const website = firstAttr([
+                'a[data-item-id="authority"]',
+                'a[data-tooltip*="Website"]',
+                'a[aria-label*="Website"]',
+                'button[data-item-id="authority"]',
+              ], "href");
+              const phone = firstAttr([
+                'button[data-item-id*="phone:tel:"]',
+                'button[data-tooltip="Copy phone number"]',
+              ], "data-item-id").replace("phone:tel:", "");
+              const address = firstText([
+                'button[data-item-id="address"]',
+                'a[data-item-id="address"]',
+                'button[data-tooltip*="Address"]',
+              ]).replace(/^Address:\s*/i, "");
+              const category = firstText([
+                'button[jsaction="pane.rating.category"]',
+                'button[jsaction*="pane.rating.category"]',
+                'button[data-item-id="category"]',
+                'div[data-item-id="category"]',
+              ]);
               const ratingDiv = document.querySelector('div[jsaction="pane.rating.moreReviews"]');
               const ratingText = [
                 ratingDiv?.getAttribute("aria-label"),
@@ -415,9 +440,9 @@ async function collectTargets(
         const { rating, reviewCount } = parseMapsRatingAndReviews(result.ratingText);
 
         targets.push({
-          address: result.address,
+          address: normalizeWhitespace(result.address),
           businessName: result.title,
-          category: result.category,
+          category: normalizeWhitespace(result.category),
           phone: normalizePhoneText(result.phone),
           rating,
           reviewCount,
@@ -834,15 +859,15 @@ export async function executeScrapeJob(input: ExecuteScrapeJobInput): Promise<Ex
       if (isArchived) disqualifiedCount++;
 
       const lead: ScrapeLeadWriteInput = {
-        address: target.address,
+        address: cleanTextOrNull(target.address),
         axiomScore: scoreResult.axiomScore,
         axiomTier: scoreResult.tier,
         axiomWebsiteAssessment: assessment ? JSON.stringify(assessment) : null,
         businessName: target.businessName,
         callOpener: personalization.callOpener,
-        category: effectiveCategory || null,
+        category: cleanTextOrNull(target.category),
         city: input.city,
-        contactName: ownerName || null,
+        contactName: cleanTextOrNull(ownerName),
         dedupeKey: dedupe.key,
         dedupeMatchedBy: dedupe.matchedBy,
         disqualifiers:
@@ -858,17 +883,17 @@ export async function executeScrapeJob(input: ExecuteScrapeJobInput): Promise<Ex
         leadScore: scoreResult.axiomScore,
         niche: input.niche,
         painSignals: JSON.stringify(painSignals),
-        phone: target.phone,
+        phone: cleanTextOrNull(target.phone) || "",
         phoneConfidence: contactValidation.phoneConfidence,
         phoneFlags: JSON.stringify(contactValidation.phoneFlags),
         rating: target.rating,
         reviewCount: target.reviewCount,
         scoreBreakdown: JSON.stringify(scoreResult.breakdown),
-        socialLink,
-        websiteDomain: extractDomain(target.website),
-        websiteUrl: target.website || null,
+        socialLink: cleanTextOrNull(socialLink) || "",
+        websiteDomain: cleanTextOrNull(extractDomain(target.website)),
+        websiteUrl: cleanTextOrNull(target.website),
         source,
-        tacticalNote,
+        tacticalNote: cleanTextOrNull(tacticalNote) || tacticalNote,
         websiteGrade: assessment?.overallGrade || null,
         websiteStatus,
       };

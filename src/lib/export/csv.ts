@@ -128,7 +128,8 @@ export function formatJsonFlags(value: string | null | undefined): string {
         if (!Array.isArray(parsed)) {
             return "";
         }
-        return parsed.filter(Boolean).join("; ");
+        const flags = parsed.filter(Boolean).map((flag) => String(flag).trim()).filter(Boolean);
+        return flags.length > 0 ? flags.join("; ") : "clean";
     } catch {
         return "";
     }

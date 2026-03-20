@@ -189,6 +189,7 @@ const globalForPrisma = globalThis as {
 };
 
 const tableColumnsCache = new Map<string, string[]>();
+let leadSchemaEnsurePromise: Promise<void> | null = null;
 
 const leadTable: TableSpec<LeadRecord> = {
   autoIncrementId: true,
@@ -384,11 +385,41 @@ function serializeValue(value: unknown) {
     return value.toISOString();
   }
 
+  if (typeof value === "string") {
+    return value.trim();
+  }
+
   if (typeof value === "boolean") {
     return value ? 1 : 0;
   }
 
   return value;
+}
+
+async function ensureLeadQualityColumns() {
+  if (!leadSchemaEnsurePromise) {
+    leadSchemaEnsurePromise = (async () => {
+      const rows = await allRows<Record<string, unknown>>(`PRAGMA table_info("Lead")`);
+      const existing = new Set(rows.map((row) => String(row.name || "")));
+      const migrations: Array<[string, string]> = [
+        ["websiteUrl", "TEXT"],
+        ["websiteDomain", "TEXT"],
+        ["emailFlags", "TEXT"],
+        ["phoneFlags", "TEXT"],
+      ];
+
+      for (const [column, sqlType] of migrations) {
+        if (!existing.has(column)) {
+          await runStatement(`ALTER TABLE "Lead" ADD COLUMN "${column}" ${sqlType}`);
+        }
+      }
+    })().catch((error) => {
+      leadSchemaEnsurePromise = null;
+      throw error;
+    });
+  }
+
+  await leadSchemaEnsurePromise;
 }
 
 function generateId() {
@@ -633,6 +664,9 @@ async function runStatement(query: string, params: unknown[] = []) {
 function createModel<T extends Record<string, unknown>>(spec: TableSpec<T>) {
   return {
     async count(args?: CountArgs) {
+      if (spec.tableName === "Lead") {
+        await ensureLeadQualityColumns();
+      }
       const params: unknown[] = [];
       const whereClause = buildWhereClause(args?.where, params);
       const query = `SELECT COUNT(*) as count FROM ${quoteIdentifier(spec.tableName)}${whereClause ? ` WHERE ${whereClause}` : ""}`;
@@ -641,6 +675,9 @@ function createModel<T extends Record<string, unknown>>(spec: TableSpec<T>) {
     },
 
     async create(args: CreateArgs) {
+      if (spec.tableName === "Lead") {
+        await ensureLeadQualityColumns();
+      }
       const now = new Date();
       const data = { ...args.data } as Record<string, unknown>;
       const existingColumns = new Set(await getExistingTableColumns(spec.tableName));
@@ -691,6 +728,9 @@ function createModel<T extends Record<string, unknown>>(spec: TableSpec<T>) {
     },
 
     async findFirst<S extends SelectMap<T> | undefined = undefined>(args?: FindManyArgs<T, S>) {
+      if (spec.tableName === "Lead") {
+        await ensureLeadQualityColumns();
+      }
       const rows = await this.findMany({
         ...args,
         take: 1,
@@ -699,6 +739,9 @@ function createModel<T extends Record<string, unknown>>(spec: TableSpec<T>) {
     },
 
     async findMany<S extends SelectMap<T> | undefined = undefined>(args?: FindManyArgs<T, S>) {
+      if (spec.tableName === "Lead") {
+        await ensureLeadQualityColumns();
+      }
       const params: unknown[] = [];
       const whereClause = buildWhereClause(args?.where, params);
       const availableColumns = (await getExistingTableColumns(spec.tableName)) as Array<keyof T>;
@@ -721,6 +764,9 @@ function createModel<T extends Record<string, unknown>>(spec: TableSpec<T>) {
     },
 
     async findUnique<S extends SelectMap<T> | undefined = undefined>(args: FindUniqueArgs<T, S>) {
+      if (spec.tableName === "Lead") {
+        await ensureLeadQualityColumns();
+      }
       const params: unknown[] = [];
       const whereClause = buildWhereClause(args.where, params);
       if (!whereClause) {
@@ -735,6 +781,9 @@ function createModel<T extends Record<string, unknown>>(spec: TableSpec<T>) {
     },
 
     async update(args: MutationArgs) {
+      if (spec.tableName === "Lead") {
+        await ensureLeadQualityColumns();
+      }
       const params: unknown[] = [];
       const existingColumns = new Set(await getExistingTableColumns(spec.tableName));
       const filteredData = Object.fromEntries(
@@ -760,6 +809,9 @@ function createModel<T extends Record<string, unknown>>(spec: TableSpec<T>) {
     },
 
     async updateMany(args: UpdateManyArgs) {
+      if (spec.tableName === "Lead") {
+        await ensureLeadQualityColumns();
+      }
       const params: unknown[] = [];
       const existingColumns = new Set(await getExistingTableColumns(spec.tableName));
       const filteredData = Object.fromEntries(

@@ -6,6 +6,15 @@ import { requireAgentAuth } from "@/lib/agent-auth";
 import { getPrisma } from "@/lib/prisma";
 import { getScrapeJob } from "@/lib/scrape-jobs";
 
+function cleanText(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return value === null || value === undefined ? null : String(value).trim() || null;
+  }
+
+  const clean = value.trim();
+  return clean.length > 0 ? clean : null;
+}
+
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const authResult = await requireAgentAuth(request);
   if ("response" in authResult) {
@@ -47,11 +56,24 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
   const normalizedLead = {
     ...(lead as Record<string, unknown>),
-    category:
-      typeof (lead as Record<string, unknown>).category === "string" &&
-      String((lead as Record<string, unknown>).category).trim().length > 0
-        ? String((lead as Record<string, unknown>).category).trim()
-        : null,
+    address: cleanText((lead as Record<string, unknown>).address),
+    category: cleanText((lead as Record<string, unknown>).category),
+    contactName: cleanText((lead as Record<string, unknown>).contactName),
+    callOpener: cleanText((lead as Record<string, unknown>).callOpener),
+    disqualifiers: cleanText((lead as Record<string, unknown>).disqualifiers),
+    disqualifyReason: cleanText((lead as Record<string, unknown>).disqualifyReason),
+    email: cleanText((lead as Record<string, unknown>).email) || "",
+    emailFlags: cleanText((lead as Record<string, unknown>).emailFlags),
+    followUpQuestion: cleanText((lead as Record<string, unknown>).followUpQuestion),
+    painSignals: cleanText((lead as Record<string, unknown>).painSignals) || "[]",
+    phone: cleanText((lead as Record<string, unknown>).phone) || "",
+    phoneFlags: cleanText((lead as Record<string, unknown>).phoneFlags),
+    scoreBreakdown: cleanText((lead as Record<string, unknown>).scoreBreakdown) || "{}",
+    socialLink: cleanText((lead as Record<string, unknown>).socialLink),
+    source: cleanText((lead as Record<string, unknown>).source),
+    tacticalNote: cleanText((lead as Record<string, unknown>).tacticalNote) || "",
+    websiteDomain: cleanText((lead as Record<string, unknown>).websiteDomain),
+    websiteUrl: cleanText((lead as Record<string, unknown>).websiteUrl),
   };
 
   const validation = validateAgentLeadPayload(normalizedLead);
