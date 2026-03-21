@@ -34,7 +34,7 @@ function buildValidLead() {
     rating: 4.6,
     reviewCount: 128,
     scoreBreakdown: JSON.stringify({ businessValue: 22, painOpportunity: 18, reachability: 16, localFit: 8 }),
-    socialLink: "",
+    socialLink: null,
     source: "Med-Spas|Waterloo|2026-03-21",
     tacticalNote: "The site looks functional but could convert better on mobile.",
     websiteGrade: "B",

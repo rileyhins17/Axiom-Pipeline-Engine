@@ -60,7 +60,7 @@ const leadSchema = z
     rating: z.number().finite(),
     reviewCount: z.number().finite(),
     scoreBreakdown: z.string().min(1),
-    socialLink: z.string().max(2048),
+    socialLink: z.string().max(2048).optional().nullable(),
     source: z.string().optional().nullable(),
     tacticalNote: z.string().min(1).max(4000),
     websiteGrade: z.string().optional().nullable(),
