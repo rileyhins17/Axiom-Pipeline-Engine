@@ -478,12 +478,15 @@ async function collectTargets(
             await detailPage.waitForTimeout(750);
 
             const details = await detailPage.evaluate(() => {
+              const clean = (value: string) => value.replace(/\s+/g, " ").trim();
+              const isGoogleMapsUrl = (value: string) => /google\.[^/]*\/maps|maps\.google\./i.test(value);
               const firstText = (selectors: string[]) => {
                 for (const selector of selectors) {
                   const element = document.querySelector(selector);
                   const text = (element as HTMLElement | null)?.innerText || element?.textContent || "";
-                  if (text && text.trim()) {
-                    return text.trim();
+                  const cleanText = clean(text || "");
+                  if (cleanText) {
+                    return cleanText;
                   }
                 }
                 return "";
@@ -493,9 +496,22 @@ async function collectTargets(
                 for (const selector of selectors) {
                   const element = document.querySelector(selector) as HTMLElement | null;
                   const value = element?.getAttribute(attr) || (element as HTMLAnchorElement | null)?.href || "";
-                  if (value && value.trim()) {
-                    return value.trim();
+                  const cleanValue = clean(value || "");
+                  if (cleanValue) {
+                    return cleanValue;
                   }
+                }
+                return "";
+              };
+
+              const bodyText = clean(document.body?.innerText || "");
+              const lines = bodyText
+                .split(/\r?\n/)
+                .map((line) => clean(line))
+                .filter(Boolean);
+              const pickLine = (predicate: (line: string) => boolean) => {
+                for (const line of lines) {
+                  if (predicate(line)) return line;
                 }
                 return "";
               };
@@ -505,12 +521,17 @@ async function collectTargets(
                 document.querySelector('meta[property="og:title"]')?.getAttribute("content")?.trim() ||
                 document.querySelector('meta[name="title"]')?.getAttribute("content")?.trim() ||
                 "";
-              const website = firstAttr([
+              const websiteFromSelectors = firstAttr([
                 'a[data-item-id="authority"]',
                 'a[data-tooltip*="Website"]',
                 'a[aria-label*="Website"]',
                 'button[data-item-id="authority"]',
               ], "href");
+              const websiteFromAnchors = Array.from(document.querySelectorAll("a"))
+                .map((anchor) => (anchor as HTMLAnchorElement).href || anchor.getAttribute("href") || "")
+                .map((href) => clean(href || ""))
+                .find((href) => href && /^https?:\/\//i.test(href) && !isGoogleMapsUrl(href) && !/^mailto:/i.test(href) && !/^tel:/i.test(href)) || "";
+              const website = websiteFromSelectors || websiteFromAnchors;
               const phone = firstAttr([
                 'button[data-item-id*="phone:tel:"]',
                 'button[data-tooltip="Copy phone number"]',
@@ -520,12 +541,22 @@ async function collectTargets(
                 'a[data-item-id="address"]',
                 'button[data-tooltip*="Address"]',
               ]).replace(/^Address:\s*/i, "");
-              const category = firstText([
+              const categoryFromSelectors = firstText([
                 'button[jsaction="pane.rating.category"]',
                 'button[jsaction*="pane.rating.category"]',
                 'button[data-item-id="category"]',
                 'div[data-item-id="category"]',
               ]);
+              const categoryFromBody = pickLine((line) => {
+                const lower = line.toLowerCase();
+                if (!title || lower === title.toLowerCase()) return false;
+                if (/reviews?|ratings?|stars?|open now|closed|hours?|website|directions|save|share/i.test(line)) return false;
+                if (/^\d+/.test(line) && /(street|st|ave|avenue|rd|road|blvd|boulevard|dr|drive|way|ln|lane|ct|court|unit|suite|floor|kitchener|waterloo|guelph|hamilton|cambridge)/i.test(line)) return false;
+                if (/(?:\+?1[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}/.test(line)) return false;
+                if (isGoogleMapsUrl(line)) return false;
+                return line.length <= 80;
+              });
+              const category = categoryFromSelectors || categoryFromBody;
               const ratingDiv = document.querySelector('div[jsaction="pane.rating.moreReviews"]');
               const ratingText = [
                 ratingDiv?.getAttribute("aria-label"),
@@ -771,6 +802,12 @@ export async function executeScrapeJob(input: ExecuteScrapeJobInput): Promise<Ex
   let leadsFound = 0;
   let withEmail = 0;
   let totalScore = 0;
+  let websiteUrlCoverage = 0;
+  let websiteDomainCoverage = 0;
+  let categoryCoverage = 0;
+  let emailFlagsCoverage = 0;
+  let phoneFlagsCoverage = 0;
+  let activeWebsiteWithoutUrlCount = 0;
 
   const shouldAbort = () => {
     if (aborted) return true;
@@ -1048,6 +1085,18 @@ export async function executeScrapeJob(input: ExecuteScrapeJobInput): Promise<Ex
         websiteStatus,
       };
 
+      if (lead.websiteUrl) websiteUrlCoverage++;
+      if (lead.websiteDomain) websiteDomainCoverage++;
+      if (lead.category) categoryCoverage++;
+      if (lead.emailFlags) emailFlagsCoverage++;
+      if (lead.phoneFlags) phoneFlagsCoverage++;
+      if (lead.websiteStatus === "ACTIVE" && !lead.websiteUrl) {
+        activeWebsiteWithoutUrlCount++;
+        await input.sendEvent({
+          message: `[LEAD] Active website missing URL for ${lead.businessName}; keeping status active only when a real URL survives normalization.`,
+        });
+      }
+
       await input.persistLead(lead);
 
       leadsFound++;
@@ -1081,6 +1130,15 @@ export async function executeScrapeJob(input: ExecuteScrapeJobInput): Promise<Ex
     await input.sendEvent({
       message: `[DONE] ${leadsFound} processed | ${duplicateCount} deduped | ${disqualifiedCount} disqualified | ${qualifiedCount} qualified`,
     });
+    await input.sendEvent({
+      message:
+        `[DONE] Field coverage websiteUrl:${websiteUrlCoverage}/${leadsFound} websiteDomain:${websiteDomainCoverage}/${leadsFound} category:${categoryCoverage}/${leadsFound} emailFlags:${emailFlagsCoverage}/${leadsFound} phoneFlags:${phoneFlagsCoverage}/${leadsFound}`,
+    });
+    if (activeWebsiteWithoutUrlCount > 0) {
+      await input.sendEvent({
+        message: `[DONE] ${activeWebsiteWithoutUrlCount} ACTIVE website rows were missing a normalized website URL and were logged for review.`,
+      });
+    }
     await input.sendEvent({
       message: `[DONE] Tiers S:${tierCounts.S || 0} A:${tierCounts.A || 0} B:${tierCounts.B || 0} C:${tierCounts.C || 0} D:${tierCounts.D || 0}`,
     });

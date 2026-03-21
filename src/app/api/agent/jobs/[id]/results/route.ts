@@ -37,7 +37,7 @@ function cleanJsonText(value: unknown): string | null {
 }
 
 function normalizeLeadPayload(lead: Record<string, unknown>) {
-  const category = cleanText(lead.category) ?? cleanText(lead.niche) ?? null;
+  const category = cleanText(lead.category);
   const rawWebsiteUrl = cleanText(lead.websiteUrl);
   const websiteUrl =
     rawWebsiteUrl &&
@@ -48,6 +48,7 @@ function normalizeLeadPayload(lead: Record<string, unknown>) {
   const websiteDomain =
     cleanText(lead.websiteDomain) ||
     (websiteUrl ? extractDomain(websiteUrl) : null);
+  const resolvedWebsiteUrl = websiteUrl || (websiteDomain ? `https://${websiteDomain}` : null);
 
   return {
     ...lead,
@@ -68,7 +69,7 @@ function normalizeLeadPayload(lead: Record<string, unknown>) {
     source: cleanText(lead.source),
     tacticalNote: cleanText(lead.tacticalNote) || "",
     websiteDomain: websiteDomain && websiteDomain.length <= 255 ? websiteDomain : null,
-    websiteUrl,
+    websiteUrl: resolvedWebsiteUrl,
   };
 }
 
@@ -111,7 +112,30 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     return NextResponse.json({ error: "Invalid lead payload" }, { status: 400 });
   }
 
-  const normalizedLead = normalizeLeadPayload(lead as Record<string, unknown>);
+  const leadPayload = lead as Record<string, unknown> & {
+    businessName?: unknown;
+    websiteStatus?: unknown;
+  };
+
+  const normalizedLead = normalizeLeadPayload(leadPayload);
+  const coverage = {
+    category: Boolean(normalizedLead.category),
+    emailFlags: Boolean(normalizedLead.emailFlags),
+    phoneFlags: Boolean(normalizedLead.phoneFlags),
+    websiteDomain: Boolean(normalizedLead.websiteDomain),
+    websiteUrl: Boolean(normalizedLead.websiteUrl),
+  };
+  console.log(
+    `[agent.results] coverage job=${jobId} websiteUrl=${coverage.websiteUrl ? "1" : "0"} websiteDomain=${coverage.websiteDomain ? "1" : "0"} category=${coverage.category ? "1" : "0"} emailFlags=${coverage.emailFlags ? "1" : "0"} phoneFlags=${coverage.phoneFlags ? "1" : "0"} status=${String(leadPayload.websiteStatus || "")}`,
+  );
+
+  if (leadPayload.websiteStatus === "ACTIVE" && !coverage.websiteUrl) {
+    await appendScrapeJobEvent(jobId, "log", {
+      jobId,
+      jobStatus: currentJob.status,
+      message: `[LEAD] Active website status but URL was blank after normalization for ${String(leadPayload.businessName || "unknown")}.`,
+    });
+  }
 
   const validation = validateAgentLeadPayload(normalizedLead);
 
