@@ -293,6 +293,8 @@ async function collectTargets(
   shouldAbort?: () => boolean,
 ): Promise<Target[]> {
   const page = await context.newPage();
+  let detailSuccessCount = 0;
+  let detailFallbackCount = 0;
 
   try {
     if (shouldAbort?.()) {
@@ -363,6 +365,7 @@ async function collectTargets(
       const chunkResults = await Promise.all(
         chunk.map(async (place) => {
           const detailPage = await context.newPage();
+          const fallbackTitle = normalizeWhitespace(place.name);
           try {
             await detailPage.goto(place.url, {
               timeout: 15000,
@@ -432,10 +435,18 @@ async function collectTargets(
 
             return {
               ...details,
-              title: details.title || place.name || "",
+              title: normalizeWhitespace(details.title || fallbackTitle),
             };
           } catch {
-            return null;
+            detailFallbackCount++;
+            return {
+              address: "",
+              category: "",
+              phone: "",
+              ratingText: "",
+              title: fallbackTitle,
+              website: place.url || "",
+            };
           } finally {
             await detailPage.close();
           }
@@ -446,6 +457,7 @@ async function collectTargets(
         if (!result || !result.title) continue;
 
         const { rating, reviewCount } = parseMapsRatingAndReviews(result.ratingText);
+        detailSuccessCount++;
 
         targets.push({
           address: normalizeWhitespace(result.address),
@@ -458,6 +470,10 @@ async function collectTargets(
         });
       }
     }
+
+    await sendEvent({
+      message: `[MAPS] Detail extraction complete: ${targets.length}/${placeLinks.length} usable (${detailSuccessCount} direct, ${detailFallbackCount} fallback)`,
+    });
 
     return targets;
   } finally {
