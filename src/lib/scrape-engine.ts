@@ -8,7 +8,12 @@ import {
 import { validateContact } from "@/lib/contact-validation";
 import { extractDomain, generateDedupeKey } from "@/lib/dedupe";
 import { checkDisqualifiers } from "@/lib/disqualifiers";
-import { launchAutomationBrowser, type AutomationBrowser, type AutomationBrowserContext } from "@/lib/browser-rendering";
+import {
+  launchAutomationBrowser,
+  type AutomationBrowser,
+  type AutomationBrowserContext,
+  type AutomationPage,
+} from "@/lib/browser-rendering";
 import { generatePersonalization } from "@/lib/lead-personalization";
 import {
   formatEmailCandidatesForPrompt,
@@ -501,6 +506,123 @@ function buildMapsListingFallback(listing: MapsListing): {
   };
 }
 
+async function waitForMapsResultSurface(
+  page: AutomationPage,
+  sendEvent: (data: ScrapeJobEventPayload) => Promise<void>,
+): Promise<boolean> {
+  const selectors = [
+    { label: "feed", selector: "div[role='feed']" },
+    { label: "place links", selector: "a.hfpxzc" },
+    { label: "place links by href", selector: "a[href*='/maps/place/']" },
+    { label: "result cards", selector: "div[role='article']" },
+  ];
+
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    for (const candidate of selectors) {
+      try {
+        const present = await page.locator(candidate.selector).evaluateAll((elements) => elements.length > 0);
+        if (present) {
+          await sendEvent({ message: `[MAPS] Results ready via ${candidate.label}` });
+          return true;
+        }
+      } catch {
+        // Try the next selector or the next retry window.
+      }
+    }
+
+    await sendEvent({ message: `[MAPS] Waiting for Maps results (${attempt}/5)` });
+    await page.waitForTimeout(2000);
+  }
+
+  return false;
+}
+
+async function dismissGoogleMapsConsent(
+  page: AutomationPage,
+  sendEvent: (data: ScrapeJobEventPayload) => Promise<void>,
+): Promise<boolean> {
+  const bodyText = await page.evaluate(() => document.body?.innerText || "").catch(() => "");
+  const isConsentPage = /before you continue to google/i.test(bodyText) || page.url().includes("consent.google.com");
+
+  if (!isConsentPage) {
+    return false;
+  }
+
+  await sendEvent({ message: "[MAPS] Google consent gate detected; attempting dismissal" });
+
+  const consentSelectors = [
+    'button[aria-label="Reject all"]',
+    'button[aria-label="Accept all"]',
+    'button[aria-label="I agree"]',
+    'button[aria-label="Agree"]',
+    'button:has-text("Reject all")',
+    'button:has-text("Accept all")',
+    'button:has-text("I agree")',
+    'button:has-text("Agree")',
+  ];
+
+  const clickConsentButton = async (selector: string): Promise<boolean> => {
+    return page.evaluate((candidateSelector: string) => {
+      const button = document.querySelectorAll(candidateSelector)[0] as HTMLButtonElement | undefined;
+      if (!button) {
+        return false;
+      }
+
+      setTimeout(() => button.click(), 0);
+      return true;
+    }, selector).catch(() => false);
+  };
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    for (const selector of consentSelectors) {
+      try {
+        const clicked = await clickConsentButton(selector);
+        if (!clicked) {
+          continue;
+        }
+
+        await page.waitForTimeout(2500);
+        const consentBodyText = await page.evaluate(() => document.body?.innerText || "").catch(() => "");
+        if (
+          !page.url().includes("consent.google.com") &&
+          !/before you continue to google/i.test(consentBodyText)
+        ) {
+          await sendEvent({ message: "[MAPS] Google consent gate dismissed" });
+          return true;
+        }
+      } catch {
+        // Try the next consent control or the next retry window.
+      }
+    }
+
+    await page.waitForTimeout(1000);
+  }
+
+  await sendEvent({ message: "[MAPS] Google consent gate remained after dismissal attempts" });
+  return false;
+}
+
+async function collectMapsListings(page: AutomationPage): Promise<MapsListing[]> {
+  const listings = await page
+    .locator("a.hfpxzc, a[href*='/maps/place/']")
+    .evaluateAll((anchors) =>
+      anchors
+        .map((anchor) => {
+          const element = anchor as HTMLAnchorElement;
+          const card = element.closest("div.Nv2PK") || element.closest("div[role='article']") || element.parentElement;
+          return {
+            ariaLabel: element.getAttribute("aria-label") || "",
+            cardText: (card?.textContent || "").trim().slice(0, 2000),
+            name: element.getAttribute("aria-label") || "",
+            url: element.href || element.getAttribute("href") || "",
+          };
+        })
+        .filter((place) => place.name && place.url && !place.url.includes("/search/")),
+    );
+
+  return listings as MapsListing[];
+}
+
 async function extractMapsDetailFromPage(
   detailPage: any,
   place: MapsListing,
@@ -786,10 +908,14 @@ async function collectTargets(
       timeout: 30000,
     });
 
-    try {
-      await page.waitForSelector("div[role='feed']", { timeout: 15000 });
-    } catch {
-      throw new Error("Maps results timed out. No targets found.");
+    await dismissGoogleMapsConsent(page, sendEvent);
+
+    const hasResultsSurface = await waitForMapsResultSurface(page, sendEvent);
+    if (!hasResultsSurface) {
+      await sendEvent({
+        message: "[MAPS] No Maps results discovered after retries; skipping Maps scrape.",
+      });
+      return [];
     }
 
     await sendEvent({ message: "[MAPS] Infinite scroll extraction started" });
@@ -817,20 +943,17 @@ async function collectTargets(
       await sendEvent({ message: `[MAPS] Depth ${scrollAttempts}/${maxDepth}` });
     }
 
-    const placeLinks = await page.locator("a.hfpxzc").evaluateAll((anchors) =>
-      anchors
-        .map((anchor) => {
-          const element = anchor as HTMLAnchorElement;
-          const card = element.closest("div.Nv2PK") || element.closest("div[role='article']") || element.parentElement;
-          return {
-            ariaLabel: element.getAttribute("aria-label") || "",
-            cardText: (card?.textContent || "").trim().slice(0, 2000),
-            name: element.getAttribute("aria-label") || "",
-            url: element.href || element.getAttribute("href") || "",
-          };
-        })
-        .filter((place) => place.name && place.url && !place.url.includes("/search/")),
-    ) as MapsListing[];
+    let placeLinks = await collectMapsListings(page);
+    if (placeLinks.length === 0) {
+      await sendEvent({ message: "[MAPS] No listings on first pass, retrying once..." });
+      await page.waitForTimeout(5000);
+      placeLinks = await collectMapsListings(page);
+    }
+
+    if (placeLinks.length === 0) {
+      await sendEvent({ message: "[MAPS] No place listings found after retries; skipping Maps scrape." });
+      return [];
+    }
 
     await sendEvent({ message: `[MAPS] Listings found: ${placeLinks.length}` });
     await sendEvent({ message: `[MAPS] Detail extraction started` });

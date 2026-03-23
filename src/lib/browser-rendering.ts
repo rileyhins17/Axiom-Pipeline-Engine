@@ -1,12 +1,13 @@
 import { getCloudflareBindings } from "@/lib/cloudflare";
 
 export interface AutomationLocator {
+  click(): Promise<void>;
   evaluateAll<TResult>(pageFunction: (elements: any[]) => TResult): Promise<TResult>;
 }
 
 export interface AutomationPage {
   close(): Promise<void>;
-  evaluate<TResult>(pageFunction: () => TResult): Promise<TResult>;
+  evaluate<TResult>(pageFunction: (...args: any[]) => TResult, arg?: any): Promise<TResult>;
   goto(url: string, options?: { timeout?: number; waitUntil?: string }): Promise<unknown>;
   locator(selector: string): AutomationLocator;
   url(): string;
