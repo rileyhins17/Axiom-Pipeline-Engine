@@ -155,6 +155,22 @@ function canonicalizeEmail(raw: string): string {
         .toLowerCase();
 }
 
+function normalizeHrefValue(href: unknown): string {
+    if (typeof href === "string") {
+        return href.trim();
+    }
+
+    if (href == null) {
+        return "";
+    }
+
+    try {
+        return String(href).trim();
+    } catch {
+        return "";
+    }
+}
+
 function normalizeObfuscatedEmails(text: string): string {
     return text
         .replace(/\[at\]|\(at\)|\{at\}/gi, "@")
@@ -169,13 +185,14 @@ function extractEmailsFromText(text: string): string[] {
     return Array.from(new Set(matches.map(canonicalizeEmail)));
 }
 
-function extractEmailsFromHref(href: string): string[] {
-    if (!href) return [];
-    if (href.startsWith("mailto:")) {
-        return [canonicalizeEmail(href)];
+function extractEmailsFromHref(href: unknown): string[] {
+    const normalizedHref = normalizeHrefValue(href);
+    if (!normalizedHref) return [];
+    if (normalizedHref.startsWith("mailto:")) {
+        return [canonicalizeEmail(normalizedHref)];
     }
 
-    const decoded = decodeURIComponent(href);
+    const decoded = decodeURIComponent(normalizedHref);
     return extractEmailsFromText(decoded);
 }
 
@@ -249,10 +266,10 @@ function dedupeLinks(links: ResolvedLink[]): ResolvedLink[] {
     const deduped: ResolvedLink[] = [];
 
     for (const link of links) {
-        const key = `${link.href}|${link.text || ""}`;
+        const key = `${normalizeHrefValue(link.href)}|${link.text || ""}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        deduped.push(link);
+        deduped.push({ ...link, href: normalizeHrefValue(link.href) });
     }
 
     return deduped;
@@ -269,11 +286,12 @@ export function pickRelevantContactLinks(
     const scored = (dedupeLinks(links)
         .map((link) => {
             try {
-                if (!link.href || link.href.startsWith("mailto:") || link.href.startsWith("tel:")) {
+                const href = normalizeHrefValue(link.href);
+                if (!href || href.startsWith("mailto:") || href.startsWith("tel:")) {
                     return null;
                 }
 
-                const resolved = new URL(link.href, website);
+                const resolved = new URL(href, website);
                 const resolvedHost = resolved.hostname.replace(/^www\./, "").toLowerCase();
                 if (resolvedHost !== host) return null;
 
@@ -325,14 +343,15 @@ function collectOccurrences(pages: EmailDiscoveryPage[]): Map<string, PublicEmai
         }
 
         for (const link of page.links) {
-            for (const email of extractEmailsFromHref(link.href)) {
+            const href = normalizeHrefValue(link.href);
+            for (const email of extractEmailsFromHref(href)) {
                 if (isBlockedCandidate(email)) continue;
                 const occurrences = byEmail.get(email) || [];
                 occurrences.push({
-                    pageRole: link.href.startsWith("mailto:") ? page.role : page.role,
+                    pageRole: page.role,
                     sourceLabel: page.sourceLabel,
                     sourceUrl: page.url,
-                    via: link.href.startsWith("mailto:") ? "mailto" : "text",
+                    via: href.startsWith("mailto:") ? "mailto" : "text",
                     snippet: normalizeWhitespace(link.text || buildSnippet(page.text, email)),
                 });
                 byEmail.set(email, occurrences);
