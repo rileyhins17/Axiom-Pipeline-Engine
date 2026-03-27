@@ -537,6 +537,58 @@ async function waitForMapsResultSurface(
   return false;
 }
 
+function buildMapsSearchUrls(query: string): string[] {
+  const encodedQuery = encodeURIComponent(query);
+  return [
+    `https://www.google.com/maps/search/${encodedQuery}`,
+    `https://www.google.com/maps/search/?api=1&query=${encodedQuery}`,
+    `https://www.google.com/maps?q=${encodedQuery}`,
+  ];
+}
+
+async function openMapsSearchPage(
+  context: AutomationBrowserContext,
+  query: string,
+  sendEvent: (data: ScrapeJobEventPayload) => Promise<void>,
+): Promise<AutomationPage | null> {
+  const urls = buildMapsSearchUrls(query);
+  let lastErrorMessage = "";
+
+  for (let index = 0; index < urls.length; index++) {
+    const url = urls[index];
+    const page = await context.newPage();
+
+    try {
+      await page.goto(url, {
+        waitUntil: "commit",
+        timeout: 30000,
+      });
+
+      if (index > 0) {
+        await sendEvent({
+          message: `[MAPS] Opened Maps via fallback URL ${index + 1}/${urls.length}`,
+        });
+      }
+
+      return page;
+    } catch (error) {
+      lastErrorMessage = error instanceof Error ? error.message : String(error);
+      await page.close().catch(() => {});
+
+      if (index === 0) {
+        await sendEvent({
+          message: `[MAPS] Primary Maps navigation failed (${lastErrorMessage}); retrying with alternate URL`,
+        });
+      }
+    }
+  }
+
+  await sendEvent({
+    message: `[MAPS] Maps navigation failed after ${urls.length} attempts: ${lastErrorMessage || "unknown error"}`,
+  });
+  return null;
+}
+
 async function dismissGoogleMapsConsent(
   page: AutomationPage,
   sendEvent: (data: ScrapeJobEventPayload) => Promise<void>,
@@ -894,7 +946,7 @@ async function collectTargets(
   sendEvent: (data: ScrapeJobEventPayload) => Promise<void>,
   shouldAbort?: () => boolean,
 ): Promise<Target[]> {
-  const page = await context.newPage();
+  let cleanupPage: AutomationPage | null = null;
   let missingTitleCount = 0;
 
   try {
@@ -903,10 +955,15 @@ async function collectTargets(
     }
 
     const query = `${niche} in ${city}, Ontario`;
-    await page.goto(`https://www.google.com/maps/search/${encodeURIComponent(query)}`, {
-      waitUntil: "commit",
-      timeout: 30000,
-    });
+    const page = await openMapsSearchPage(context, query, sendEvent);
+    if (!page) {
+      await sendEvent({
+        message: "[MAPS] Skipping Maps scrape because navigation could not be established.",
+      });
+      return [];
+    }
+
+    cleanupPage = page;
 
     await dismissGoogleMapsConsent(page, sendEvent);
 
@@ -1059,7 +1116,7 @@ async function collectTargets(
 
     return targets;
   } finally {
-    await page.close();
+    await cleanupPage?.close();
   }
 }
 
