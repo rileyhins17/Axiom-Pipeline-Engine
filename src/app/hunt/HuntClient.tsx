@@ -1,5 +1,5 @@
 "use client"
-import { useState, useRef, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
@@ -8,31 +8,39 @@ import { Badge } from "@/components/ui/badge"
 import { ToastProvider, useToast } from "@/components/ui/toast-provider"
 import {
     Target, Radar, MapPin, Layers, ArrowDown, Zap, Database, Mail, Clock,
-    Plus, Trash2, Play, RotateCcw, CheckCircle2, XCircle, AlertTriangle,
-    Shield, Globe, TrendingUp, SkipForward,
+    Plus, Trash2, Play, RotateCcw, CheckCircle2, XCircle, TrendingUp, SkipForward,
 } from "lucide-react"
+import { cn } from "@/lib/utils"
 
 import { OpsHud } from "@/components/hunt/ops-hud"
 import { QueueSummary, type QueueItem } from "@/components/hunt/queue-summary"
 import { IssuesPanel } from "@/components/hunt/issues-panel"
 import { RemoteJobsCard } from "@/components/hunt/remote-jobs-card"
-import { TerminalPanel, type LogEntry } from "@/components/hunt/terminal-panel"
+import { TerminalPanel } from "@/components/hunt/terminal-panel"
 import { WorkerHealthCard, type WorkerHealth } from "@/components/hunt/worker-health-card"
-import {
-    parseSSELine,
-} from "@/lib/hunt/sse-parser"
-import {
-    createInitialState, applyParseResult, resetCounters,
-    type HuntSessionState, type SessionStatus,
-} from "@/lib/hunt/hunt-session-store"
 import { useHuntStore } from "@/lib/hunt/hunt-store"
 
 const NICHE_PRESETS = ["Roofers", "Concrete", "Med-Spas", "Landscaping", "Plumbing", "HVAC", "Electricians", "Auto Detailing", "Commercial Cleaning", "Custom Cabinetry"]
 const CITY_PRESETS = ["Kitchener", "Waterloo", "Cambridge", "Guelph", "Hamilton", "London"]
 const SCAN_PRESETS = [
-    { label: "Quick Scan", radius: "5", depth: "1" },
-    { label: "Standard Scan", radius: "10", depth: "2" },
-    { label: "Deep Scan", radius: "15", depth: "4" },
+    {
+        label: "Quick Scan",
+        radius: "5",
+        depth: "1",
+        description: "Fastest pass when you want signal before breadth.",
+    },
+    {
+        label: "Standard Scan",
+        radius: "10",
+        depth: "2",
+        description: "Balanced default for most local campaigns.",
+    },
+    {
+        label: "Deep Scan",
+        radius: "15",
+        depth: "4",
+        description: "Broader sweep for denser markets or tougher niches.",
+    },
 ]
 
 function getJobStatusBadgeClass(status: QueueItem["status"]) {
@@ -197,6 +205,7 @@ function HuntInner() {
 
     // ═══ DERIVED STATE ═══
     const pendingCount = store.queue.filter(q => q.status === "pending").length
+    const builderReady = niche.trim().length > 0 && city.trim().length > 0
 
     // Compute avg job duration from done jobs roughly
     const avgJobDuration = 35; // placeholder or computed from logs
@@ -251,95 +260,156 @@ function HuntInner() {
                     <Card className="glass-ultra rounded-xl overflow-hidden holo-card animate-slide-up">
                         <div className="h-1 bg-gradient-to-r from-emerald-500 via-cyan-500 to-purple-500 animate-gradient" />
                         <CardHeader className="pb-3">
-                            <CardTitle className="text-base font-bold flex items-center gap-2">
-                                <Target className="w-4.5 h-4.5 text-emerald-400" />
-                                Queue Builder
-                            </CardTitle>
-                            <CardDescription className="text-[11px]">
-                                Add niche + city combos to process sequentially.
-                            </CardDescription>
+                            <div className="flex items-start justify-between gap-4">
+                                <div className="space-y-1">
+                                    <CardTitle className="text-base font-bold flex items-center gap-2">
+                                        <Target className="w-4.5 h-4.5 text-emerald-400" />
+                                        Queue Builder
+                                    </CardTitle>
+                                    <CardDescription className="text-[11px]">
+                                        Pick a niche, anchor a city, then choose how wide and deep the sweep should run.
+                                    </CardDescription>
+                                </div>
+                                <div className="hidden sm:flex flex-col items-end text-[10px] font-mono uppercase tracking-[0.24em] text-zinc-600">
+                                    <span>{store.loading ? "Queue locked" : "Standby"}</span>
+                                    <span className="mt-1 normal-case tracking-normal text-zinc-500">
+                                        {store.queue.length} queued
+                                    </span>
+                                </div>
+                            </div>
                         </CardHeader>
                         <CardContent className="space-y-4">
-                            {/* Niche */}
+                            <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-3">
+                                <div className="flex items-center justify-between gap-3">
+                                    <div className="flex items-center gap-3">
+                                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-emerald-500/20 bg-emerald-500/10 text-emerald-300">
+                                            <Target className="w-4 h-4" />
+                                        </div>
+                                        <div>
+                                            <div className="text-[10px] uppercase tracking-[0.24em] text-zinc-600">Target lane</div>
+                                            <div className="text-sm text-white/90">Build sequential targets before you launch the run.</div>
+                                        </div>
+                                    </div>
+                                    <div className="hidden md:flex items-center gap-2 text-[10px] font-mono text-zinc-500">
+                                        <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1">Queue</span>
+                                        <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1">Preset</span>
+                                        <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1">Launch</span>
+                                    </div>
+                                </div>
+                            </div>
+
                             <div className="space-y-1.5">
                                 <Label htmlFor="niche" className="text-[11px] font-semibold flex items-center gap-1.5">
                                     <Layers className="w-3.5 h-3.5 text-emerald-400" />
                                     Niche / Profession
                                 </Label>
                                 <Input
-                                    id="niche" placeholder="e.g. Roofers, Med-Spas"
-                                    value={niche} onChange={(e) => setNiche(e.target.value)}
+                                    id="niche"
+                                    placeholder="Roofers, med spas, landscapers..."
+                                    value={niche}
+                                    onChange={(e) => setNiche(e.target.value)}
                                     className="bg-black/30 border-white/10 focus:border-emerald-500/50 transition-all text-sm"
                                     disabled={store.loading}
                                 />
-                                <div className="flex flex-wrap gap-1.5">
-                                    {NICHE_PRESETS.map(n => (
-                                        <button
-                                            key={n} type="button"
-                                            onClick={() => setNiche(n)}
-                                            className={`text-[10px] px-2 py-0.5 rounded-full border transition-all duration-200
-                                                ${niche === n
-                                                    ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300"
-                                                    : "border-white/10 text-muted-foreground hover:border-emerald-500/30 hover:text-white"
-                                                }`}
-                                            disabled={store.loading}
-                                        >{n}</button>
-                                    ))}
+                                <p className="text-[10px] text-zinc-600">Choose the market segment you want to mine.</p>
+                                <div className="flex flex-wrap gap-2">
+                                    {NICHE_PRESETS.map((n) => {
+                                        const isActive = niche === n
+                                        return (
+                                            <button
+                                                key={n}
+                                                type="button"
+                                                onClick={() => setNiche(n)}
+                                                aria-pressed={isActive}
+                                                className={cn(
+                                                    "inline-flex items-center rounded-full border px-3 py-1.5 text-[10px] font-medium transition-all duration-200 hover:-translate-y-0.5",
+                                                    isActive
+                                                        ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-200 shadow-[0_0_0_1px_rgba(52,211,153,0.08)]"
+                                                        : "border-white/10 bg-black/20 text-zinc-400 hover:border-emerald-400/30 hover:bg-white/[0.04] hover:text-white",
+                                                )}
+                                                disabled={store.loading}
+                                            >
+                                                {n}
+                                            </button>
+                                        )
+                                    })}
                                 </div>
                             </div>
 
-                            {/* City */}
                             <div className="space-y-1.5">
                                 <Label htmlFor="city" className="text-[11px] font-semibold flex items-center gap-1.5">
                                     <MapPin className="w-3.5 h-3.5 text-cyan-400" />
                                     Target City
                                 </Label>
                                 <Input
-                                    id="city" placeholder="e.g. Kitchener"
-                                    value={city} onChange={(e) => setCity(e.target.value)}
+                                    id="city"
+                                    placeholder="Hamilton, Guelph, London..."
+                                    value={city}
+                                    onChange={(e) => setCity(e.target.value)}
                                     className="bg-black/30 border-white/10 focus:border-cyan-500/50 transition-all text-sm"
                                     disabled={store.loading}
                                 />
-                                <div className="flex flex-wrap gap-1.5">
-                                    {CITY_PRESETS.map(c => (
-                                        <button
-                                            key={c} type="button"
-                                            onClick={() => setCity(c)}
-                                            className={`text-[10px] px-2 py-0.5 rounded-full border transition-all duration-200
-                                                ${city === c
-                                                    ? "bg-cyan-500/20 border-cyan-500/40 text-cyan-300"
-                                                    : "border-white/10 text-muted-foreground hover:border-cyan-500/30 hover:text-white"
-                                                }`}
-                                            disabled={store.loading}
-                                    >{c}</button>
-                                    ))}
+                                <p className="text-[10px] text-zinc-600">Use the city center; the radius handles the spread.</p>
+                                <div className="flex flex-wrap gap-2">
+                                    {CITY_PRESETS.map((c) => {
+                                        const isActive = city === c
+                                        return (
+                                            <button
+                                                key={c}
+                                                type="button"
+                                                onClick={() => setCity(c)}
+                                                aria-pressed={isActive}
+                                                className={cn(
+                                                    "inline-flex items-center rounded-full border px-3 py-1.5 text-[10px] font-medium transition-all duration-200 hover:-translate-y-0.5",
+                                                    isActive
+                                                        ? "border-cyan-400/40 bg-cyan-500/15 text-cyan-200 shadow-[0_0_0_1px_rgba(34,211,238,0.08)]"
+                                                        : "border-white/10 bg-black/20 text-zinc-400 hover:border-cyan-400/30 hover:bg-white/[0.04] hover:text-white",
+                                                )}
+                                                disabled={store.loading}
+                                            >
+                                                {c}
+                                            </button>
+                                        )
+                                    })}
                                 </div>
                             </div>
 
-                            {/* Scan Presets */}
                             <div className="space-y-1.5">
                                 <Label className="text-[11px] font-semibold flex items-center gap-1.5">
                                     <Radar className="w-3.5 h-3.5 text-purple-400" />
                                     Scan Preset
                                 </Label>
+                                <p className="text-[10px] text-zinc-600">Presets tune radius and depth together; you can still edit both fields.</p>
                                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                                     {SCAN_PRESETS.map((preset) => {
                                         const isActive = activeScanPreset === preset.label
+                                        const isRecommended = preset.label === "Standard Scan"
                                         return (
                                             <button
                                                 key={preset.label}
                                                 type="button"
                                                 onClick={() => applyScanPreset(preset)}
-                                                className={`rounded-lg border px-3 py-2 text-left transition-all duration-200
-                                                    ${isActive
-                                                        ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300 shadow-sm shadow-emerald-500/10"
-                                                        : "border-white/10 bg-black/20 text-zinc-400 hover:border-cyan-500/30 hover:text-white"
-                                                    }`}
+                                                className={cn(
+                                                    "group rounded-xl border px-3 py-3 text-left transition-all duration-200 hover:-translate-y-0.5",
+                                                    isActive
+                                                        ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-200 shadow-[0_0_0_1px_rgba(52,211,153,0.08)]"
+                                                        : "border-white/10 bg-black/20 text-zinc-400 hover:border-cyan-400/30 hover:bg-white/[0.04] hover:text-white",
+                                                )}
                                                 disabled={store.loading}
                                             >
-                                                <div className="text-xs font-semibold">{preset.label}</div>
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <div className="text-xs font-semibold">{preset.label}</div>
+                                                    {isRecommended && (
+                                                        <span className="rounded-full border border-cyan-500/20 bg-cyan-500/10 px-2 py-0.5 text-[9px] uppercase tracking-[0.2em] text-cyan-300">
+                                                            Recommended
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <div className="mt-1 text-[10px] leading-5 text-zinc-500">
+                                                    {preset.description}
+                                                </div>
                                                 <div className="mt-0.5 text-[10px] font-mono uppercase tracking-wider opacity-80">
-                                                    R {preset.radius} km • D {preset.depth}
+                                                    R {preset.radius} km | D {preset.depth}
                                                 </div>
                                             </button>
                                         )
@@ -350,52 +420,106 @@ function HuntInner() {
                                 </div>
                             </div>
 
-                            {/* Radius & Depth */}
                             <div className="grid grid-cols-2 gap-3">
                                 <div className="space-y-1.5">
-                                    <Label htmlFor="radius" className="text-[11px] font-semibold flex items-center gap-1.5">
-                                        <Radar className="w-3.5 h-3.5 text-amber-400" />
-                                        Radius (km)
-                                    </Label>
-                                    <Input id="radius" type="number" value={radius} onChange={(e) => setRadius(e.target.value)} className="bg-black/30 border-white/10 text-sm" disabled={store.loading} />
+                                    <div className="flex items-center justify-between gap-2">
+                                        <Label htmlFor="radius" className="text-[11px] font-semibold flex items-center gap-1.5">
+                                            <Radar className="w-3.5 h-3.5 text-amber-400" />
+                                            Radius (km)
+                                        </Label>
+                                        <span className="text-[10px] text-zinc-600">Coverage window</span>
+                                    </div>
+                                    <Input
+                                        id="radius"
+                                        type="number"
+                                        value={radius}
+                                        onChange={(e) => setRadius(e.target.value)}
+                                        className="bg-black/30 border-white/10 text-sm"
+                                        disabled={store.loading}
+                                    />
                                 </div>
                                 <div className="space-y-1.5">
-                                    <Label htmlFor="maxDepth" className="text-[11px] font-semibold flex items-center gap-1.5">
-                                        <ArrowDown className="w-3.5 h-3.5 text-purple-400" />
-                                        Scroll Depth
-                                    </Label>
-                                    <Input id="maxDepth" type="number" min="1" max="50" value={maxDepth} onChange={(e) => setMaxDepth(e.target.value)} className="bg-black/30 border-white/10 text-sm" disabled={store.loading} />
+                                    <div className="flex items-center justify-between gap-2">
+                                        <Label htmlFor="maxDepth" className="text-[11px] font-semibold flex items-center gap-1.5">
+                                            <ArrowDown className="w-3.5 h-3.5 text-purple-400" />
+                                            Scroll Depth
+                                        </Label>
+                                        <span className="text-[10px] text-zinc-600">How far to inspect</span>
+                                    </div>
+                                    <Input
+                                        id="maxDepth"
+                                        type="number"
+                                        min="1"
+                                        max="50"
+                                        value={maxDepth}
+                                        onChange={(e) => setMaxDepth(e.target.value)}
+                                        className="bg-black/30 border-white/10 text-sm"
+                                        disabled={store.loading}
+                                    />
                                 </div>
                             </div>
-
-                            {/* Add to Queue Button */}
+                        </CardContent>
+                        <CardFooter className="flex flex-col gap-3 border-t border-white/[0.04] bg-black/20 px-6 py-4">
+                            <div className="flex w-full items-center justify-between gap-3 text-[10px] text-zinc-500">
+                                <span>{builderReady ? "Target ready to queue." : "Fill niche and city to arm the next target."}</span>
+                                <span>{store.loading ? "Queue locked during active run." : "Targets launch in order."}</span>
+                            </div>
                             <Button
                                 type="button"
                                 onClick={handleAddToQueue}
-                                variant="outline"
-                                className="w-full border-emerald-800/50 text-emerald-400 hover:bg-emerald-900/30 hover:text-emerald-300 transition-all btn-glow"
-                                disabled={store.loading || !niche || !city}
+                                className={cn(
+                                    "w-full font-semibold tracking-wide transition-all duration-300 btn-glow",
+                                    builderReady && !store.loading
+                                        ? "bg-gradient-to-r from-emerald-600 via-cyan-600 to-emerald-600 text-white shadow-lg shadow-emerald-500/20 hover:from-emerald-500 hover:via-cyan-500 hover:to-emerald-500"
+                                        : "bg-emerald-950/50 text-emerald-300/50 cursor-not-allowed",
+                                )}
+                                disabled={store.loading || !builderReady}
                             >
                                 <Plus className="w-4 h-4 mr-2" />
                                 Add to Queue
                             </Button>
-                        </CardContent>
+                        </CardFooter>
                     </Card>
 
                     {/* Queue Display */}
-                    {store.queue.length > 0 && (
-                        <Card className="glass-ultra rounded-xl overflow-hidden animate-slide-up">
-                            <CardHeader className="pb-2">
-                                <div className="flex items-center justify-between">
+                    <Card className="glass-ultra rounded-xl overflow-hidden animate-slide-up">
+                        <CardHeader className="pb-2">
+                            <div className="flex items-start justify-between gap-4">
+                                <div className="space-y-1">
                                     <CardTitle className="text-sm font-bold flex items-center gap-2">
                                         <Zap className="w-4 h-4 text-amber-400" />
                                         Extraction Queue
                                     </CardTitle>
-                                    <QueueSummary queue={store.queue} avgJobDuration={avgJobDuration} />
+                                    <CardDescription className="text-[11px]">
+                                        Queue targets run top to bottom. Failed or stale jobs can be requeued inline.
+                                    </CardDescription>
                                 </div>
-                            </CardHeader>
-                            <CardContent className="space-y-2">
-                                {store.queue.map((item) => (
+                                <QueueSummary queue={store.queue} avgJobDuration={avgJobDuration} />
+                            </div>
+                        </CardHeader>
+                        <CardContent className="space-y-2">
+                            {store.queue.length === 0 ? (
+                                <div className="rounded-xl border border-dashed border-white/10 bg-black/20 p-4">
+                                    <div className="flex items-start gap-3">
+                                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-emerald-500/20 bg-emerald-500/10 text-emerald-300">
+                                            <Zap className="w-4 h-4" />
+                                        </div>
+                                        <div className="min-w-0">
+                                            <div className="text-sm font-semibold text-white/90">Queue is empty</div>
+                                            <div className="mt-1 text-[11px] leading-5 text-zinc-500">
+                                                Build a target above, then launch when you are ready. Runs stay sequential and can be requeued inline.
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                                        {["Sequential", "Scored", "Retryable"].map((label) => (
+                                            <div key={label} className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[10px] uppercase tracking-[0.22em] text-zinc-500">
+                                                {label}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            ) : store.queue.map((item) => (
                                     <div
                                         key={item.id}
                                         className="queue-card glass rounded-lg p-3 flex items-center gap-3 animate-scale-in relative overflow-hidden"
@@ -408,12 +532,12 @@ function HuntInner() {
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center gap-2">
                                                 <span className="text-xs font-medium text-white/90">{item.niche}</span>
-                                                <span className="text-[10px] text-muted-foreground">•</span>
+                                                <span className="text-[10px] text-muted-foreground">|</span>
                                                 <span className="text-xs text-cyan-400">{item.city}</span>
                                             </div>
                                             <div className="text-[9px] text-muted-foreground mt-0.5">
-                                                R:{item.radius}km • D:{item.maxDepth}
-                                                {item.stats && ` • ${item.stats.leadsFound} leads, ${item.stats.withEmail} emails`}
+                                                R:{item.radius}km | D:{item.maxDepth}
+                                                {item.stats && ` | ${item.stats.leadsFound} leads, ${item.stats.withEmail} emails`}
                                             </div>
                                             <div className="mt-1 flex items-center gap-2">
                                                 <Badge
@@ -479,32 +603,43 @@ function HuntInner() {
                                         </div>
                                     </div>
                                 ))}
-
-                                {/* Launch Button */}
-                                <Button
-                                    onClick={store.runQueue}
-                                    size="lg"
-                                    className={`w-full font-bold text-sm tracking-wide transition-all duration-300 mt-2 btn-glow ${store.loading
-                                        ? "bg-emerald-900/50 text-emerald-400 cursor-not-allowed"
-                                        : "bg-gradient-to-r from-emerald-600 via-cyan-600 to-emerald-600 hover:from-emerald-500 hover:via-cyan-500 hover:to-emerald-500 text-white shadow-lg shadow-emerald-500/20 animate-gradient bg-[length:200%_200%]"
-                                        }`}
-                                    disabled={store.loading || pendingCount === 0}
-                                >
-                                    {store.loading ? (
-                                        <span className="flex items-center gap-2">
-                                            <Radar className="w-4 h-4 animate-pulse" />
-                                            Processing Queue...
-                                        </span>
-                                    ) : (
-                                        <span className="flex items-center gap-2">
-                                            <Play className="w-4 h-4" />
-                                            Launch Queue ({pendingCount} {pendingCount === 1 ? "target" : "targets"})
-                                        </span>
-                                    )}
-                                </Button>
-                            </CardContent>
-                        </Card>
-                    )}
+                        </CardContent>
+                        <CardFooter className="flex flex-col gap-3 border-t border-white/[0.04] bg-black/20 px-6 py-4">
+                            <div className="flex w-full items-center justify-between gap-3 text-[10px] text-zinc-500">
+                                <span>
+                                    {store.loading
+                                        ? "Queue is locked while a run is active."
+                                        : pendingCount > 0
+                                            ? `${pendingCount} targets ready to launch.`
+                                            : "Add at least one target to launch."}
+                                </span>
+                                <span>Sequential execution</span>
+                            </div>
+                            <Button
+                                onClick={store.runQueue}
+                                size="lg"
+                                className={cn(
+                                    "w-full font-bold text-sm tracking-wide transition-all duration-300 btn-glow",
+                                    store.loading || pendingCount === 0
+                                        ? "bg-emerald-950/50 text-emerald-400/60 cursor-not-allowed"
+                                        : "bg-gradient-to-r from-emerald-600 via-cyan-600 to-emerald-600 hover:from-emerald-500 hover:via-cyan-500 hover:to-emerald-500 text-white shadow-lg shadow-emerald-500/20 animate-gradient bg-[length:200%_200%]",
+                                )}
+                                disabled={store.loading || pendingCount === 0}
+                            >
+                                {store.loading ? (
+                                    <span className="flex items-center gap-2">
+                                        <Radar className="w-4 h-4 animate-pulse" />
+                                        Processing Queue...
+                                    </span>
+                                ) : (
+                                    <span className="flex items-center gap-2">
+                                        <Play className="w-4 h-4" />
+                                        Launch Queue ({pendingCount} {pendingCount === 1 ? "target" : "targets"})
+                                    </span>
+                                )}
+                            </Button>
+                        </CardFooter>
+                    </Card>
 
                     {/* Issues Panel */}
                     <IssuesPanel

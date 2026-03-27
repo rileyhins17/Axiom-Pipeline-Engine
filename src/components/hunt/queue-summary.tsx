@@ -1,6 +1,5 @@
 "use client";
-import { cn } from "@/lib/utils";
-import { CheckCircle2, XCircle, Clock, Radar, SkipForward, Ban } from "lucide-react";
+import { CheckCircle2, XCircle, Clock, Radar, Ban } from "lucide-react";
 
 interface QueueItem {
     id: string;
@@ -31,7 +30,17 @@ export function QueueSummary({ queue, avgJobDuration }: QueueSummaryProps) {
         ? Math.ceil((remaining * avgJobDuration) / 60)
         : null;
 
-    if (total === 0) return null;
+    if (total === 0) {
+        return (
+            <div className="flex items-center gap-2 rounded-full border border-white/10 bg-black/25 px-3 py-1.5 text-[10px] font-mono text-zinc-500">
+                <span className="text-zinc-400">0 jobs</span>
+                <span className="h-3 w-px bg-white/[0.06]" />
+                <span>Idle</span>
+                <span className="h-3 w-px bg-white/[0.06]" />
+                <span>Awaiting first target</span>
+            </div>
+        );
+    }
 
     return (
         <div className="flex items-center gap-3 px-3 py-2 glass rounded-lg text-[10px] font-mono">
