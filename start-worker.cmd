@@ -1,3 +1,3 @@
 @echo off
 cd /d "%~dp0"
-powershell.exe -NoLogo -NoExit -ExecutionPolicy Bypass -File "%~dp0start-worker.ps1"
+start "" powershell.exe -WindowStyle Hidden -NoLogo -NoProfile -STA -ExecutionPolicy Bypass -File "%~dp0scripts\worker-desktop.ps1"

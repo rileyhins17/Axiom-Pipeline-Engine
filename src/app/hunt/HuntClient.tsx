@@ -176,7 +176,7 @@ function HuntInner() {
         }
         setCancelConfirm(false)
         store.handleCancel()
-        toast("🛑 Canceled — SSE closed", { type: "error" })
+        toast("Canceled - SSE closed", { type: "error" })
     }, [cancelConfirm, store, toast])
 
     // ═══ KEYBOARD SHORTCUTS ═══
@@ -254,7 +254,7 @@ function HuntInner() {
             )}
 
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-                {/* Left Column — Controls + Queue */}
+                {/* Left Column - Controls + Queue */}
                 <div className="lg:col-span-2 space-y-4">
                     {/* Parameter Input Card */}
                     <Card className="glass-ultra rounded-xl overflow-hidden holo-card animate-slide-up">
@@ -649,7 +649,7 @@ function HuntInner() {
                     />
                 </div>
 
-                {/* Right Column — Terminal */}
+                {/* Right Column - Terminal */}
                 <div className="lg:col-span-3 space-y-4 animate-slide-up" style={{ animationDelay: "150ms" }}>
                     {/* Terminal Panel */}
                     <TerminalPanel
@@ -665,7 +665,7 @@ function HuntInner() {
                                 <div className="flex items-center justify-between mb-4">
                                     <h4 className="text-emerald-400 font-bold text-base flex items-center gap-2">
                                         <CheckCircle2 className="w-5 h-5" />
-                                        Hunt Complete 🎉
+                                        Hunt Complete
                                     </h4>
                                     <div className="flex items-center gap-4 text-xs font-mono">
                                         <span className="text-emerald-400/80 flex items-center gap-1">

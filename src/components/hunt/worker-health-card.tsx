@@ -196,7 +196,7 @@ export function WorkerHealthCard({ onHealthChange }: WorkerHealthCardProps) {
             <div className="rounded-lg border border-white/[0.04] bg-black/25 px-3 py-2">
               <div className="text-[10px] uppercase tracking-wider text-zinc-500">Active job</div>
               <div className="mt-1 font-mono text-zinc-200 truncate">
-                {health?.claimedJobId ? `${health.claimedJobId.slice(0, 8)} • ${health.claimedJobStatus || "unknown"}` : "None"}
+                {health?.claimedJobId ? `${health.claimedJobId.slice(0, 8)} | ${health.claimedJobStatus || "unknown"}` : "None"}
               </div>
             </div>
           </div>

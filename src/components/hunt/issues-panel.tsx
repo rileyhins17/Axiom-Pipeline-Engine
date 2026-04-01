@@ -49,7 +49,7 @@ export function IssuesPanel({ errors, onRetryJob, onDismiss }: IssuesPanelProps)
                                         : <ChevronRight className="w-3 h-3" />
                                     }
                                     {new Date(error.timestamp).toLocaleTimeString()}
-                                    <span className="text-zinc-700">•</span>
+                                    <span className="text-zinc-700">|</span>
                                     <span className="text-zinc-600">{error.jobContext}</span>
                                 </button>
                                 <p className="text-[11px] text-red-300/80 mt-1 truncate">{error.message}</p>

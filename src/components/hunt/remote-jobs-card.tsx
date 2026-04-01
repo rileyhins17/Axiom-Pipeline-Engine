@@ -244,16 +244,16 @@ export function RemoteJobsCard() {
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-mono text-sm text-zinc-100 truncate">{job.niche}</span>
-                      <span className="text-[10px] text-zinc-700">•</span>
+                      <span className="text-[10px] text-zinc-700">|</span>
                       <span className="text-xs text-cyan-400 truncate">{job.city}</span>
                     </div>
                     <div className="mt-1 flex items-center gap-2 text-[10px] font-mono text-zinc-500">
                       <span>R {job.radius} km</span>
-                      <span>•</span>
+                      <span>|</span>
                       <span>D {job.maxDepth}</span>
-                      <span>•</span>
+                      <span>|</span>
                       <span>{job.claimedBy || "unclaimed"}</span>
-                      <span>•</span>
+                      <span>|</span>
                       <span>{formatRelativeTime(job.heartbeatAt || job.updatedAt)}</span>
                     </div>
                   </div>

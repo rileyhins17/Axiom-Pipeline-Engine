@@ -68,6 +68,7 @@ function Test-WorkerValue {
 
 $workerEnvPath = Join-Path $PSScriptRoot ".env.worker"
 $workerEnvExamplePath = Join-Path $PSScriptRoot ".env.worker.example"
+$devVarsPath = Join-Path $PSScriptRoot ".dev.vars"
 if ((-not (Test-Path -LiteralPath $workerEnvPath)) -and (Test-Path -LiteralPath $workerEnvExamplePath)) {
     Copy-Item -LiteralPath $workerEnvExamplePath -Destination $workerEnvPath
     Write-Host "Created .env.worker from .env.worker.example. Fill in the local secret values before starting the worker." -ForegroundColor Yellow
@@ -75,19 +76,20 @@ if ((-not (Test-Path -LiteralPath $workerEnvPath)) -and (Test-Path -LiteralPath 
 }
 
 Import-WorkerEnvFile -Path $workerEnvPath
+Import-WorkerEnvFile -Path $devVarsPath
 $defaultControlPlaneUrl = "https://operations.getaxiom.ca"
 
-if ([string]::IsNullOrWhiteSpace((Get-EnvValue -Name "APP_BASE_URL"))) {
-    $env:APP_BASE_URL = Get-EnvValue -Name "CONTROL_PLANE_URL"
+$controlPlaneUrl = Get-EnvValue -Name "CONTROL_PLANE_URL"
+if ([string]::IsNullOrWhiteSpace($controlPlaneUrl)) {
+    $controlPlaneUrl = Get-EnvValue -Name "APP_BASE_URL"
 }
 
-if ([string]::IsNullOrWhiteSpace((Get-EnvValue -Name "APP_BASE_URL"))) {
-    $env:APP_BASE_URL = $defaultControlPlaneUrl
+if ([string]::IsNullOrWhiteSpace($controlPlaneUrl) -or $controlPlaneUrl -match '^https?://(localhost|127\.0\.0\.1)(:\d+)?/?$') {
+    $controlPlaneUrl = $defaultControlPlaneUrl
 }
 
-if ([string]::IsNullOrWhiteSpace((Get-EnvValue -Name "CONTROL_PLANE_URL"))) {
-    $env:CONTROL_PLANE_URL = $env:APP_BASE_URL
-}
+$env:APP_BASE_URL = $controlPlaneUrl
+$env:CONTROL_PLANE_URL = $controlPlaneUrl
 
 if ([string]::IsNullOrWhiteSpace((Get-EnvValue -Name "WORKER_NAME"))) {
     $env:WORKER_NAME = "local-worker"
@@ -113,7 +115,24 @@ if ($missing.Count -gt 0) {
     throw "Missing required environment variable(s): $($missing -join ', '). Create a local .env.worker file from .env.worker.example and fill in the values."
 }
 
-$workerProcess = Start-Process -FilePath "npm.cmd" -ArgumentList @("run", "worker") -PassThru -NoNewWindow
+$tsxPath = Join-Path $PSScriptRoot "node_modules\.bin\tsx.cmd"
+$workerScript = Join-Path $PSScriptRoot "scripts\local-scrape-worker.ts"
+$workerScriptRel = "scripts\local-scrape-worker.ts"
+$powershellPath = Join-Path $env:WINDIR "System32\WindowsPowerShell\v1.0\powershell.exe"
+
+if (Test-Path -LiteralPath $tsxPath) {
+    $workerProcess = Start-Process -FilePath $tsxPath -ArgumentList @($workerScript) -PassThru -NoNewWindow -WorkingDirectory $PSScriptRoot
+} else {
+    $workerProcess = Start-Process -FilePath $powershellPath -ArgumentList @(
+        "-NoLogo",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "npx --yes tsx $workerScriptRel"
+    ) -PassThru -NoNewWindow -WorkingDirectory $PSScriptRoot
+}
+
 $pidFile = Join-Path $PSScriptRoot ".worker.pid"
 Set-Content -LiteralPath $pidFile -Value $workerProcess.Id -NoNewline
 

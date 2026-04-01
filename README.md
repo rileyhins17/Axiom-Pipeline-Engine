@@ -28,6 +28,32 @@ npm run dev
 
 5. Open [http://localhost:3000/sign-in](http://localhost:3000/sign-in).
 
+## Worker Studio
+
+Use the native desktop launcher when you want the local worker to control the live site:
+
+```powershell
+.\worker-desktop.cmd
+```
+
+or:
+
+```powershell
+.\start-worker.cmd
+```
+
+That opens the local Axiom Worker Studio, which can:
+
+- start and stop the local scraper process
+- rename the worker from the UI and persist it into `.env.worker`
+- open the live hunt page on `operations.getaxiom.ca`
+- remember the repo root if you move the workspace to another folder
+- create an `Axiom Worker.lnk` shortcut on your Desktop for one-click relaunches
+
+The Desktop shortcut is the no-console launcher. Use that instead of the older `start-worker.cmd` file if you want the clean native app feel.
+
+The studio defaults to the live control plane, not localhost, so the worker pushes results to the web app instead of a dev server.
+
 Notes:
 
 - Local auth requires `BETTER_AUTH_SECRET`.
@@ -37,6 +63,7 @@ Notes:
 - Local scraping falls back to Playwright. Cloudflare deploys use the Browser Rendering binding instead.
 - The app runtime reads the Cloudflare `DB` binding directly. There is no Prisma client generation step anymore.
 - On this Windows host, OpenNext still warns that WSL/Linux is the safer environment for production-style builds, even though the validated build path now succeeds locally.
+- If you move the repo to another folder or another Windows device, use the **Change repo** button in Worker Studio once and the app will remember it.
 
 ## Required Environment Variables
 

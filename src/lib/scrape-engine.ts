@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI, HarmBlockThreshold, HarmCategory } from "@google/generative-ai";
+﻿import { GoogleGenerativeAI, HarmBlockThreshold, HarmCategory } from "@google/generative-ai";
 
 import {
   computeAxiomScore,
@@ -198,7 +198,7 @@ function cleanMapsAddressCandidate(value: string): string {
       .replace(/^[^\p{L}\p{N}]+/u, "")
       .replace(/\s*(?:Closed|Open now|Open|Opens|Closes|Hours|Website|Directions|Share|Save|Photos|Phone)\b.*$/i, "")
       .replace(/\s*\(?\+?1?[\s.-]?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\)?\s*$/i, "")
-      .replace(/\s*[â€¢Â·]\s*$/, ""),
+      .replace(/\s*[\u2022\u00b7]\s*$/, ""),
   );
 }
 
@@ -230,7 +230,7 @@ function isMeaningfulMapsCategory(value: string, title: string): boolean {
     return false;
   }
 
-  if (/[\p{S}\p{C}]/u.test(clean.replace(/[&'â€™.\-]/g, ""))) {
+  if (/[\p{S}\p{C}]/u.test(clean.replace(/[&'Ã¢â‚¬â„¢.\-]/g, ""))) {
     return false;
   }
 
@@ -279,10 +279,10 @@ function extractMapsCategoryFromText(value: string, title: string): string {
   }
 
   working = working.replace(/^\d+(?:\.\d+)?\s*/, "").trim();
-  working = working.replace(/^[ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â·\-ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â|:]+\s*/u, "").trim();
+  working = working.replace(/^[ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â·\-ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â|:]+\s*/u, "").trim();
 
   const cutTokens = [
-    /(?:^|\s)(?:ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢|ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â·|\||ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â|-)(?:\s|$)/,
+    /(?:^|\s)(?:ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢|ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â·|\||ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â|-)(?:\s|$)/,
     /\bClosed\b/i,
     /\bOpen now\b/i,
     /\bOpens\b/i,
@@ -294,8 +294,8 @@ function extractMapsCategoryFromText(value: string, title: string): string {
     /\bPhotos\b/i,
     /\bPhone\b/i,
     /\bAddress\b/i,
-    /\d{1,6}\s+[A-Za-z0-9'ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢.\-/& ]{2,80}\s+(?:St|Street|Ave|Avenue|Rd|Road|Blvd|Boulevard|Dr|Drive|Way|Ln|Lane|Ct|Court|Cres|Crescent|Pkwy|Parkway|Pl|Place|Ter|Terrace|Hwy|Highway)\b/i,
-    /\d{1,6}\s+[A-Za-z0-9'ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢.\-/& ]{2,80}\s+(?:Kitchener|Waterloo|Guelph|Hamilton|Cambridge|Toronto|London|Burlington|Ontario|ON)\b/i,
+    /\d{1,6}\s+[A-Za-z0-9'ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢.\-/& ]{2,80}\s+(?:St|Street|Ave|Avenue|Rd|Road|Blvd|Boulevard|Dr|Drive|Way|Ln|Lane|Ct|Court|Cres|Crescent|Pkwy|Parkway|Pl|Place|Ter|Terrace|Hwy|Highway)\b/i,
+    /\d{1,6}\s+[A-Za-z0-9'ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢.\-/& ]{2,80}\s+(?:Kitchener|Waterloo|Guelph|Hamilton|Cambridge|Toronto|London|Burlington|Ontario|ON)\b/i,
   ];
 
   let endIndex = working.length;
@@ -308,7 +308,7 @@ function extractMapsCategoryFromText(value: string, title: string): string {
 
   let candidate = working.slice(0, endIndex).trim();
   candidate = candidate.replace(/^\d+(?:\.\d+)?\s*/, "").trim();
-  candidate = candidate.replace(/^[ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â·\-ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â|:]+\s*/u, "").trim();
+  candidate = candidate.replace(/^[ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â·\-ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â|:]+\s*/u, "").trim();
 
   if (!candidate || candidate.length > 80) {
     return "";
@@ -345,8 +345,8 @@ function extractAddressFromMapsText(text: string, title: string): string {
   }
 
   const patterns = [
-    /\d{1,6}\s+[A-Za-z0-9'Ã¢â‚¬â„¢\.\-/& ]{2,80}\s+(?:St|Street|Ave|Avenue|Rd|Road|Blvd|Boulevard|Dr|Drive|Way|Ln|Lane|Ct|Court|Cres|Crescent|Pkwy|Parkway|Pl|Place|Ter|Terrace|Hwy|Highway)\b[^|]{0,80}/i,
-    /\d{1,6}\s+[A-Za-z0-9'Ã¢â‚¬â„¢\.\-/& ]{2,80}\s+(?:Kitchener|Waterloo|Guelph|Hamilton|Cambridge|Toronto|London|Burlington|Ontario|ON)\b[^|]{0,80}/i,
+    /\d{1,6}\s+[A-Za-z0-9'ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢\.\-/& ]{2,80}\s+(?:St|Street|Ave|Avenue|Rd|Road|Blvd|Boulevard|Dr|Drive|Way|Ln|Lane|Ct|Court|Cres|Crescent|Pkwy|Parkway|Pl|Place|Ter|Terrace|Hwy|Highway)\b[^|]{0,80}/i,
+    /\d{1,6}\s+[A-Za-z0-9'ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢\.\-/& ]{2,80}\s+(?:Kitchener|Waterloo|Guelph|Hamilton|Cambridge|Toronto|London|Burlington|Ontario|ON)\b[^|]{0,80}/i,
   ];
 
   for (const pattern of patterns) {
@@ -708,7 +708,7 @@ function parseMapsRatingAndReviews(source: string): { rating: number; reviewCoun
 
   const candidatePatterns = [
     /([\d.]+)\s*(?:stars?|rating)[^\d]{0,40}([\d,]+)\s*(?:reviews?|ratings?)/i,
-    /([\d.]+)\s*[ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¹Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¹Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ]\s*([\d,]+)/i,
+    /([\d.]+)\s*[ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¹ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¹ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ]\s*([\d,]+)/i,
     /rating[:\s]+([\d.]+)[^\d]{0,40}reviews?[:\s]+([\d,]+)/i,
     /([\d.]+)\s*\(\s*([\d,]+)\s*\)\s*(?:reviews?|ratings?)?/i,
   ];
@@ -1602,13 +1602,4 @@ export async function executeScrapeJob(input: ExecuteScrapeJobInput): Promise<Ex
     }
   }
 }
-
-
-
-
-
-
-
-
-
 
