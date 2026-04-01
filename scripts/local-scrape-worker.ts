@@ -53,6 +53,9 @@ if (!AGENT_SHARED_SECRET) {
 }
 
 function requestStop() {
+  if (!stopRequested) {
+    console.log("[worker] stop requested");
+  }
   stopRequested = true;
 }
 
@@ -197,7 +200,8 @@ async function runOneJob(job: NonNullable<ClaimResponse["job"]>, existingDedupeK
   let jobFinished = false;
 
   const heartbeatTimer = setInterval(async () => {
-    if (jobFinished) {
+    if (jobFinished || stopRequested) {
+      cancelRequested = true;
       return;
     }
 
@@ -220,7 +224,17 @@ async function runOneJob(job: NonNullable<ClaimResponse["job"]>, existingDedupeK
   }, SCRAPE_TIMEOUT_MS);
 
   try {
+    if (stopRequested) {
+      cancelRequested = true;
+      return;
+    }
+
     await heartbeat(job.id);
+    if (stopRequested) {
+      cancelRequested = true;
+      return;
+    }
+
     const result = await executeScrapeJob({
       city: job.city,
       existingDedupeKeys,
@@ -231,14 +245,14 @@ async function runOneJob(job: NonNullable<ClaimResponse["job"]>, existingDedupeK
       persistLead: (lead: ScrapeLeadWriteInput) => sendLead(job.id, lead).then(() => undefined),
       radius: job.radius,
       sendEvent: (payload: Record<string, unknown>) => sendLog(job.id, payload),
-      shouldAbort: () => cancelRequested,
+      shouldAbort: () => cancelRequested || stopRequested,
     });
 
     if (timedOut) {
       throw new Error(`Scrape exceeded ${Math.round(SCRAPE_TIMEOUT_MS / 1000)}s timeout.`);
     }
 
-    if (result.aborted || cancelRequested) {
+    if (result.aborted || cancelRequested || stopRequested) {
       console.log(`[worker] job canceled: ${job.id}`);
       return;
     }
@@ -257,7 +271,7 @@ async function runOneJob(job: NonNullable<ClaimResponse["job"]>, existingDedupeK
       return;
     }
 
-    if (cancelRequested && !timedOut) {
+    if ((cancelRequested || stopRequested) && !timedOut) {
       console.log(`[worker] canceled while running ${job.id}`);
       return;
     }
