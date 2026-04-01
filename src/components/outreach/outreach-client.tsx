@@ -1,7 +1,16 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { CalendarClock, Filter, Search } from "lucide-react";
+import {
+  Brain,
+  CalendarClock,
+  Check,
+  CheckCheck,
+  Filter,
+  Loader2,
+  Search,
+  X,
+} from "lucide-react";
 
 import { OutreachEditorSheet, type OutreachEditableLead } from "@/components/outreach/outreach-editor-sheet";
 import { OutreachStatusBadge } from "@/components/outreach/outreach-status-badge";
@@ -38,11 +47,19 @@ function notePreview(notes: string | null) {
   return notes;
 }
 
-export function OutreachClient({ initialLeads }: { initialLeads: OutreachEditableLead[] }) {
+type OutreachClientProps = {
+  initialLeads: OutreachEditableLead[];
+  enableSelection?: boolean;
+  onEnrichRequested?: (leadIds: number[]) => void;
+};
+
+export function OutreachClient({ initialLeads, enableSelection = false, onEnrichRequested }: OutreachClientProps) {
   const { toast } = useToast();
   const [leads, setLeads] = useState<OutreachEditableLead[]>(initialLeads);
   const [filters, setFilters] = useState<OutreachFilter>(DEFAULT_FILTERS);
   const [savingLeadId, setSavingLeadId] = useState<number | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [enriching, setEnriching] = useState(false);
 
   const uniqueCities = useMemo(
     () => [...new Set(leads.map((lead) => lead.city).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
@@ -154,6 +171,33 @@ export function OutreachClient({ initialLeads }: { initialLeads: OutreachEditabl
     [handleSavedLead, toast],
   );
 
+  const toggleOne = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const allSelected = filteredLeads.length > 0 && filteredLeads.every((l) => selectedIds.has(l.id));
+
+  const toggleAll = () => {
+    if (allSelected) setSelectedIds(new Set());
+    else setSelectedIds(new Set(filteredLeads.map((l) => l.id)));
+  };
+
+  const handleEnrich = async () => {
+    if (selectedIds.size === 0 || !onEnrichRequested) return;
+    setEnriching(true);
+    try {
+      onEnrichRequested(Array.from(selectedIds));
+      setSelectedIds(new Set());
+    } finally {
+      setEnriching(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.2fr)_repeat(5,minmax(0,0.8fr))]">
@@ -236,17 +280,45 @@ export function OutreachClient({ initialLeads }: { initialLeads: OutreachEditabl
           <Filter className="h-3.5 w-3.5 text-cyan-400" />
           <span>{filteredLeads.length} outreach lead{filteredLeads.length === 1 ? "" : "s"} in view</span>
         </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={() => setFilters(DEFAULT_FILTERS)}
-          className="h-7 text-[11px] text-zinc-500 hover:text-white"
-        >
-          Reset Filters
-        </Button>
+        <div className="flex items-center gap-2">
+          {enableSelection && selectedIds.size > 0 && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={handleEnrich}
+              disabled={enriching}
+              className="h-7 gap-1.5 border border-purple-500/20 bg-purple-500/5 text-[11px] text-purple-300 hover:bg-purple-500/10"
+            >
+              {enriching ? <Loader2 className="h-3 w-3 animate-spin" /> : <Brain className="h-3 w-3" />}
+              Enrich Selected ({selectedIds.size})
+            </Button>
+          )}
+          {enableSelection && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={toggleAll}
+              className="h-7 gap-1 text-[11px] text-zinc-500 hover:text-white"
+            >
+              {allSelected ? <X className="h-3 w-3" /> : <CheckCheck className="h-3 w-3" />}
+              {allSelected ? "Deselect" : "Select All"}
+            </Button>
+          )}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => setFilters(DEFAULT_FILTERS)}
+            className="h-7 text-[11px] text-zinc-500 hover:text-white"
+          >
+            Reset Filters
+          </Button>
+        </div>
       </div>
 
+      {/* Mobile cards */}
       <div className="space-y-3 md:hidden">
         {filteredLeads.length === 0 ? (
           <div className="rounded-lg border border-white/[0.06] bg-black/20 px-4 py-10 text-center">
@@ -260,10 +332,24 @@ export function OutreachClient({ initialLeads }: { initialLeads: OutreachEditabl
           filteredLeads.map((lead) => (
             <div key={lead.id} className="rounded-xl border border-white/[0.06] bg-black/20 p-4 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
               <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 space-y-1">
-                  <div className="text-sm font-semibold text-white">{lead.businessName}</div>
-                  <div className="text-[11px] text-zinc-500">
-                    {lead.city} • {lead.niche}
+                <div className="flex items-start gap-2">
+                  {enableSelection && (
+                    <button
+                      onClick={() => toggleOne(lead.id)}
+                      className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-all ${
+                        selectedIds.has(lead.id)
+                          ? "border-purple-500 bg-purple-500 text-white"
+                          : "border-white/20 hover:border-purple-500/50"
+                      }`}
+                    >
+                      {selectedIds.has(lead.id) && <Check className="h-3 w-3" />}
+                    </button>
+                  )}
+                  <div className="min-w-0 space-y-1">
+                    <div className="text-sm font-semibold text-white">{lead.businessName}</div>
+                    <div className="text-[11px] text-zinc-500">
+                      {lead.city} • {lead.niche}
+                    </div>
                   </div>
                 </div>
                 <OutreachStatusBadge status={lead.outreachStatus} />
@@ -349,10 +435,25 @@ export function OutreachClient({ initialLeads }: { initialLeads: OutreachEditabl
         )}
       </div>
 
+      {/* Desktop table */}
       <div className="hidden rounded-lg border border-white/[0.06] bg-black/20 md:block">
         <Table>
           <TableHeader className="bg-black/40">
             <TableRow className="border-white/[0.06] hover:bg-transparent">
+              {enableSelection && (
+                <TableHead className="w-10">
+                  <button
+                    onClick={toggleAll}
+                    className={`flex h-5 w-5 items-center justify-center rounded border transition-all ${
+                      allSelected
+                        ? "border-purple-500 bg-purple-500 text-white"
+                        : "border-white/20 hover:border-purple-500/50"
+                    }`}
+                  >
+                    {allSelected && <Check className="h-3 w-3" />}
+                  </button>
+                </TableHead>
+              )}
               <TableHead className="text-xs font-bold text-zinc-400">Business</TableHead>
               <TableHead className="text-xs font-bold text-zinc-400">Contact</TableHead>
               <TableHead className="text-xs font-bold text-zinc-400">Status</TableHead>
@@ -367,7 +468,7 @@ export function OutreachClient({ initialLeads }: { initialLeads: OutreachEditabl
           <TableBody>
             {filteredLeads.length === 0 ? (
               <TableRow className="border-white/[0.04]">
-                <TableCell colSpan={9} className="whitespace-normal px-6 py-12 text-center">
+                <TableCell colSpan={enableSelection ? 10 : 9} className="whitespace-normal px-6 py-12 text-center">
                   <div className="mx-auto flex max-w-md flex-col items-center gap-2">
                     <CalendarClock className="h-8 w-8 text-zinc-700" />
                     <div className="text-sm font-semibold text-white">No outreach leads match these filters</div>
@@ -378,6 +479,20 @@ export function OutreachClient({ initialLeads }: { initialLeads: OutreachEditabl
             ) : (
               filteredLeads.map((lead) => (
                 <TableRow key={lead.id} className="border-white/[0.04] hover:bg-white/[0.02]">
+                  {enableSelection && (
+                    <TableCell className="align-top">
+                      <button
+                        onClick={() => toggleOne(lead.id)}
+                        className={`flex h-5 w-5 items-center justify-center rounded border transition-all ${
+                          selectedIds.has(lead.id)
+                            ? "border-purple-500 bg-purple-500 text-white"
+                            : "border-white/20 hover:border-purple-500/50"
+                        }`}
+                      >
+                        {selectedIds.has(lead.id) && <Check className="h-3 w-3" />}
+                      </button>
+                    </TableCell>
+                  )}
                   <TableCell className="whitespace-normal align-top">
                     <div className="min-w-[180px] space-y-1">
                       <div className="font-medium text-white">{lead.businessName}</div>

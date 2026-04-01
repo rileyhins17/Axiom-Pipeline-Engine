@@ -82,6 +82,8 @@ export type LeadRecord = {
   lastContactedAt: Date | null;
   nextFollowUpDue: Date | null;
   outreachNotes: string | null;
+  enrichedAt: Date | null;
+  enrichmentData: string | null;
   source: string | null;
   isArchived: boolean;
   createdAt: Date;
@@ -133,6 +135,34 @@ type UserRecord = {
   updatedAt: Date;
 };
 
+export type GmailConnectionRecord = {
+  id: string;
+  userId: string;
+  gmailAddress: string;
+  accessToken: string;
+  refreshToken: string;
+  tokenExpiresAt: Date;
+  scopes: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type OutreachEmailRecord = {
+  id: string;
+  leadId: number;
+  senderUserId: string;
+  senderEmail: string;
+  recipientEmail: string;
+  subject: string;
+  bodyHtml: string;
+  bodyPlain: string;
+  gmailMessageId: string | null;
+  gmailThreadId: string | null;
+  status: string;
+  errorMessage: string | null;
+  sentAt: Date;
+};
+
 type TableSpec<T extends Record<string, unknown>> = {
   autoIncrementId?: boolean;
   booleanFields: Set<keyof T>;
@@ -179,6 +209,24 @@ type PrismaLike = {
   };
   user: {
     update(args: MutationArgs): Promise<UserRecord>;
+  };
+  gmailConnection: {
+    create(args: CreateArgs): Promise<GmailConnectionRecord>;
+    delete(args: { where: WhereInput }): Promise<void>;
+    findUnique<S extends SelectMap<GmailConnectionRecord> | undefined = undefined>(
+      args: FindUniqueArgs<GmailConnectionRecord, S>,
+    ): Promise<Selected<GmailConnectionRecord, S> | null>;
+    update(args: MutationArgs): Promise<GmailConnectionRecord>;
+  };
+  outreachEmail: {
+    count(args?: CountArgs): Promise<number>;
+    create(args: CreateArgs): Promise<OutreachEmailRecord>;
+    findMany<S extends SelectMap<OutreachEmailRecord> | undefined = undefined>(
+      args?: FindManyArgs<OutreachEmailRecord, S>,
+    ): Promise<Array<Selected<OutreachEmailRecord, S>>>;
+    findFirst<S extends SelectMap<OutreachEmailRecord> | undefined = undefined>(
+      args?: FindManyArgs<OutreachEmailRecord, S>,
+    ): Promise<Selected<OutreachEmailRecord, S> | null>;
   };
 };
 
@@ -241,12 +289,14 @@ const leadTable: TableSpec<LeadRecord> = {
     "lastContactedAt",
     "nextFollowUpDue",
     "outreachNotes",
+    "enrichedAt",
+    "enrichmentData",
     "source",
     "isArchived",
     "createdAt",
     "lastUpdated",
   ],
-  dateFields: new Set(["createdAt", "lastUpdated", "firstContactedAt", "lastContactedAt", "nextFollowUpDue"]),
+  dateFields: new Set(["createdAt", "lastUpdated", "firstContactedAt", "lastContactedAt", "nextFollowUpDue", "enrichedAt"]),
   idField: "id",
   integerFields: new Set(["id", "reviewCount", "leadScore", "axiomScore"]),
   stringFields: new Set([
@@ -280,6 +330,7 @@ const leadTable: TableSpec<LeadRecord> = {
     "outreachStatus",
     "outreachChannel",
     "outreachNotes",
+    "enrichmentData",
     "source",
   ]),
   tableName: "Lead",
@@ -337,6 +388,34 @@ const userTable: TableSpec<UserRecord> = {
   stringFields: new Set(),
   tableName: "User",
   updatedAtField: "updatedAt",
+};
+
+const gmailConnectionTable: TableSpec<GmailConnectionRecord> = {
+  booleanFields: new Set(),
+  columns: [
+    "id", "userId", "gmailAddress", "accessToken", "refreshToken",
+    "tokenExpiresAt", "scopes", "createdAt", "updatedAt",
+  ],
+  dateFields: new Set(["tokenExpiresAt", "createdAt", "updatedAt"]),
+  idField: "id",
+  integerFields: new Set(),
+  stringFields: new Set(),
+  tableName: "GmailConnection",
+  updatedAtField: "updatedAt",
+};
+
+const outreachEmailTable: TableSpec<OutreachEmailRecord> = {
+  booleanFields: new Set(),
+  columns: [
+    "id", "leadId", "senderUserId", "senderEmail", "recipientEmail",
+    "subject", "bodyHtml", "bodyPlain", "gmailMessageId", "gmailThreadId",
+    "status", "errorMessage", "sentAt",
+  ],
+  dateFields: new Set(["sentAt"]),
+  idField: "id",
+  integerFields: new Set(["leadId"]),
+  stringFields: new Set(),
+  tableName: "OutreachEmail",
 };
 
 function quoteIdentifier(identifier: string) {
@@ -864,6 +943,8 @@ function createPrismaLike(): PrismaLike {
     rateLimitWindow: createModel(rateLimitWindowTable),
     scrapeRun: createModel(scrapeRunTable),
     user: createModel(userTable),
+    gmailConnection: createModel(gmailConnectionTable),
+    outreachEmail: createModel(outreachEmailTable),
   };
 }
 
