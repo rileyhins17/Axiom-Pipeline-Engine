@@ -1,5 +1,3 @@
-import "server-only";
-
 import { getServerEnv } from "@/lib/env";
 import { getPrisma } from "@/lib/prisma";
 

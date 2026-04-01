@@ -1,17 +1,19 @@
 import type { LeadRecord as Lead } from "../prisma";
 import { strict as assert } from "node:assert";
 import test from "node:test";
-import { escapeCsv, generateCsv, sortLeadsDeterministic } from "./csv";
+import { escapeCsv, formatJsonFlags, formatPhoneDisplay, generateCsv, sortLeadsDeterministic } from "./csv";
 import { exportPresets } from "./export-presets";
 
 test("CSV Exporter Tests", async (t) => {
     await t.test("verify header order EXACTLY for call_sheet preset", () => {
         const preset = exportPresets.call_sheet;
         const expectedHeaders = [
-            "Tier", "Axiom Score", "Company", "Niche", "City", "Phone", "Email", "Contact Quality",
-            "Website Status", "Website", "Pain Summary", "Pain 1", "Pain 2", "Pain 3",
-            "Call Opener (Short)", "Follow-Up (Short)", "Website Grade", "Top Fix 1", "Top Fix 2",
-            "Top Fix 3", "Call Opener (Full)", "Follow-Up (Full)", "Source", "Last Updated", "Lead ID"
+            "Tier", "Axiom Score", "Company", "Niche", "Category", "City", "Contact Name", "Phone", "Email",
+            "Contact Quality", "Email Type", "Email Confidence", "Email Flags", "Phone Confidence", "Phone Flags",
+            "Website Status", "Website URL", "Website Domain", "Social Link", "Pain Summary", "Pain 1", "Pain 2",
+            "Pain 3", "Call Opener (Short)", "Follow-Up (Short)", "Website Grade", "Disqualify Reason",
+            "Disqualifiers", "Top Fix 1", "Top Fix 2", "Top Fix 3", "Call Opener (Full)", "Follow-Up (Full)",
+            "Source", "Last Updated", "Lead ID"
         ];
 
         assert.deepEqual(
@@ -122,10 +124,17 @@ test("CSV Exporter Formatting Tests", async (t) => {
         assert.ok(cqCol);
 
         const l1 = { email: "a@b.com", emailConfidence: 0.8, emailType: "owner", phone: "123", phoneConfidence: 0.9 } as Lead;
-        assert.equal(cqCol.resolve(l1), "E:0.8 (owner) P:0.9");
+        assert.equal(cqCol.resolve(l1), "Email owner 0.80 | Phone 0.90");
 
         const l2 = { email: null, phone: null } as Lead;
-        assert.equal(cqCol.resolve(l2), "E:- P:-");
+        assert.equal(cqCol.resolve(l2), "Email none n/a | Phone none n/a");
+    });
+
+    await t.test("Phone display and flag formatting are spreadsheet-safe", () => {
+        assert.equal(formatPhoneDisplay("12266471538"), "+1 (226) 647-1538");
+        assert.equal(formatPhoneDisplay("(519) 555-1234"), "(519) 555-1234");
+        assert.equal(formatJsonFlags(JSON.stringify(["free_provider", "personal_inbox"])), "free_provider; personal_inbox");
+        assert.equal(formatJsonFlags(JSON.stringify([])), "clean");
     });
 });
 

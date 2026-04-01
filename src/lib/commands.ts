@@ -6,7 +6,7 @@
  */
 import {
     LayoutDashboard, Target, Database, Settings, Globe, Mail, Shield,
-    Download, Play, Search, Keyboard, Star, Filter, Zap, FileText,
+    Download, Play, Search, Keyboard, Star, Filter, Zap, FileText, MessageSquareText,
     type LucideIcon,
 } from "lucide-react";
 
@@ -88,6 +88,16 @@ export const COMMANDS: Command[] = [
         shortcut: "⌘4",
         keywords: ["config", "preferences", "performance"],
         action: { type: "navigate", path: "/settings" },
+    },
+    {
+        id: "nav-outreach",
+        category: "navigate",
+        label: "Outreach Pipeline",
+        description: "Manage contacted leads and follow-ups",
+        icon: MessageSquareText,
+        shortcut: "âŒ˜6",
+        keywords: ["outreach", "pipeline", "follow-up", "crm", "contacted"],
+        action: { type: "navigate", path: "/outreach" },
     },
 
     // ── Dossier ──

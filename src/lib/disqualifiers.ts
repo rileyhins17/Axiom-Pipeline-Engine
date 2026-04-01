@@ -1,11 +1,11 @@
 /**
  * Disqualifier Engine
- * 
- * Identifies leads that are NOT worth pursuing and auto-archives them.
+ *
+ * Identifies leads that are not worth pursuing and auto-archives them.
  * Returns a list of disqualification reasons.
  */
 
-import type { WebsiteAssessment, PainSignal } from "./axiom-scoring";
+import type { PainSignal, WebsiteAssessment } from "./axiom-scoring";
 
 export interface DisqualifyResult {
     disqualified: boolean;
@@ -13,19 +13,13 @@ export interface DisqualifyResult {
     primaryReason: string | null;
 }
 
-// Industries with low ROI for Axiom at $2.5k-$7.5k price point
+// Industries with low ROI for Axiom at the current price point.
 const LOW_ROI_INDUSTRIES = [
     "food truck", "lemonade", "babysit",
     "garage sale", "flea market", "thrift",
     "tutoring", "freelanc",
     "nonprofit", "non-profit", "charity",
     "church", "worship",
-];
-
-// Franchise / corporate indicators
-const FRANCHISE_INDICATORS = [
-    "franchise", "franchised", "©", "all rights reserved",
-    "corporate headquarters", "national brand",
 ];
 
 /**
@@ -47,42 +41,37 @@ export function checkDisqualifiers(input: {
 }): DisqualifyResult {
     const reasons: string[] = [];
     const lower = `${input.niche} ${input.category} ${input.businessName}`.toLowerCase();
-    const contentLower = input.websiteContent.toLowerCase();
-
-    // 1. Business appears closed / no activity
+    // 1. Business appears closed / no activity.
     if (input.reviewCount === 0 && input.websiteStatus === "MISSING") {
-        reasons.push("Business appears inactive — zero reviews and no web presence");
+        reasons.push("Business appears inactive - zero reviews and no web presence");
     }
 
-    // 2. Industry low ROI
-    const isLowROI = LOW_ROI_INDUSTRIES.some(ind => lower.includes(ind));
+    // 2. Industry low ROI.
+    const isLowROI = LOW_ROI_INDUSTRIES.some((ind) => lower.includes(ind));
     if (isLowROI) {
         reasons.push(`Industry low ROI for Axiom at current price point (${input.niche})`);
     }
 
-    // 3. Corporate franchise — local decision-maker unclear
-    const isFranchise = FRANCHISE_INDICATORS.some(ind => contentLower.includes(ind));
-    if (isFranchise && !contentLower.includes("locally owned") && !contentLower.includes("independently owned")) {
-        reasons.push("Corporate franchise site — local decision-maker unclear");
-    }
-
-    // 4. Website already modern/high-performing
+    // 3. Website already modern/high-performing.
     if (input.assessment && input.websiteStatus === "ACTIVE") {
-        const totalRisk = input.assessment.speedRisk + input.assessment.conversionRisk +
-            input.assessment.trustRisk + input.assessment.seoRisk;
+        const totalRisk =
+            input.assessment.speedRisk +
+            input.assessment.conversionRisk +
+            input.assessment.trustRisk +
+            input.assessment.seoRisk;
         if (totalRisk <= 4 && input.assessment.overallGrade === "A") {
-            reasons.push("Website already modern/high-performing with strong funnel — no pain to solve");
+            reasons.push("Website already modern/high-performing with strong funnel - no pain to solve");
         }
     }
 
-    // 5. Very low rating — business has bigger problems than a website
+    // 4. Very low rating - business has bigger problems than a website.
     if (input.rating > 0 && input.rating < 2.0 && input.reviewCount >= 10) {
-        reasons.push(`Very low rating (${input.rating}/5 from ${input.reviewCount} reviews) — business has fundamental service issues`);
+        reasons.push(`Very low rating (${input.rating}/5 from ${input.reviewCount} reviews) - business has fundamental service issues`);
     }
 
-    // 6. Tier D auto-archive
+    // 5. Tier D auto-archive.
     if (input.tier === "D") {
-        reasons.push(`Axiom score too low (${input.axiomScore}/100 = Tier D) — not worth call time`);
+        reasons.push(`Axiom score too low (${input.axiomScore}/100 = Tier D) - not worth call time`);
     }
 
     const disqualified = reasons.length > 0;

@@ -1,5 +1,3 @@
-import "server-only";
-
 import { getDatabase as getDbHandle } from "@/lib/cloudflare";
 import type { D1DatabaseLike } from "@/lib/cloudflare";
 
@@ -53,6 +51,8 @@ export type LeadRecord = {
   phone: string | null;
   email: string | null;
   socialLink: string | null;
+  websiteUrl: string | null;
+  websiteDomain: string | null;
   rating: number | null;
   reviewCount: number | null;
   websiteStatus: string | null;
@@ -71,9 +71,17 @@ export type LeadRecord = {
   dedupeMatchedBy: string | null;
   emailType: string | null;
   emailConfidence: number | null;
+  emailFlags: string | null;
   phoneConfidence: number | null;
+  phoneFlags: string | null;
   disqualifiers: string | null;
   disqualifyReason: string | null;
+  outreachStatus: string | null;
+  outreachChannel: string | null;
+  firstContactedAt: Date | null;
+  lastContactedAt: Date | null;
+  nextFollowUpDue: Date | null;
+  outreachNotes: string | null;
   source: string | null;
   isArchived: boolean;
   createdAt: Date;
@@ -132,6 +140,7 @@ type TableSpec<T extends Record<string, unknown>> = {
   dateFields: Set<keyof T>;
   idField: keyof T;
   integerFields: Set<keyof T>;
+  stringFields: Set<keyof T>;
   tableName: string;
   updatedAtField?: keyof T;
 };
@@ -185,6 +194,9 @@ const globalForPrisma = globalThis as {
   axiomPrisma?: PrismaLike;
 };
 
+const tableColumnsCache = new Map<string, string[]>();
+let leadSchemaEnsurePromise: Promise<void> | null = null;
+
 const leadTable: TableSpec<LeadRecord> = {
   autoIncrementId: true,
   booleanFields: new Set(["isArchived"]),
@@ -198,6 +210,8 @@ const leadTable: TableSpec<LeadRecord> = {
     "phone",
     "email",
     "socialLink",
+    "websiteUrl",
+    "websiteDomain",
     "rating",
     "reviewCount",
     "websiteStatus",
@@ -216,17 +230,58 @@ const leadTable: TableSpec<LeadRecord> = {
     "dedupeMatchedBy",
     "emailType",
     "emailConfidence",
+    "emailFlags",
     "phoneConfidence",
+    "phoneFlags",
     "disqualifiers",
     "disqualifyReason",
+    "outreachStatus",
+    "outreachChannel",
+    "firstContactedAt",
+    "lastContactedAt",
+    "nextFollowUpDue",
+    "outreachNotes",
     "source",
     "isArchived",
     "createdAt",
     "lastUpdated",
   ],
-  dateFields: new Set(["createdAt", "lastUpdated"]),
+  dateFields: new Set(["createdAt", "lastUpdated", "firstContactedAt", "lastContactedAt", "nextFollowUpDue"]),
   idField: "id",
   integerFields: new Set(["id", "reviewCount", "leadScore", "axiomScore"]),
+  stringFields: new Set([
+    "businessName",
+    "niche",
+    "city",
+    "category",
+    "address",
+    "phone",
+    "email",
+    "socialLink",
+    "websiteUrl",
+    "websiteDomain",
+    "websiteStatus",
+    "contactName",
+    "tacticalNote",
+    "websiteGrade",
+    "axiomTier",
+    "scoreBreakdown",
+    "painSignals",
+    "callOpener",
+    "followUpQuestion",
+    "axiomWebsiteAssessment",
+    "dedupeKey",
+    "dedupeMatchedBy",
+    "emailType",
+    "emailFlags",
+    "phoneFlags",
+    "disqualifiers",
+    "disqualifyReason",
+    "outreachStatus",
+    "outreachChannel",
+    "outreachNotes",
+    "source",
+  ]),
   tableName: "Lead",
 };
 
@@ -236,6 +291,7 @@ const auditEventTable: TableSpec<AuditEventRecord> = {
   dateFields: new Set(["createdAt"]),
   idField: "id",
   integerFields: new Set(),
+  stringFields: new Set(),
   tableName: "AuditEvent",
 };
 
@@ -245,6 +301,7 @@ const rateLimitWindowTable: TableSpec<RateLimitWindowRecord> = {
   dateFields: new Set(["windowStart", "updatedAt"]),
   idField: "id",
   integerFields: new Set(["count"]),
+  stringFields: new Set(),
   tableName: "RateLimitWindow",
   updatedAtField: "updatedAt",
 };
@@ -255,6 +312,7 @@ const scrapeRunTable: TableSpec<ScrapeRunRecord> = {
   dateFields: new Set(["startedAt", "finishedAt"]),
   idField: "id",
   integerFields: new Set(),
+  stringFields: new Set(),
   tableName: "ScrapeRun",
 };
 
@@ -276,6 +334,7 @@ const userTable: TableSpec<UserRecord> = {
   dateFields: new Set(["banExpires", "createdAt", "updatedAt"]),
   idField: "id",
   integerFields: new Set(),
+  stringFields: new Set(),
   tableName: "User",
   updatedAtField: "updatedAt",
 };
@@ -286,6 +345,18 @@ function quoteIdentifier(identifier: string) {
 
 function getDatabase(): D1DatabaseLike {
   return getDbHandle();
+}
+
+async function getExistingTableColumns(tableName: string): Promise<string[]> {
+  const cached = tableColumnsCache.get(tableName);
+  if (cached) {
+    return cached;
+  }
+
+  const rows = await allRows<Record<string, unknown>>(`PRAGMA table_info(${quoteIdentifier(tableName)})`);
+  const columns = rows.map((row) => String(row.name || "")).filter(Boolean);
+  tableColumnsCache.set(tableName, columns);
+  return columns;
 }
 
 function normalizeDateString(value: string) {
@@ -329,11 +400,48 @@ function serializeValue(value: unknown) {
     return value.toISOString();
   }
 
+  if (typeof value === "string") {
+    return value.trim();
+  }
+
   if (typeof value === "boolean") {
     return value ? 1 : 0;
   }
 
   return value;
+}
+
+async function ensureLeadQualityColumns() {
+  if (!leadSchemaEnsurePromise) {
+    leadSchemaEnsurePromise = (async () => {
+      const rows = await allRows<Record<string, unknown>>(`PRAGMA table_info("Lead")`);
+      const existing = new Set(rows.map((row) => String(row.name || "")));
+      const migrations: Array<[string, string]> = [
+        ["websiteUrl", "TEXT"],
+        ["websiteDomain", "TEXT"],
+        ["emailFlags", "TEXT"],
+        ["phoneFlags", "TEXT"],
+        ["outreachStatus", `TEXT NOT NULL DEFAULT 'NOT_CONTACTED'`],
+        ["outreachChannel", "TEXT"],
+        ["firstContactedAt", "DATETIME"],
+        ["lastContactedAt", "DATETIME"],
+        ["nextFollowUpDue", "DATETIME"],
+        ["outreachNotes", "TEXT"],
+      ];
+
+      for (const [column, sqlType] of migrations) {
+        if (!existing.has(column)) {
+          await runStatement(`ALTER TABLE "Lead" ADD COLUMN "${column}" ${sqlType}`);
+          tableColumnsCache.delete("Lead");
+        }
+      }
+    })().catch((error) => {
+      leadSchemaEnsurePromise = null;
+      throw error;
+    });
+  }
+
+  await leadSchemaEnsurePromise;
 }
 
 function generateId() {
@@ -365,6 +473,11 @@ function hydrateRow<T extends Record<string, unknown>>(
       continue;
     }
 
+    if (spec.stringFields.has(column)) {
+      hydrated[key] = rawValue === null || rawValue === undefined ? null : String(rawValue);
+      continue;
+    }
+
     if (typeof rawValue === "number") {
       hydrated[key] = rawValue;
       continue;
@@ -377,15 +490,15 @@ function hydrateRow<T extends Record<string, unknown>>(
 }
 
 function buildSelectClause<T extends Record<string, unknown>, S extends SelectMap<T> | undefined>(
-  spec: TableSpec<T>,
+  columns: Array<keyof T>,
   select?: S,
 ) {
   if (!select) {
-    return spec.columns.map((column) => quoteIdentifier(column as string)).join(", ");
+    return columns.map((column) => quoteIdentifier(column as string)).join(", ");
   }
 
-  const selectedColumns = spec.columns.filter((column) => select[column]);
-  const finalColumns = selectedColumns.length > 0 ? selectedColumns : spec.columns;
+  const selectedColumns = columns.filter((column) => select[column]);
+  const finalColumns = selectedColumns.length > 0 ? selectedColumns : columns;
   return finalColumns.map((column) => quoteIdentifier(column as string)).join(", ");
 }
 
@@ -573,6 +686,9 @@ async function runStatement(query: string, params: unknown[] = []) {
 function createModel<T extends Record<string, unknown>>(spec: TableSpec<T>) {
   return {
     async count(args?: CountArgs) {
+      if (spec.tableName === "Lead") {
+        await ensureLeadQualityColumns();
+      }
       const params: unknown[] = [];
       const whereClause = buildWhereClause(args?.where, params);
       const query = `SELECT COUNT(*) as count FROM ${quoteIdentifier(spec.tableName)}${whereClause ? ` WHERE ${whereClause}` : ""}`;
@@ -581,8 +697,12 @@ function createModel<T extends Record<string, unknown>>(spec: TableSpec<T>) {
     },
 
     async create(args: CreateArgs) {
+      if (spec.tableName === "Lead") {
+        await ensureLeadQualityColumns();
+      }
       const now = new Date();
       const data = { ...args.data } as Record<string, unknown>;
+      const existingColumns = new Set(await getExistingTableColumns(spec.tableName));
 
       if (!spec.autoIncrementId && data[spec.idField as string] === undefined) {
         data[spec.idField as string] = generateId();
@@ -592,7 +712,12 @@ function createModel<T extends Record<string, unknown>>(spec: TableSpec<T>) {
         data[spec.updatedAtField as string] = now;
       }
 
-      const entries = Object.entries(data).filter(([, value]) => value !== undefined);
+      const entries = Object.entries(data).filter(
+        ([key, value]) => value !== undefined && existingColumns.has(key),
+      );
+      if (entries.length === 0) {
+        throw new Error(`No writable columns found for ${spec.tableName}.`);
+      }
       const columns = entries.map(([key]) => quoteIdentifier(key)).join(", ");
       const placeholders = entries.map(() => "?").join(", ");
       const params = entries.map(([, value]) => serializeValue(value));
@@ -625,6 +750,9 @@ function createModel<T extends Record<string, unknown>>(spec: TableSpec<T>) {
     },
 
     async findFirst<S extends SelectMap<T> | undefined = undefined>(args?: FindManyArgs<T, S>) {
+      if (spec.tableName === "Lead") {
+        await ensureLeadQualityColumns();
+      }
       const rows = await this.findMany({
         ...args,
         take: 1,
@@ -633,9 +761,13 @@ function createModel<T extends Record<string, unknown>>(spec: TableSpec<T>) {
     },
 
     async findMany<S extends SelectMap<T> | undefined = undefined>(args?: FindManyArgs<T, S>) {
+      if (spec.tableName === "Lead") {
+        await ensureLeadQualityColumns();
+      }
       const params: unknown[] = [];
       const whereClause = buildWhereClause(args?.where, params);
-      const selectClause = buildSelectClause(spec, args?.select);
+      const availableColumns = (await getExistingTableColumns(spec.tableName)) as Array<keyof T>;
+      const selectClause = buildSelectClause(availableColumns, args?.select);
       const orderByClause = buildOrderByClause(args?.orderBy as Record<string, SortDirection> | undefined);
       const limitClause = args?.take ? " LIMIT ?" : "";
 
@@ -654,21 +786,36 @@ function createModel<T extends Record<string, unknown>>(spec: TableSpec<T>) {
     },
 
     async findUnique<S extends SelectMap<T> | undefined = undefined>(args: FindUniqueArgs<T, S>) {
+      if (spec.tableName === "Lead") {
+        await ensureLeadQualityColumns();
+      }
       const params: unknown[] = [];
       const whereClause = buildWhereClause(args.where, params);
       if (!whereClause) {
         throw new Error(`Refusing to query ${spec.tableName} without a where clause.`);
       }
 
-      const selectClause = buildSelectClause(spec, args.select);
+      const availableColumns = (await getExistingTableColumns(spec.tableName)) as Array<keyof T>;
+      const selectClause = buildSelectClause(availableColumns, args.select);
       const query = `SELECT ${selectClause} FROM ${quoteIdentifier(spec.tableName)} WHERE ${whereClause} LIMIT 1`;
       const row = await firstRow(query, params);
       return row ? projectSelection(hydrateRow(spec, row as DatabaseRow), args.select) : null;
     },
 
     async update(args: MutationArgs) {
+      if (spec.tableName === "Lead") {
+        await ensureLeadQualityColumns();
+      }
       const params: unknown[] = [];
-      const setClause = buildUpdateClause(args.data, params, spec.updatedAtField as string | undefined);
+      const existingColumns = new Set(await getExistingTableColumns(spec.tableName));
+      const filteredData = Object.fromEntries(
+        Object.entries(args.data).filter(([key, value]) => value !== undefined && existingColumns.has(key)),
+      );
+      if (Object.keys(filteredData).length === 0) {
+        return this.findUnique({ where: args.where }) as Promise<T>;
+      }
+
+      const setClause = buildUpdateClause(filteredData, params, spec.updatedAtField as string | undefined);
       const whereClause = buildWhereClause(args.where, params);
 
       if (!whereClause) {
@@ -684,8 +831,19 @@ function createModel<T extends Record<string, unknown>>(spec: TableSpec<T>) {
     },
 
     async updateMany(args: UpdateManyArgs) {
+      if (spec.tableName === "Lead") {
+        await ensureLeadQualityColumns();
+      }
       const params: unknown[] = [];
-      const setClause = buildUpdateClause(args.data, params, spec.updatedAtField as string | undefined);
+      const existingColumns = new Set(await getExistingTableColumns(spec.tableName));
+      const filteredData = Object.fromEntries(
+        Object.entries(args.data).filter(([key, value]) => value !== undefined && existingColumns.has(key)),
+      );
+      if (Object.keys(filteredData).length === 0) {
+        return { count: 0 };
+      }
+
+      const setClause = buildUpdateClause(filteredData, params, spec.updatedAtField as string | undefined);
       const whereClause = buildWhereClause(args.where, params);
       const result = await runStatement(
         `UPDATE ${quoteIdentifier(spec.tableName)} SET ${setClause}${whereClause ? ` WHERE ${whereClause}` : ""}`,

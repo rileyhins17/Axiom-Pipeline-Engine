@@ -64,6 +64,7 @@ export async function GET(request: NextRequest) {
         websiteStatus: true,
         phone: true,
         email: true,
+        contactName: true,
         emailType: true,
         emailConfidence: true,
         phoneConfidence: true,
@@ -78,6 +79,12 @@ export async function GET(request: NextRequest) {
         source: true,
         rating: true,
         reviewCount: true,
+        outreachStatus: true,
+        outreachChannel: true,
+        firstContactedAt: true,
+        lastContactedAt: true,
+        nextFollowUpDue: true,
+        outreachNotes: true,
       },
     });
 

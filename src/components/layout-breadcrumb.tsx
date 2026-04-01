@@ -1,12 +1,14 @@
 "use client"
 import { usePathname } from "next/navigation"
 import Link from "next/link"
-import { ChevronRight, LayoutDashboard, Target, Database, Settings } from "lucide-react"
+import { ChevronRight, LayoutDashboard, Target, Database, Settings, MessageSquareText, Zap } from "lucide-react"
 
 const routeMap: Record<string, { label: string; icon: any }> = {
     "/dashboard": { label: "Dashboard", icon: LayoutDashboard },
     "/hunt": { label: "The Hunt", icon: Target },
     "/vault": { label: "The Vault", icon: Database },
+    "/triage": { label: "Triage", icon: Zap },
+    "/outreach": { label: "Outreach", icon: MessageSquareText },
     "/settings": { label: "Settings", icon: Settings },
 }
 

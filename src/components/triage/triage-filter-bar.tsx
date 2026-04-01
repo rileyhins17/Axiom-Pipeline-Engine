@@ -1,7 +1,7 @@
 "use client";
 import { cn } from "@/lib/utils";
-import { type TriageFilters, DEFAULT_FILTERS } from "@/lib/ui/triage-store";
-import { SlidersHorizontal, RotateCcw, HelpCircle, ListChecks, Globe, Mail, Phone, Star } from "lucide-react";
+import { type TriageFilters } from "@/lib/ui/triage-store";
+import { SlidersHorizontal, RotateCcw, HelpCircle, ListChecks, Globe, Mail, Phone } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface TriageFilterBarProps {
@@ -27,7 +27,7 @@ export function TriageFilterBar({
 }: TriageFilterBarProps) {
     const toggleTier = (tier: string) => {
         const tiers = filters.tiers.includes(tier)
-            ? filters.tiers.filter(t => t !== tier)
+            ? filters.tiers.filter((t) => t !== tier)
             : [...filters.tiers, tier];
         onFiltersChange({ ...filters, tiers: tiers.length > 0 ? tiers : [tier] });
     };
@@ -41,15 +41,14 @@ export function TriageFilterBar({
     };
 
     return (
-        <div className="glass-ultra rounded-xl px-4 py-3 flex items-center gap-3 flex-wrap">
+        <div className="glass-ultra rounded-xl p-3 space-y-3 md:flex md:flex-wrap md:items-center md:gap-3 md:px-4 md:py-3 md:space-y-0">
             {/* Title + Stats */}
-            <div className="flex items-center gap-3 mr-2">
+            <div className="flex items-start justify-between gap-3 md:mr-2 md:items-center">
                 <div className="flex items-center gap-2">
                     <SlidersHorizontal className="w-4 h-4 text-emerald-400" />
                     <span className="text-xs font-bold text-white uppercase tracking-wider">Triage</span>
                 </div>
-                <div className="h-4 w-px bg-white/[0.06]" />
-                <div className="flex items-center gap-3 text-[10px] font-mono">
+                <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px] font-mono sm:grid-cols-4 md:flex md:items-center md:gap-3">
                     <span className="text-zinc-500">{stats.remaining} left</span>
                     <span className="text-emerald-400">{stats.kept} kept</span>
                     <span className="text-red-400/70">{stats.archived} archived</span>
@@ -57,16 +56,16 @@ export function TriageFilterBar({
                 </div>
             </div>
 
-            <div className="h-4 w-px bg-white/[0.06]" />
+            <div className="hidden h-4 w-px bg-white/[0.06] md:block" />
 
             {/* Tier pills */}
-            <div className="flex items-center gap-1">
-                {ALL_TIERS.map(tier => (
+            <div className="flex flex-wrap gap-1">
+                {ALL_TIERS.map((tier) => (
                     <button
                         key={tier}
                         onClick={() => toggleTier(tier)}
                         className={cn(
-                            "text-[10px] font-mono font-bold px-2 py-0.5 rounded border transition-all duration-150",
+                            "rounded border px-2 py-0.5 text-[10px] font-mono font-bold transition-all duration-150",
                             filters.tiers.includes(tier)
                                 ? TIER_COLORS[tier]
                                 : "border-white/[0.04] text-zinc-700 hover:text-zinc-400"
@@ -77,18 +76,18 @@ export function TriageFilterBar({
                 ))}
             </div>
 
-            <div className="h-4 w-px bg-white/[0.06]" />
+            <div className="hidden h-4 w-px bg-white/[0.06] md:block" />
 
             {/* Toggle pills */}
-            <div className="flex items-center gap-1.5">
+            <div className="grid grid-cols-2 gap-1.5 md:flex md:items-center md:gap-1.5">
                 <Tooltip>
                     <TooltipTrigger asChild>
                         <button
                             onClick={() => toggleBool("noWebsite")}
                             className={cn(
-                                "flex items-center gap-1 text-[10px] px-2 py-1 rounded-md border transition-all",
+                                "flex w-full items-center justify-center gap-1 rounded-md border px-2 py-1 text-[10px] transition-all",
                                 filters.noWebsite
-                                    ? "bg-red-400/10 text-red-400 border-red-400/20"
+                                    ? "border-red-400/20 bg-red-400/10 text-red-400"
                                     : "border-white/[0.04] text-zinc-600 hover:text-zinc-300"
                             )}
                         >
@@ -103,9 +102,9 @@ export function TriageFilterBar({
                         <button
                             onClick={() => toggleBool("hasEmail")}
                             className={cn(
-                                "flex items-center gap-1 text-[10px] px-2 py-1 rounded-md border transition-all",
+                                "flex w-full items-center justify-center gap-1 rounded-md border px-2 py-1 text-[10px] transition-all",
                                 filters.hasEmail
-                                    ? "bg-cyan-400/10 text-cyan-400 border-cyan-400/20"
+                                    ? "border-cyan-400/20 bg-cyan-400/10 text-cyan-400"
                                     : "border-white/[0.04] text-zinc-600 hover:text-zinc-300"
                             )}
                         >
@@ -120,9 +119,9 @@ export function TriageFilterBar({
                         <button
                             onClick={() => toggleBool("hasPhone")}
                             className={cn(
-                                "flex items-center gap-1 text-[10px] px-2 py-1 rounded-md border transition-all",
+                                "flex w-full items-center justify-center gap-1 rounded-md border px-2 py-1 text-[10px] transition-all",
                                 filters.hasPhone
-                                    ? "bg-amber-400/10 text-amber-400 border-amber-400/20"
+                                    ? "border-amber-400/20 bg-amber-400/10 text-amber-400"
                                     : "border-white/[0.04] text-zinc-600 hover:text-zinc-300"
                             )}
                         >
@@ -135,9 +134,9 @@ export function TriageFilterBar({
                 {/* Min rating */}
                 <select
                     value={filters.minRating}
-                    onChange={e => setMinRating(parseFloat(e.target.value))}
+                    onChange={(e) => setMinRating(parseFloat(e.target.value))}
                     className={cn(
-                        "text-[10px] px-2 py-1 rounded-md border bg-transparent outline-none cursor-pointer transition-all appearance-none",
+                        "w-full appearance-none rounded-md border bg-transparent px-2 py-1 text-[10px] outline-none cursor-pointer transition-all",
                         filters.minRating > 0
                             ? "border-amber-400/20 text-amber-400"
                             : "border-white/[0.04] text-zinc-600"
@@ -152,17 +151,17 @@ export function TriageFilterBar({
             </div>
 
             {/* Right side buttons */}
-            <div className="ml-auto flex items-center gap-2">
+            <div className="grid grid-cols-3 gap-2 md:ml-auto md:flex md:items-center md:gap-2">
                 <Tooltip>
                     <TooltipTrigger asChild>
                         <button
                             onClick={onOpenCallList}
-                            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-medium border border-emerald-500/20 text-emerald-400 bg-emerald-500/5 hover:bg-emerald-500/10 transition-all"
+                            className="flex items-center justify-center gap-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-2.5 py-2 text-[10px] font-medium text-emerald-400 transition-all hover:bg-emerald-500/10"
                         >
                             <ListChecks className="w-3.5 h-3.5" />
                             Call List
                             {stats.kept > 0 && (
-                                <span className="ml-0.5 px-1.5 py-0.5 rounded-full bg-emerald-500/30 text-[9px] font-bold">
+                                <span className="ml-0.5 rounded-full bg-emerald-500/30 px-1.5 py-0.5 text-[9px] font-bold">
                                     {stats.kept}
                                 </span>
                             )}
@@ -175,7 +174,7 @@ export function TriageFilterBar({
                     <TooltipTrigger asChild>
                         <button
                             onClick={onResetSession}
-                            className="p-1.5 rounded-lg border border-white/[0.04] text-zinc-600 hover:text-white hover:border-white/[0.08] transition-all"
+                            className="flex items-center justify-center rounded-lg border border-white/[0.04] p-2 text-zinc-600 transition-all hover:border-white/[0.08] hover:text-white"
                         >
                             <RotateCcw className="w-3.5 h-3.5" />
                         </button>
@@ -187,7 +186,7 @@ export function TriageFilterBar({
                     <TooltipTrigger asChild>
                         <button
                             onClick={onOpenHelp}
-                            className="p-1.5 rounded-lg border border-white/[0.04] text-zinc-600 hover:text-white hover:border-white/[0.08] transition-all"
+                            className="flex items-center justify-center rounded-lg border border-white/[0.04] p-2 text-zinc-600 transition-all hover:border-white/[0.08] hover:text-white"
                         >
                             <HelpCircle className="w-3.5 h-3.5" />
                         </button>

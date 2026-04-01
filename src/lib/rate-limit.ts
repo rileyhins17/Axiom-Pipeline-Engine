@@ -1,5 +1,3 @@
-import "server-only";
-
 import { APIError } from "better-auth";
 
 import { getPrisma } from "@/lib/prisma";

@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { BrandMark } from "@/components/brand-mark";
 import { authClient } from "@/lib/auth-client";
 
 function SignInForm() {
@@ -49,7 +50,11 @@ function SignInForm() {
 
   return (
     <div className="min-h-[calc(100vh-6rem)] flex items-center justify-center">
-      <Card className="w-full max-w-md glass-strong border-white/10">
+      <div className="w-full max-w-md space-y-4">
+        <div className="flex justify-center">
+          <BrandMark className="w-full max-w-[320px] px-4 py-3" imageClassName="h-12" />
+        </div>
+        <Card className="w-full glass-strong border-white/10">
         <CardHeader>
           <CardTitle className="text-2xl font-bold">Axiom Ops Sign In</CardTitle>
           <CardDescription>
@@ -94,7 +99,8 @@ function SignInForm() {
             .
           </p>
         </CardContent>
-      </Card>
+        </Card>
+      </div>
     </div>
   );
 }

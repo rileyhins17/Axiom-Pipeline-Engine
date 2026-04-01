@@ -1,0 +1,192 @@
+
+ ⛅️ wrangler 4.73.0 (update available 4.75.0)
+─────────────────────────────────────────────
+Support for remote bindings in `wrangler dev` is now available as a replacement for `wrangler dev --remote`. Try it out now by running `wrangler dev` with the `remote` option enabled on your resources and let us know how it goes!
+This gives you access to remote resources in development while retaining all the usual benefits of local dev: fast iteration speed, breakpoint debugging, and more.
+
+Refer to https://developers.cloudflare.com/workers/development-testing/#remote-bindings for more information.
+Using secrets defined in .env
+Your Worker has access to the following bindings:
+Binding                                                                   Resource                  
+env.DB (e42f3d48-5813-4d18-86c4-4471b55aa65e)                             D1 Database               
+env.WORKER_SELF_REFERENCE (axiom-ops-omniscient)                          Worker                    
+env.BROWSER                                                               Browser                   
+env.ASSETS                                                                Assets                    
+env.APP_BASE_URL ("(hidden)")                                             Environment Variable      
+env.AUTH_ALLOWED_EMAILS ("(hidden)")                                      Environment Variable      
+env.AUTH_ADMIN_EMAILS ("(hidden)")                                        Environment Variable      
+env.RATE_LIMIT_WINDOW_SECONDS ("(hidden)")                                Environment Variable      
+env.RATE_LIMIT_MAX_AUTH ("(hidden)")                                      Environment Variable      
+env.RATE_LIMIT_MAX_SCRAPE ("(hidden)")                                    Environment Variable      
+env.RATE_LIMIT_MAX_EXPORT ("(hidden)")                                    Environment Variable      
+env.SCRAPE_CONCURRENCY_LIMIT ("(hidden)")                                 Environment Variable      
+env.SCRAPE_TIMEOUT_MS ("(hidden)")                                        Environment Variable      
+env.BETTER_AUTH_SECRET ("(hidden)")                                       Environment Variable      
+env.GEMINI_API_KEY ("(hidden)")                                           Environment Variable      
+env.DATABASE_PATH ("(hidden)")                                            Environment Variable      
+
+⎔ Starting remote preview...
+🌀 Building list of assets...
+Total Upload: 11084.24 KiB / gzip: 2915.72 KiB
+✨ Read 106 files from the assets directory C:\the-omniscient\.open-next\assets
+🌀 Starting asset upload...
+🌀 Found 1 new or modified static asset to upload. Proceeding with upload...
++ /BUILD_ID
+Uploaded 1 of 1 asset
+✨ Success! Uploaded 1 file (69 already uploaded) (1.04 sec)
+
+[wrangler:info] Ready on http://127.0.0.1:8787
+[wrangler:info] GET /dashboard 307 Temporary Redirect (1442ms)
+[wrangler:info] GET / 307 Temporary Redirect (1459ms)
+[wrangler:info] GET /sign-up 200 OK (793ms)
+[wrangler:info] GET /_next/static/css/77e07787b72c2cb7.css 200 OK (58ms)
+[wrangler:info] GET /_next/static/css/008eaf98e011afe8.css 200 OK (98ms)
+[wrangler:info] GET /_next/static/chunks/webpack-8a2a7cf09c07608f.js 200 OK (103ms)
+[wrangler:info] GET /_next/static/chunks/794-37dad9bbc14b04b8.js 200 OK (105ms)
+[wrangler:info] GET /_next/static/chunks/main-app-87a5f3cc0ce61d4b.js 200 OK (107ms)
+[wrangler:info] GET /_next/static/chunks/4bd1b696-096d35a2bd1da3af.js 200 OK (110ms)
+[wrangler:info] GET /_next/static/chunks/409-1e2f81b07b7328a3.js 200 OK (63ms)
+[wrangler:info] GET /_next/static/chunks/830-3dbba3463060598d.js 200 OK (45ms)
+[wrangler:info] GET /_next/static/chunks/745-e389ffb92c31a9fe.js 200 OK (45ms)
+[wrangler:info] GET /_next/static/chunks/app/layout-2187423755c58520.js 200 OK (44ms)
+[wrangler:info] GET /_next/static/chunks/495-85c2f24608e62363.js 200 OK (47ms)
+[wrangler:info] GET /_next/static/chunks/76-ee8f4fb7a503d692.js 200 OK (41ms)
+[wrangler:info] GET /_next/static/chunks/app/sign-up/page-61e78b439e150ea7.js 200 OK (57ms)
+[wrangler:info] GET /sign-in 200 OK (71ms)
+[wrangler:info] GET /sign-in 200 OK (63ms)
+[wrangler:info] GET /sign-in 200 OK (64ms)
+[wrangler:info] GET /sign-in 200 OK (65ms)
+[wrangler:info] GET /sign-in 200 OK (66ms)
+[wrangler:info] GET /_next/static/chunks/app/sign-in/page-c79e75f2270ec04f.js 200 OK (50ms)
+[wrangler:info] POST /api/auth/sign-up/email 422 Unprocessable Entity (844ms)
+kysely:warning: outdated driver/plugin detected! `QueryResult.numUpdatedOrDeletedRows` has been replaced with `QueryResult.numAffectedRows`.
+[wrangler:info] GET /dashboard 307 Temporary Redirect (105ms)
+[wrangler:info] GET /sign-in 200 OK (48ms)
+[wrangler:info] GET /_next/static/css/77e07787b72c2cb7.css 304 Not Modified (43ms)
+[wrangler:info] GET /_next/static/chunks/webpack-8a2a7cf09c07608f.js 304 Not Modified (42ms)
+[wrangler:info] GET /_next/static/chunks/4bd1b696-096d35a2bd1da3af.js 304 Not Modified (47ms)
+[wrangler:info] GET /_next/static/css/008eaf98e011afe8.css 304 Not Modified (50ms)
+[wrangler:info] GET /_next/static/chunks/794-37dad9bbc14b04b8.js 304 Not Modified (48ms)
+[wrangler:info] GET /_next/static/chunks/main-app-87a5f3cc0ce61d4b.js 304 Not Modified (52ms)
+[wrangler:info] GET /_next/static/chunks/409-1e2f81b07b7328a3.js 304 Not Modified (37ms)
+[wrangler:info] GET /_next/static/chunks/745-e389ffb92c31a9fe.js 304 Not Modified (46ms)
+[wrangler:info] GET /_next/static/chunks/76-ee8f4fb7a503d692.js 304 Not Modified (43ms)
+[wrangler:info] GET /_next/static/chunks/495-85c2f24608e62363.js 304 Not Modified (52ms)
+[wrangler:info] GET /_next/static/chunks/app/layout-2187423755c58520.js 304 Not Modified (53ms)
+[wrangler:info] GET /_next/static/chunks/app/sign-in/page-c79e75f2270ec04f.js 304 Not Modified (37ms)
+[wrangler:info] GET /_next/static/chunks/830-3dbba3463060598d.js 304 Not Modified (82ms)
+[wrangler:info] GET /sign-up 200 OK (65ms)
+[wrangler:info] GET /sign-up 200 OK (59ms)
+[wrangler:info] GET /sign-up 200 OK (59ms)
+[wrangler:info] GET /sign-up 200 OK (62ms)
+[wrangler:info] GET /sign-up 200 OK (61ms)
+[wrangler:info] GET /_next/static/chunks/app/sign-up/page-61e78b439e150ea7.js 304 Not Modified (46ms)
+[wrangler:info] GET /sign-up 200 OK (172ms)
+[wrangler:info] GET /_next/static/css/77e07787b72c2cb7.css 200 OK (51ms)
+[wrangler:info] GET /_next/static/css/008eaf98e011afe8.css 200 OK (92ms)
+[wrangler:info] GET /_next/static/chunks/794-37dad9bbc14b04b8.js 200 OK (96ms)
+[wrangler:info] GET /_next/static/chunks/409-1e2f81b07b7328a3.js 200 OK (47ms)
+[wrangler:info] GET /_next/static/chunks/4bd1b696-096d35a2bd1da3af.js 200 OK (99ms)
+[wrangler:info] GET /_next/static/chunks/webpack-8a2a7cf09c07608f.js 200 OK (104ms)
+[wrangler:info] GET /_next/static/chunks/main-app-87a5f3cc0ce61d4b.js 200 OK (106ms)
+[wrangler:info] GET /_next/static/chunks/830-3dbba3463060598d.js 200 OK (42ms)
+[wrangler:info] GET /_next/static/chunks/745-e389ffb92c31a9fe.js 200 OK (47ms)
+[wrangler:info] GET /_next/static/chunks/495-85c2f24608e62363.js 200 OK (45ms)
+[wrangler:info] GET /_next/static/chunks/app/layout-2187423755c58520.js 200 OK (46ms)
+[wrangler:info] GET /_next/static/chunks/76-ee8f4fb7a503d692.js 200 OK (46ms)
+[wrangler:info] GET /_next/static/chunks/app/sign-up/page-61e78b439e150ea7.js 200 OK (50ms)
+[wrangler:info] GET /sign-in 200 OK (66ms)
+[wrangler:info] GET /sign-in 200 OK (57ms)
+[wrangler:info] GET /sign-in 200 OK (58ms)
+[wrangler:info] GET /sign-in 200 OK (60ms)
+[wrangler:info] GET /sign-in 200 OK (61ms)
+[wrangler:info] GET /_next/static/chunks/app/sign-in/page-c79e75f2270ec04f.js 200 OK (49ms)
+[wrangler:info] POST /api/auth/sign-up/email 422 Unprocessable Entity (355ms)
+[wrangler:info] GET /sign-up 200 OK (931ms)
+[wrangler:info] GET /_next/static/css/77e07787b72c2cb7.css 200 OK (123ms)
+[wrangler:info] GET /_next/static/chunks/794-37dad9bbc14b04b8.js 200 OK (171ms)
+[wrangler:info] GET /_next/static/chunks/409-1e2f81b07b7328a3.js 200 OK (50ms)
+[wrangler:info] GET /_next/static/chunks/4bd1b696-096d35a2bd1da3af.js 200 OK (183ms)
+[wrangler:info] GET /_next/static/css/008eaf98e011afe8.css 200 OK (189ms)
+[wrangler:info] GET /_next/static/chunks/webpack-8a2a7cf09c07608f.js 200 OK (189ms)
+[wrangler:info] GET /_next/static/chunks/76-ee8f4fb7a503d692.js 200 OK (48ms)
+[wrangler:info] GET /_next/static/chunks/830-3dbba3463060598d.js 200 OK (92ms)
+[wrangler:info] GET /_next/static/chunks/745-e389ffb92c31a9fe.js 200 OK (80ms)
+[wrangler:info] GET /_next/static/chunks/main-app-87a5f3cc0ce61d4b.js 200 OK (267ms)
+[wrangler:info] GET /_next/static/chunks/495-85c2f24608e62363.js 200 OK (83ms)
+[wrangler:info] GET /_next/static/chunks/app/layout-2187423755c58520.js 200 OK (89ms)
+[wrangler:info] GET /_next/static/chunks/app/sign-up/page-61e78b439e150ea7.js 200 OK (125ms)
+[wrangler:info] GET /sign-in 200 OK (61ms)
+[wrangler:info] GET /sign-in 200 OK (132ms)
+[wrangler:info] GET /sign-in 200 OK (134ms)
+[wrangler:info] GET /sign-in 200 OK (134ms)
+[wrangler:info] GET /sign-in 200 OK (142ms)
+[wrangler:info] GET /_next/static/chunks/app/sign-in/page-c79e75f2270ec04f.js 200 OK (109ms)
+[wrangler:info] POST /api/auth/sign-up/email 422 Unprocessable Entity (2332ms)
+kysely:warning: outdated driver/plugin detected! `QueryResult.numUpdatedOrDeletedRows` has been replaced with `QueryResult.numAffectedRows`.
+[wrangler:info] GET /sign-up 200 OK (95ms)
+[wrangler:info] GET /_next/static/chunks/main-app-87a5f3cc0ce61d4b.js 304 Not Modified (34ms)
+[wrangler:info] GET /_next/static/chunks/webpack-8a2a7cf09c07608f.js 304 Not Modified (38ms)
+[wrangler:info] GET /_next/static/chunks/794-37dad9bbc14b04b8.js 304 Not Modified (39ms)
+[wrangler:info] GET /_next/static/css/77e07787b72c2cb7.css 304 Not Modified (44ms)
+[wrangler:info] GET /_next/static/css/008eaf98e011afe8.css 304 Not Modified (46ms)
+[wrangler:info] GET /_next/static/chunks/4bd1b696-096d35a2bd1da3af.js 304 Not Modified (55ms)
+[wrangler:info] GET /_next/static/chunks/409-1e2f81b07b7328a3.js 304 Not Modified (41ms)
+[wrangler:info] GET /_next/static/chunks/830-3dbba3463060598d.js 304 Not Modified (40ms)
+[wrangler:info] GET /_next/static/chunks/745-e389ffb92c31a9fe.js 304 Not Modified (44ms)
+[wrangler:info] GET /_next/static/chunks/495-85c2f24608e62363.js 304 Not Modified (44ms)
+[wrangler:info] GET /_next/static/chunks/app/layout-2187423755c58520.js 304 Not Modified (44ms)
+[wrangler:info] GET /_next/static/chunks/76-ee8f4fb7a503d692.js 304 Not Modified (41ms)
+[wrangler:info] GET /_next/static/chunks/app/sign-up/page-61e78b439e150ea7.js 304 Not Modified (45ms)
+[wrangler:info] GET /sign-in 200 OK (65ms)
+[wrangler:info] GET /sign-in 200 OK (51ms)
+[wrangler:info] GET /sign-in 200 OK (52ms)
+[wrangler:info] GET /sign-in 200 OK (52ms)
+[wrangler:info] GET /sign-in 200 OK (53ms)
+[wrangler:info] GET /_next/static/chunks/app/sign-in/page-c79e75f2270ec04f.js 304 Not Modified (119ms)
+[wrangler:info] POST /api/auth/sign-up/email 200 OK (873ms)
+[wrangler:info] GET /dashboard 200 OK (135ms)
+[wrangler:info] GET /dashboard 200 OK (64ms)
+[wrangler:info] GET /_next/static/chunks/app/dashboard/page-013c5b0e070aa35d.js 200 OK (66ms)
+[wrangler:info] GET /_next/static/chunks/775-083d4a7e58773661.js 200 OK (73ms)
+[wrangler:info] GET /_next/static/media/bb3ef058b751a6ad-s.p.woff2 200 OK (74ms)
+[wrangler:info] GET /api/leads/stats 200 OK (195ms)
+[wrangler:info] GET /api/leads/analytics 200 OK (193ms)
+[wrangler:info] GET /hunt 200 OK (98ms)
+[wrangler:info] GET /vault 200 OK (99ms)
+[wrangler:info] GET /triage 200 OK (101ms)
+[wrangler:info] GET /settings 200 OK (103ms)
+[wrangler:info] GET /api/leads/analytics 200 OK (204ms)
+[wrangler:info] GET /settings 200 OK (99ms)
+[wrangler:info] GET /triage 200 OK (99ms)
+[wrangler:info] GET /vault 200 OK (99ms)
+[wrangler:info] GET /dashboard 200 OK (100ms)
+[wrangler:info] GET /hunt 200 OK (106ms)
+[wrangler:info] GET /dashboard 200 OK (105ms)
+[wrangler:info] GET /dashboard 200 OK (76ms)
+[wrangler:info] GET /_next/static/chunks/4bd1b696-096d35a2bd1da3af.js 304 Not Modified (44ms)
+[wrangler:info] GET /_next/static/css/008eaf98e011afe8.css 304 Not Modified (46ms)
+[wrangler:info] GET /_next/static/chunks/794-37dad9bbc14b04b8.js 304 Not Modified (45ms)
+[wrangler:info] GET /_next/static/chunks/main-app-87a5f3cc0ce61d4b.js 304 Not Modified (45ms)
+[wrangler:info] GET /_next/static/css/77e07787b72c2cb7.css 304 Not Modified (50ms)
+[wrangler:info] GET /_next/static/chunks/webpack-8a2a7cf09c07608f.js 304 Not Modified (57ms)
+[wrangler:info] GET /_next/static/chunks/409-1e2f81b07b7328a3.js 304 Not Modified (40ms)
+[wrangler:info] GET /_next/static/chunks/830-3dbba3463060598d.js 304 Not Modified (44ms)
+[wrangler:info] GET /_next/static/chunks/745-e389ffb92c31a9fe.js 304 Not Modified (47ms)
+[wrangler:info] GET /_next/static/chunks/495-85c2f24608e62363.js 304 Not Modified (48ms)
+[wrangler:info] GET /_next/static/chunks/775-083d4a7e58773661.js 304 Not Modified (41ms)
+[wrangler:info] GET /_next/static/chunks/app/layout-2187423755c58520.js 304 Not Modified (65ms)
+[wrangler:info] GET /_next/static/chunks/app/dashboard/page-013c5b0e070aa35d.js 304 Not Modified (46ms)
+[wrangler:info] GET /settings 200 OK (45ms)
+[wrangler:info] GET /vault 200 OK (49ms)
+[wrangler:info] GET /triage 200 OK (54ms)
+[wrangler:info] GET /settings 200 OK (45ms)
+[wrangler:info] GET /dashboard 200 OK (51ms)
+[wrangler:info] GET /hunt 200 OK (54ms)
+[wrangler:info] GET /api/leads/analytics 200 OK (115ms)
+[wrangler:info] GET /vault 200 OK (42ms)
+[wrangler:info] GET /dashboard 200 OK (45ms)
+[wrangler:info] GET /triage 200 OK (55ms)
+[wrangler:info] GET /api/leads/stats 200 OK (169ms)
+[wrangler:info] GET /hunt 200 OK (52ms)
+[wrangler:info] GET /api/leads/analytics 200 OK (124ms)

@@ -54,6 +54,7 @@ export function HotkeyProvider({ children }: { children: React.ReactNode }) {
                     "3": "/vault",
                     "4": "/settings",
                     "5": "/triage",
+                    "6": "/outreach",
                 };
                 if (routes[e.key]) {
                     e.preventDefault();

@@ -375,12 +375,18 @@ function validateContactBasic(email: string | null, phone: string | null): Conta
 
     if (email && email.length > 0) {
         const e = email.toLowerCase();
+        const localPart = e.split("@")[0] || "";
+        const isFreeProvider = /@(gmail|yahoo|hotmail|outlook|icloud|live|msn|protonmail|mail\.com|zoho)\./.test(e);
+        const looksLikePerson = /^[a-z]+([._-][a-z]+)+$/.test(localPart) || /^[a-z]{4,}$/.test(localPart);
         if (e.startsWith("info@") || e.startsWith("contact@") || e.startsWith("hello@") || e.startsWith("office@") || e.startsWith("admin@")) {
             emailType = "generic";
             emailConfidence = 0.5;
-        } else if (e.includes("@gmail.") || e.includes("@yahoo.") || e.includes("@hotmail.") || e.includes("@outlook.")) {
-            emailType = "owner";
-            emailConfidence = 0.6;
+        } else if (isFreeProvider && looksLikePerson) {
+            emailType = "staff";
+            emailConfidence = 0.45;
+        } else if (isFreeProvider) {
+            emailType = "staff";
+            emailConfidence = 0.35;
         } else {
             emailType = "staff";
             emailConfidence = 0.7;

@@ -1,0 +1,41 @@
+diff --git a/node_modules/@cloudflare/playwright/lib/index.js b/node_modules/@cloudflare/playwright/lib/index.js
+index 5bc174e..1b5e1b8 100644
+--- a/node_modules/@cloudflare/playwright/lib/index.js
++++ b/node_modules/@cloudflare/playwright/lib/index.js
+@@ -1,6 +1,5 @@
+ import { createInProcessPlaywright } from './playwright-core/src/inProcessFactory.js';
+ import { kBrowserCloseMessageId } from './playwright-core/src/server/chromium/crConnection.js';
+-import { env } from 'cloudflare:workers';
+ import { timeOrigin, setTimeOrigin } from './playwright-core/src/utils/isomorphic/time.js';
+ import { WebSocketTransport, transportZone } from './cloudflare/webSocketTransport.js';
+ import { wrapClientApis } from './cloudflare/wrapClientApis.js';
+@@ -52,9 +51,14 @@ function extractOptions(endpoint) {
+   }
+   return {};
+ }
++function getCloudflareBrowserBindings() {
++  const global = globalThis;
++  return global.__cloudflareBrowserBindings ?? (global.__cloudflareBrowserBindings = {});
++}
+ function endpointURLString(binding, options) {
+-  const bindingKey = typeof binding === "string" ? binding : Object.keys(env).find((key) => env[key] === binding);
+-  if (!bindingKey || !(bindingKey in env))
++  const bindings = getCloudflareBrowserBindings();
++  const bindingKey = typeof binding === "string" ? binding : Object.keys(bindings).find((key) => bindings[key] === binding);
++  if (!bindingKey || !(bindingKey in bindings))
+     throw new Error(`No binding found for ${binding}`);
+   const url = new URL(`${HTTP_FAKE_HOST}/v1/connectDevtools`);
+   url.searchParams.set("browser_binding", bindingKey);
+@@ -80,9 +84,10 @@ function getBrowserBinding(endpoint) {
+   if (typeof endpoint === "string" || endpoint instanceof URL) {
+     const url = endpoint instanceof URL ? endpoint : new URL(endpoint);
+     const binding = url.searchParams.get("browser_binding");
+-    if (!binding || !(binding in env))
++    const bindings = getCloudflareBrowserBindings();
++    if (!binding || !(binding in bindings))
+       throw new Error(`No binding found for ${binding}`);
+-    return env[binding];
++    return bindings[binding];
+   }
+   return endpoint;
+ }

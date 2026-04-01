@@ -2,6 +2,8 @@ interface CloudflareEnv {
   APP_BASE_URL: string;
   AUTH_ALLOWED_EMAILS: string;
   AUTH_ADMIN_EMAILS: string;
+  AUTH_ALLOWED_ORIGINS?: string;
+  AGENT_SHARED_SECRET?: string;
   BETTER_AUTH_SECRET: string;
   GEMINI_API_KEY?: string;
   RATE_LIMIT_WINDOW_SECONDS: string;
@@ -10,4 +12,5 @@ interface CloudflareEnv {
   RATE_LIMIT_MAX_EXPORT: string;
   SCRAPE_CONCURRENCY_LIMIT: string;
   SCRAPE_TIMEOUT_MS: string;
+  WORKER_HEARTBEAT_STALE_MS?: string;
 }

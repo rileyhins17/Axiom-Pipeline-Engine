@@ -154,6 +154,7 @@ export async function GET(request: Request) {
         return JSON.stringify({
           businessName: lead.businessName,
           city: lead.city,
+          category: lead.category,
           niche: lead.niche,
           phone: lead.phone,
           bestEmail: lead.email,
@@ -165,11 +166,15 @@ export async function GET(request: Request) {
           scoreBreakdown: breakdownParsed,
           website: lead.websiteStatus === "ACTIVE" ? "Has Website" : "No Website",
           websiteGrade: lead.websiteGrade,
+          websiteUrl: lead.websiteUrl,
+          websiteDomain: lead.websiteDomain,
           assessment: assessmentParsed,
           contactName: lead.contactName,
           emailType: lead.emailType,
           emailConfidence: lead.emailConfidence,
+          emailFlags: lead.emailFlags,
           phoneConfidence: lead.phoneConfidence,
+          phoneFlags: lead.phoneFlags,
           lastUpdated: lead.lastUpdated?.toISOString() || lead.createdAt.toISOString(),
           source: lead.source,
         });

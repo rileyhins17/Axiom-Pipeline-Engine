@@ -1,4 +1,4 @@
-import "server-only";
+import type { BrowserEndpoint } from "@cloudflare/playwright";
 
 export interface D1PreparedStatementLike {
   all<T = Record<string, unknown>>(): Promise<{ results?: T[] }>;
@@ -18,7 +18,7 @@ export interface D1DatabaseLike {
 
 export interface AppBindings {
   DB?: D1DatabaseLike;
-  BROWSER?: unknown;
+  BROWSER?: BrowserEndpoint;
   [key: string]: unknown;
 }
 

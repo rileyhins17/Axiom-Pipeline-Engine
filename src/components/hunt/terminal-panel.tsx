@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { getLogColor, type ParseResult } from "@/lib/hunt/sse-parser";
-import { Search, ChevronDown, ChevronUp, ArrowDown, Star } from "lucide-react";
+import { Search, ChevronDown, ChevronUp, ArrowDown, Radar, Star } from "lucide-react";
 
 export interface LogEntry {
     id: number;
@@ -40,7 +40,8 @@ export function TerminalPanel({ logs, onTogglePin, loading }: TerminalPanelProps
     }, []);
 
     // Filter logs
-    const filteredLogs = searchQuery.trim()
+    const isSearching = searchQuery.trim().length > 0;
+    const filteredLogs = isSearching
         ? logs.filter(l => l.message.toLowerCase().includes(searchQuery.toLowerCase()))
         : logs;
 
@@ -61,7 +62,7 @@ export function TerminalPanel({ logs, onTogglePin, loading }: TerminalPanelProps
                         <div className="w-2 h-2 rounded-full bg-green-500/80" />
                     </div>
                     <span className="text-[10px] tracking-widest uppercase text-zinc-700 ml-1">
-                        Raw Feed
+                        Live Feed
                     </span>
                     <span className="text-[9px] text-zinc-700">({logs.length} lines)</span>
                 </button>
@@ -112,10 +113,36 @@ export function TerminalPanel({ logs, onTogglePin, loading }: TerminalPanelProps
                     onScroll={handleScroll}
                     className="p-4 overflow-y-auto font-mono text-xs space-y-0.5 max-h-[400px] min-h-[200px] bg-black/60"
                 >
-                    {filteredLogs.length === 0 && !loading && (
-                        <div className="text-center text-zinc-700 py-8">
-                            {searchQuery ? `No lines matching "${searchQuery}"` : "Awaiting extraction data..."}
-                        </div>
+                    {filteredLogs.length === 0 && (
+                        isSearching ? (
+                            <div className="rounded-xl border border-white/10 bg-black/30 px-4 py-5 text-center text-xs text-zinc-500">
+                                No lines matching <span className="text-zinc-300">{searchQuery}</span>
+                                <div className="mt-2 text-[10px] text-zinc-600">Clear the filter to return to the live feed.</div>
+                            </div>
+                        ) : (
+                            <div className="grid min-h-[260px] place-items-center px-6 py-10">
+                                <div className="max-w-sm text-center">
+                                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-emerald-500/20 bg-emerald-500/10 text-emerald-300">
+                                        <Radar className="w-5 h-5" />
+                                    </div>
+                                    <div className="mt-4 text-sm font-semibold text-white/90">
+                                        {loading ? "Listening for the first event" : "Feed standing by"}
+                                    </div>
+                                    <p className="mt-2 text-xs leading-6 text-zinc-500">
+                                        {loading
+                                            ? "The terminal will populate as soon as the scraper emits its first line."
+                                            : "Add a target on the left, then launch the queue to arm this terminal."}
+                                    </p>
+                                    <div className="mt-4 flex flex-wrap justify-center gap-2">
+                                        {["Live logs", "Pinned lines", "Search feed"].map((label) => (
+                                            <span key={label} className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[10px] uppercase tracking-[0.18em] text-zinc-500">
+                                                {label}
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )
                     )}
                     {filteredLogs.map(log => (
                         <div

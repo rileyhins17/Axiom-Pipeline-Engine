@@ -139,6 +139,13 @@ export function parseSSELine(message: string): ParseResult {
         result.level = "ok";
     }
 
+    // Lead/result writes from the local worker
+    if (m.includes("[LEAD]")) {
+        result.stage = "write";
+        result.level = "ok";
+        result.event = m.replace(/^\[LEAD\]\s*/, "").trim();
+    }
+
     // Extraction complete
     if (m.includes("[✅] ═══ AXIOM EXTRACTION COMPLETE")) {
         result.stage = "done";
@@ -162,6 +169,12 @@ export function parseSSELine(message: string): ParseResult {
         if (jobMatch) {
             result.event = `Job ${jobMatch[1]}/${jobMatch[2]}: ${jobMatch[3]}`;
         }
+    }
+
+    // Remote job lifecycle messages
+    if (m.includes("[JOB]")) {
+        result.level = "system";
+        result.event = m.replace(/^\[JOB\]\s*/, "").trim();
     }
 
     // Engine init

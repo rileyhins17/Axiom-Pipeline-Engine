@@ -1,8 +1,18 @@
 import ExcelJS from "exceljs";
-import type { LeadRecord as Lead } from "../prisma";
-import { buildPainSummary, formatPainReadable, formatPhoneDigits, truncateString } from "./csv";
 
-// Helper for parsing JSON
+import type { LeadRecord as Lead } from "../prisma";
+import {
+    buildPainSummary,
+    formatContactQuality,
+    formatJsonFlags,
+    formatPainReadable,
+    formatPhoneDigits,
+    formatPhoneDisplay,
+    formatWebsiteDomain,
+    formatWebsiteUrl,
+    truncateString
+} from "./csv";
+
 function parseJsonSafe(jsonStr: string | null, fallback: any = null) {
     if (!jsonStr) return fallback;
     try {
@@ -32,7 +42,6 @@ function safeHyperlinkUrl(urlStr: string): string | undefined {
     }
 }
 
-// Map of columns with their styling details
 export interface XlsxColumnDef {
     header: string;
     width: number;
@@ -46,13 +55,15 @@ export const callSheetXlsxCols: XlsxColumnDef[] = [
     { header: "Axiom Score", width: 10, wrap: false, resolve: l => l.axiomScore !== null ? Number(l.axiomScore) : null },
     { header: "Company", width: 28, wrap: false, resolve: l => l.businessName || "" },
     { header: "Niche", width: 18, wrap: false, resolve: l => l.niche || "" },
+    { header: "Category", width: 18, wrap: false, resolve: l => l.category || "" },
     { header: "City", width: 18, wrap: false, resolve: l => extractCityName(l.city) },
+    { header: "Contact Name", width: 20, wrap: false, resolve: l => l.contactName || "" },
     { header: "Address", width: 32, wrap: true, resolve: l => l.address || "" },
     {
         header: "Phone",
-        width: 16,
+        width: 18,
         wrap: false,
-        resolve: l => l.phone || "",
+        resolve: l => formatPhoneDisplay(l.phone),
         hyperlink: l => l.phone ? safeHyperlinkUrl(`tel:${formatPhoneDigits(l.phone)}`) : undefined
     },
     {
@@ -62,9 +73,23 @@ export const callSheetXlsxCols: XlsxColumnDef[] = [
         resolve: l => l.email || "",
         hyperlink: l => l.email ? safeHyperlinkUrl(`mailto:${l.email}`) : undefined
     },
+    { header: "Contact Quality", width: 30, wrap: true, resolve: l => formatContactQuality(l) },
+    { header: "Email Type", width: 14, wrap: false, resolve: l => l.emailType || "unknown" },
+    { header: "Email Confidence", width: 14, wrap: false, resolve: l => l.emailConfidence ?? "" },
+    { header: "Email Flags", width: 24, wrap: true, resolve: l => formatJsonFlags(l.emailFlags) },
+    { header: "Phone Confidence", width: 14, wrap: false, resolve: l => l.phoneConfidence ?? "" },
+    { header: "Phone Flags", width: 24, wrap: true, resolve: l => formatJsonFlags(l.phoneFlags) },
     { header: "Website Status", width: 14, wrap: false, resolve: l => l.websiteStatus || "" },
     {
-        header: "Website",
+        header: "Website URL",
+        width: 28,
+        wrap: false,
+        resolve: l => formatWebsiteUrl(l.websiteUrl),
+        hyperlink: l => l.websiteUrl ? safeHyperlinkUrl(formatWebsiteUrl(l.websiteUrl)) : undefined
+    },
+    { header: "Website Domain", width: 22, wrap: false, resolve: l => l.websiteDomain || formatWebsiteDomain(l.websiteUrl) },
+    {
+        header: "Social Link",
         width: 28,
         wrap: false,
         resolve: l => l.socialLink || "",
@@ -84,7 +109,6 @@ export const callSheetXlsxCols: XlsxColumnDef[] = [
     { header: "Follow-Up (Full)", width: 55, wrap: true, resolve: l => l.followUpQuestion || "" },
     { header: "Source", width: 20, wrap: false, resolve: l => l.source || "" },
     { header: "Last Updated", width: 18, wrap: false, resolve: l => l.lastUpdated || l.createdAt },
-    // Cast Lead ID to string to avoid scientific notation
     { header: "Lead ID", width: 18, wrap: false, resolve: l => String(l.id || "") }
 ];
 
@@ -95,22 +119,19 @@ export async function generateXlsx(leads: Lead[], preset: string, filters: any):
     workbook.created = new Date();
     workbook.modified = new Date();
 
-    // 1) CALL SHEET
     const sheet = workbook.addWorksheet("Call Sheet", {
         views: [{ state: "frozen", xSplit: 0, ySplit: 1 }],
         properties: { defaultRowHeight: 20, showGridLines: false }
     });
 
-    const definitions = callSheetXlsxCols; // Fallback to call sheet for XLSX-1
+    const definitions = callSheetXlsxCols;
 
-    // Define Columns
     sheet.columns = definitions.map(d => ({
         header: d.header,
         key: d.header,
         width: d.width
     }));
 
-    // Header Styling
     const headerRow = sheet.getRow(1);
     headerRow.height = 24;
     headerRow.eachCell((cell) => {
@@ -118,57 +139,52 @@ export async function generateXlsx(leads: Lead[], preset: string, filters: any):
         cell.fill = {
             type: "pattern",
             pattern: "solid",
-            fgColor: { argb: "FF111827" } // Dark slate (Tailwind gray-900)
+            fgColor: { argb: "FF111827" }
         };
         cell.alignment = { vertical: "middle", horizontal: "center", wrapText: false };
     });
 
-    // Autofilter
     sheet.autoFilter = {
         from: { row: 1, column: 1 },
         to: { row: 1, column: definitions.length }
     };
 
-    // Add Data Rows
     leads.forEach((lead, index) => {
         const isEven = index % 2 === 0;
-        const rowData: any = {};
+        const rowData: Record<string, unknown> = {};
         definitions.forEach(d => {
             const val = d.resolve(lead);
             rowData[d.header] = val !== undefined && val !== null ? val : "";
         });
 
         const row = sheet.addRow(rowData);
+        row.height = 36;
 
-        // Styling the row
-        row.height = 36; // Default height for wrapped text
         row.eachCell((cell, colNumber) => {
             const def = definitions[colNumber - 1];
 
-            // Zebra Striping
             cell.fill = {
                 type: "pattern",
                 pattern: "solid",
-                fgColor: { argb: isEven ? "FFFFFFFF" : "FFF9FAFB" } // White / gray-50
+                fgColor: { argb: isEven ? "FFFFFFFF" : "FFF9FAFB" }
             };
 
-            // Alignment
             cell.alignment = {
                 vertical: "top",
                 wrapText: def.wrap,
                 horizontal: typeof cell.value === "number" ? "right" : "left"
             };
 
-            // Formatting
             if (def.header === "Last Updated") {
                 cell.numFmt = "yyyy-mm-dd hh:mm";
             } else if (def.header === "Axiom Score") {
                 cell.numFmt = "0.0";
+            } else if (def.header === "Email Confidence" || def.header === "Phone Confidence") {
+                cell.numFmt = "0.00";
             } else if (def.header === "Lead ID") {
                 cell.numFmt = "@";
             }
 
-            // Hyperlinks
             if (def.hyperlink && cell.value) {
                 const url = def.hyperlink(lead);
                 if (url) {
@@ -177,20 +193,18 @@ export async function generateXlsx(leads: Lead[], preset: string, filters: any):
                         hyperlink: url,
                         tooltip: url
                     };
-                    cell.font = { color: { argb: "FF2563EB" }, underline: true }; // blue-600
+                    cell.font = { color: { argb: "FF2563EB" }, underline: true };
                 }
             }
         });
     });
 
-    // 2) README SHEET
     const readme = workbook.addWorksheet("README");
     readme.columns = [
         { header: "Meta", width: 25 },
         { header: "Value", width: 60 }
     ];
 
-    // Header for Readme
     readme.getRow(1).font = { bold: true };
     readme.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF333333" } };
     readme.getRow(1).getCell(1).font = { color: { argb: "FFFFFFFF" }, bold: true };

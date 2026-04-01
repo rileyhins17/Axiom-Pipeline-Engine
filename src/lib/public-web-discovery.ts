@@ -4,6 +4,7 @@ import {
     type ResolvedLink,
 } from "@/lib/public-email-intelligence";
 import type { AutomationBrowserContext, AutomationPage } from "@/lib/browser-rendering";
+import type { ScrapeJobEventPayload } from "@/lib/scrape-jobs";
 
 type PageSnapshot = {
     text: string;
@@ -43,7 +44,7 @@ function buildDiscoverySection(label: string, snapshot: PageSnapshot): string {
 export async function collectWebsiteDiscoveryPages(
     context: AutomationBrowserContext,
     website: string,
-    sendEvent: (data: unknown) => void,
+    sendEvent: (data: ScrapeJobEventPayload) => Promise<void> | void,
 ): Promise<{ rawFootprint: string; pages: EmailDiscoveryPage[] }> {
     const pages: EmailDiscoveryPage[] = [];
     const sections: string[] = [];
@@ -66,7 +67,7 @@ export async function collectWebsiteDiscoveryPages(
         for (const link of contactLinks) {
             const subPage = await context.newPage();
             try {
-                sendEvent({ message: `[EMAIL] Scanning ${link.role} page: ${link.url}` });
+                await sendEvent({ message: `[EMAIL] Scanning ${link.role} page: ${link.url}` });
                 await subPage.goto(link.url, { waitUntil: "domcontentloaded", timeout: 12000 });
                 const snapshot = await capturePageSnapshot(subPage);
                 pages.push({

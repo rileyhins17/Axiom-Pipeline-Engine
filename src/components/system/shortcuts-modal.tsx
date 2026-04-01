@@ -11,18 +11,20 @@ const SHORTCUT_GROUPS = [
     {
         title: "Navigation",
         shortcuts: [
-            { keys: ["⌘", "1"], description: "Go to Dashboard" },
-            { keys: ["⌘", "2"], description: "Go to The Hunt" },
-            { keys: ["⌘", "3"], description: "Go to The Vault" },
-            { keys: ["⌘", "4"], description: "Go to Settings" },
+            { keys: ["Cmd", "1"], description: "Go to Dashboard" },
+            { keys: ["Cmd", "2"], description: "Go to The Hunt" },
+            { keys: ["Cmd", "3"], description: "Go to The Vault" },
+            { keys: ["Cmd", "4"], description: "Go to Settings" },
+            { keys: ["Cmd", "5"], description: "Go to Triage" },
+            { keys: ["Cmd", "6"], description: "Go to Outreach" },
         ],
     },
     {
         title: "Command Palette",
         shortcuts: [
-            { keys: ["⌘", "K"], description: "Open command palette" },
-            { keys: ["↑", "↓"], description: "Navigate results" },
-            { keys: ["↵"], description: "Execute command" },
+            { keys: ["Cmd", "K"], description: "Open command palette" },
+            { keys: ["Up", "Down"], description: "Navigate results" },
+            { keys: ["Enter"], description: "Execute command" },
             { keys: ["Esc"], description: "Close palette / modal" },
         ],
     },
@@ -46,7 +48,6 @@ export function ShortcutsModal({ open, onClose }: ShortcutsModalProps) {
                     className="w-full max-w-[480px] glass-ultra rounded-2xl border border-white/[0.08] shadow-2xl overflow-hidden animate-scale-in"
                     onClick={e => e.stopPropagation()}
                 >
-                    {/* Header */}
                     <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.06]">
                         <div className="flex items-center gap-2.5">
                             <Keyboard className="w-4 h-4 text-emerald-400" />
@@ -60,7 +61,6 @@ export function ShortcutsModal({ open, onClose }: ShortcutsModalProps) {
                         </button>
                     </div>
 
-                    {/* Shortcut groups */}
                     <div className="p-5 space-y-5 max-h-[60vh] overflow-y-auto">
                         {SHORTCUT_GROUPS.map(group => (
                             <div key={group.title}>
@@ -68,13 +68,13 @@ export function ShortcutsModal({ open, onClose }: ShortcutsModalProps) {
                                     {group.title}
                                 </h3>
                                 <div className="space-y-1">
-                                    {group.shortcuts.map((s, i) => (
-                                        <div key={i} className="flex items-center justify-between py-1.5 px-2 rounded-lg hover:bg-white/[0.02] transition-colors">
-                                            <span className="text-xs text-muted-foreground">{s.description}</span>
+                                    {group.shortcuts.map((shortcut, index) => (
+                                        <div key={index} className="flex items-center justify-between py-1.5 px-2 rounded-lg hover:bg-white/[0.02] transition-colors">
+                                            <span className="text-xs text-muted-foreground">{shortcut.description}</span>
                                             <div className="flex items-center gap-1">
-                                                {s.keys.map((key, ki) => (
+                                                {shortcut.keys.map((key, keyIndex) => (
                                                     <kbd
-                                                        key={ki}
+                                                        key={keyIndex}
                                                         className={cn(
                                                             "min-w-[24px] h-6 inline-flex items-center justify-center rounded border text-[11px] font-mono",
                                                             "bg-white/[0.03] border-white/[0.08] text-muted-foreground/60",
@@ -92,7 +92,6 @@ export function ShortcutsModal({ open, onClose }: ShortcutsModalProps) {
                         ))}
                     </div>
 
-                    {/* Footer */}
                     <div className="px-5 py-3 border-t border-white/[0.06]">
                         <p className="text-[10px] text-muted-foreground/30 text-center">
                             Press <kbd className="mx-0.5 px-1 py-0.5 rounded border border-white/[0.06] bg-white/[0.03] text-[10px]">?</kbd> anytime to toggle this panel

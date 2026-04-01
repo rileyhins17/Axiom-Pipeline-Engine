@@ -7,6 +7,7 @@ import { validateContact } from "@/lib/contact-validation";
 import { generateDedupeKey } from "@/lib/dedupe";
 import { generatePersonalization } from "@/lib/lead-personalization";
 import { getPrisma } from "@/lib/prisma";
+import { assertTrustedRequestOrigin } from "@/lib/request-security";
 import { requireAdminApiSession } from "@/lib/session";
 
 export async function POST(request: Request) {
@@ -14,6 +15,11 @@ export async function POST(request: Request) {
     const authResult = await requireAdminApiSession(request);
     if ("response" in authResult) {
       return authResult.response;
+    }
+
+    const originFailure = assertTrustedRequestOrigin(request);
+    if (originFailure) {
+      return originFailure;
     }
 
     const prisma = getPrisma();
@@ -81,7 +87,9 @@ export async function POST(request: Request) {
           dedupeMatchedBy: dedupe.matchedBy,
           emailType: contactValidation.emailType,
           emailConfidence: contactValidation.emailConfidence,
+          emailFlags: JSON.stringify(contactValidation.emailFlags),
           phoneConfidence: contactValidation.phoneConfidence,
+          phoneFlags: JSON.stringify(contactValidation.phoneFlags),
           isArchived: shouldArchive,
           leadScore: scoreResult.axiomScore,
           lastUpdated: new Date(),

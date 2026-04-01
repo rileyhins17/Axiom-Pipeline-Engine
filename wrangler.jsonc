@@ -19,21 +19,23 @@
     }
   ],
   "vars": {
-    "APP_BASE_URL": "https://ops.getaxiom.ca",
-    "AUTH_ALLOWED_EMAILS": "",
-    "AUTH_ADMIN_EMAILS": "",
-    "RATE_LIMIT_WINDOW_SECONDS": "900",
-    "RATE_LIMIT_MAX_AUTH": "10",
-    "RATE_LIMIT_MAX_SCRAPE": "3",
+    "APP_BASE_URL": "https://operations.getaxiom.ca/",
+    "AUTH_ALLOWED_EMAILS": "aidan@getaxiom.ca,riley@getaxiom.ca",
+    "AUTH_ADMIN_EMAILS": "aidan@getaxiom.ca,riley@getaxiom.ca",
+    "AUTH_ALLOWED_ORIGINS": "https://axiom-ops-omniscient.aidan-magee2.workers.dev,https://operations.getaxiom.ca",
+    "RATE_LIMIT_WINDOW_SECONDS": "60",
+    "RATE_LIMIT_MAX_AUTH": "50",
+    "RATE_LIMIT_MAX_SCRAPE": "20",
     "RATE_LIMIT_MAX_EXPORT": "20",
     "SCRAPE_CONCURRENCY_LIMIT": "1",
-    "SCRAPE_TIMEOUT_MS": "90000"
+    "SCRAPE_TIMEOUT_MS": "600000"
   },
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "axiom-ops-omniscient",
-      "database_id": "REPLACE_WITH_CLOUDFLARE_D1_DATABASE_ID",
+      "database_id": "e42f3d48-5813-4d18-86c4-4471b55aa65e",
+      "preview_database_id": "e42f3d48-5813-4d18-86c4-4471b55aa65e",
       "migrations_dir": "./migrations"
     }
   ],

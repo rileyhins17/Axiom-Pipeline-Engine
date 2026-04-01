@@ -196,6 +196,10 @@ function TriageInner() {
         toast("Session reset", { type: "info" });
     }, [toast]);
 
+    const handleOutreachSaved = useCallback((updatedLead: TriageLead) => {
+        setLeads(prev => prev.map(lead => lead.id === updatedLead.id ? { ...lead, ...updatedLead } : lead));
+    }, []);
+
     // Keyboard shortcuts
     useEffect(() => {
         const handler = (e: KeyboardEvent) => {
@@ -246,7 +250,7 @@ function TriageInner() {
         [leads]);
 
     return (
-        <div className="max-w-[1200px] mx-auto flex flex-col gap-4 h-[calc(100vh-80px)]">
+        <div className="mx-auto flex min-h-[calc(100dvh-80px)] max-w-[1200px] flex-col gap-4 pb-4 md:h-[calc(100vh-80px)] md:pb-0">
             {/* Filter bar */}
             <TriageFilterBar
                 filters={filters}
@@ -264,7 +268,7 @@ function TriageInner() {
             />
 
             {/* Main card area */}
-            <div className="flex-1 flex items-center justify-center min-h-0 relative">
+            <div className="relative flex flex-1 min-h-0 flex-col items-start justify-start md:items-center md:justify-center">
                 {/* Action flash overlay */}
                 {actionFlash && (
                     <div className={cn(
@@ -346,7 +350,7 @@ function TriageInner() {
                 ) : (
                     /* Lead card */
                     <div className="w-full animate-slide-up" key={currentLead?.id}>
-                        {currentLead && <TriageCard lead={currentLead} />}
+                        {currentLead && <TriageCard lead={currentLead} onOutreachSaved={handleOutreachSaved} />}
                     </div>
                 )}
             </div>
@@ -375,7 +379,7 @@ function TriageInner() {
             {/* Help modal */}
             {helpOpen && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60" onClick={() => setHelpOpen(false)}>
-                    <div className="glass-ultra rounded-2xl p-6 w-[400px] border border-white/[0.08]" onClick={e => e.stopPropagation()}>
+                    <div className="glass-ultra w-[min(92vw,400px)] rounded-2xl border border-white/[0.08] p-6" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-between mb-4">
                             <h3 className="text-sm font-bold text-white flex items-center gap-2">
                                 <Crosshair className="w-4 h-4 text-emerald-400" />

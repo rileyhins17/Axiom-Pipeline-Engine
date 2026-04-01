@@ -1,4 +1,5 @@
 import type { LeadRecord as Lead } from "../prisma";
+import { extractDomain } from "../dedupe";
 
 export interface CsvColumnDef {
     key: string;
@@ -84,6 +85,74 @@ export function formatPhoneDigits(phone: string | null | undefined): string {
     if (!phone) return "";
     const digits = phone.replace(/\D/g, "");
     return digits;
+}
+
+/**
+ * Formats a phone number for export in a spreadsheet-safe, human-readable form.
+ * Falls back to the trimmed original value when normalization is not possible.
+ */
+export function formatPhoneDisplay(phone: string | null | undefined): string {
+    if (!phone) return "";
+
+    const original = phone.trim();
+    const digits = original.replace(/\D/g, "");
+
+    if (digits.length === 11 && digits.startsWith("1")) {
+        const main = digits.slice(1);
+        return `+1 (${main.slice(0, 3)}) ${main.slice(3, 6)}-${main.slice(6)}`;
+    }
+
+    if (digits.length === 10) {
+        return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+    }
+
+    return original.replace(/ {2,}/g, " ");
+}
+
+export function formatWebsiteUrl(value: string | null | undefined): string {
+    if (!value) return "";
+    const clean = value.trim();
+    if (!clean) return "";
+    if (/^https?:\/\//i.test(clean)) return clean;
+    return `https://${clean.replace(/^\/+/, "")}`;
+}
+
+export function formatWebsiteDomain(value: string | null | undefined): string {
+    return extractDomain(value) || "";
+}
+
+export function formatJsonFlags(value: string | null | undefined): string {
+    if (!value) return "";
+    try {
+        const parsed = JSON.parse(value);
+        if (!Array.isArray(parsed)) {
+            return "";
+        }
+        const flags = parsed.filter(Boolean).map((flag) => String(flag).trim()).filter(Boolean);
+        return flags.length > 0 ? flags.join("; ") : "clean";
+    } catch {
+        return "";
+    }
+}
+
+function formatContactPart(
+    label: string,
+    confidence: number | null | undefined,
+    flags: string | null | undefined,
+): string {
+    const confidenceText = confidence !== null && confidence !== undefined ? confidence.toFixed(2) : "n/a";
+    const flagText = formatJsonFlags(flags);
+    return flagText && flagText !== "clean"
+        ? `${label} ${confidenceText} [${flagText}]`
+        : `${label} ${confidenceText}`;
+}
+
+export function formatContactQuality(lead: Pick<Lead, "emailConfidence" | "emailFlags" | "emailType" | "phoneConfidence" | "phoneFlags"> & { email?: string | null; phone?: string | null }): string {
+    const emailLabel = lead.email ? `Email ${lead.emailType || "unknown"}` : "Email none";
+    const phoneLabel = lead.phone ? "Phone" : "Phone none";
+    const emailPart = formatContactPart(emailLabel, lead.emailConfidence, lead.emailFlags);
+    const phonePart = formatContactPart(phoneLabel, lead.phoneConfidence, lead.phoneFlags);
+    return `${emailPart} | ${phonePart}`;
 }
 
 /**

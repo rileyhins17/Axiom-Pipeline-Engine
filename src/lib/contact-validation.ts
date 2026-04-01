@@ -144,30 +144,41 @@ export function validateEmail(
 
     const isFreeProvider = FREE_PROVIDERS.includes(domain);
     if (isFreeProvider) {
-        flags.push("free_provider");
-        if (!isGeneric && (ownerNameMatch || looksLikePerson || isOwnerPrefix)) {
-            type = "owner";
-            confidence = ownerNameMatch ? 0.8 : 0.68;
-        } else if (!isGeneric) {
-            type = "staff";
-            confidence = 0.42;
+      flags.push("free_provider");
+      flags.push("personal_inbox");
+
+      if (!isGeneric && (ownerNameMatch || isOwnerPrefix)) {
+        type = "owner";
+        confidence = ownerNameMatch ? 0.72 : 0.64;
+        if (ownerNameMatch) {
+          flags.push("owner_name_match");
+        } else {
+          flags.push("owner_prefix");
         }
+      } else if (!isGeneric && looksLikePerson) {
+        type = "staff";
+        confidence = 0.48;
+        flags.push("personal_name_like");
+      } else if (!isGeneric) {
+        type = "staff";
+        confidence = 0.38;
+      }
     }
 
     if (!isFreeProvider && !isGeneric) {
-        type = "staff";
+      type = "staff";
         confidence = localPart.length <= 3 || localPart.includes(".") ? 0.75 : 0.7;
         flags.push("business_domain");
 
         if (matchesBusinessDomain) {
-            flags.push("business_domain_match");
-            confidence += 0.08;
+          flags.push("business_domain_match");
+          confidence += 0.08;
         }
 
         if (ownerNameMatch) {
-            type = "owner";
-            confidence = Math.max(confidence, 0.88);
-            flags.push("owner_name_match");
+          type = "owner";
+          confidence = Math.max(confidence, 0.88);
+          flags.push("owner_name_match");
         } else if (isOwnerPrefix) {
             type = "owner";
             confidence = Math.max(confidence, 0.78);

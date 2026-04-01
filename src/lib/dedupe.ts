@@ -1,9 +1,11 @@
 /**
  * Deterministic Deduplication Engine
- * 
+ *
  * Multi-signal deduplication using normalized name, domain, phone, and address.
  * Priority: phone > domain > address > name+city (last resort)
  */
+
+import { createHash } from "node:crypto";
 
 /**
  * Normalize a business name for comparison.
@@ -70,6 +72,7 @@ export function generateDedupeKey(
     website?: string | null,
     address?: string | null,
 ): { key: string; matchedBy: string } {
+    const shortHash = (value: string) => createHash("sha256").update(value).digest("hex").slice(0, 24);
     const normName = normalizeName(businessName);
     const normCity = city.toLowerCase().trim();
     const normPhone = normalizePhone(phone);
@@ -78,21 +81,21 @@ export function generateDedupeKey(
 
     // Priority 1: Phone (most reliable unique identifier)
     if (normPhone) {
-        return { key: `phone:${normPhone}`, matchedBy: "phone" };
+        return { key: `phone:${shortHash(normPhone)}`, matchedBy: "phone" };
     }
 
     // Priority 2: Domain (unique per business)
     if (domain && !["facebook.com", "instagram.com", "linkedin.com", "twitter.com", "yelp.com", "google.com", "yellowpages.ca"].includes(domain)) {
-        return { key: `domain:${domain}`, matchedBy: "domain" };
+        return { key: `domain:${shortHash(domain)}`, matchedBy: "domain" };
     }
 
     // Priority 3: Address (strong signal if available)
     if (normAddr && normAddr.length > 5) {
-        return { key: `addr:${normAddr}|${normCity}`, matchedBy: "address" };
+        return { key: `addr:${shortHash(`${normAddr}|${normCity}`)}`, matchedBy: "address" };
     }
 
     // Priority 4: Name + City (last resort)
-    return { key: `name:${normName}|${normCity}`, matchedBy: "name_city" };
+    return { key: `name:${shortHash(`${normName}|${normCity}`)}`, matchedBy: "name_city" };
 }
 
 /**

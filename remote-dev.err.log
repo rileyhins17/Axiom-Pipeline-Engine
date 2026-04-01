@@ -1,0 +1,84 @@
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mThis worker is bound to live services: WORKER_SELF_REFERENCE (axiom-ops-omniscient)[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mDuplicate key "options" in object literal[0m [duplicate-object-key]
+
+    .open-next/server-functions/default/handler.mjs:639:194634:
+[37m      639 │ ...data:{...i2,placement:f2}}},[32moptions[37m:[c2,e2]},Z2&&{name:"shift"...
+          ╵                                [32m~~~~~~~[0m
+
+  The original key "options" is here:
+
+    .open-next/server-functions/default/handler.mjs:639:194347:
+[37m      639 │ ...,middleware:[{name:"offset",[32moptions[37m:h2=c2={mainAxis:V2+aq2,ali...
+          ╵                                [32m~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mDuplicate key "options" in object literal[0m [duplicate-object-key]
+
+    .open-next/server-functions/default/handler.mjs:639:196138:
+[37m      639 │ ...nabled:{[r3]:h3,[q2]:i2}}}},[32moptions[37m:[r2,z3]},Z2&&{name:"flip",...
+          ╵                                [32m~~~~~~~[0m
+
+  The original key "options" is here:
+
+    .open-next/server-functions/default/handler.mjs:639:194669:
+[37m      639 │ ...:[c2,e2]},Z2&&{name:"shift",[32moptions[37m:A2=r2={mainAxis:!0,crossAx...
+          ╵                                [32m~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mDuplicate key "options" in object literal[0m [duplicate-object-key]
+
+    .open-next/server-functions/default/handler.mjs:639:198091:
+[37m      639 │ ...t:{placement:c4}}}return{}},[32moptions[37m:[B2,C2]},{name:"size",opti...
+          ╵                                [32m~~~~~~~[0m
+
+  The original key "options" is here:
+
+    .open-next/server-functions/default/handler.mjs:639:196172:
+[37m      639 │ ...s:[r2,z3]},Z2&&{name:"flip",[32moptions[37m:I2=B2={...aG2},async fn(a5...
+          ╵                                [32m~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mDuplicate key "options" in object literal[0m [duplicate-object-key]
+
+    .open-next/server-functions/default/handler.mjs:639:199472:
+[37m      639 │ ...ight?{reset:{rects:!0}}:{}},[32moptions[37m:[J2,K2]},am2&&{name:"arrow...
+          ╵                                [32m~~~~~~~[0m
+
+  The original key "options" is here:
+
+    .open-next/server-functions/default/handler.mjs:639:198121:
+[37m      639 │ ...tions:[B2,C2]},{name:"size",[32moptions[37m:M2=J2={...aG2,apply:({elem...
+          ╵                                [32m~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mDuplicate key "options" in object literal[0m [duplicate-object-key]
+
+    .open-next/server-functions/default/handler.mjs:639:199766:
+[37m      639 │ ...:b3,padding:c3}).fn(a5):{}},[32moptions[37m:[N2,O2]},a$({arrowWidth:ap...
+          ╵                                [32m~~~~~~~[0m
+
+  The original key "options" is here:
+
+    .open-next/server-functions/default/handler.mjs:639:199508:
+[37m      639 │ ...[J2,K2]},am2&&{name:"arrow",[32moptions[37m:P2=N2={element:am2,padding...
+          ╵                                [32m~~~~~~~[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mDuplicate key "options" in object literal[0m [duplicate-object-key]
+
+    .open-next/server-functions/default/handler.mjs:639:200314:
+[37m      639 │ ...:F(d3)}}}default:return{}}},[32moptions[37m:[Q2,R2]}]}),[aQ2,aR2]=a_(a...
+          ╵                                [32m~~~~~~~[0m
+
+  The original key "options" is here:
+
+    .open-next/server-functions/default/handler.mjs:639:199838:
+[37m      639 │ ...ght:aq2}),ab2&&{name:"hide",[32moptions[37m:S2=Q2={strategy:"reference...
+          ╵                                [32m~~~~~~~[0m
+
+
+2026-03-19T07:28:38.528Z WARN [Better Auth]: Rate limiting skipped: could not determine client IP address. If you're behind a reverse proxy, make sure to configure `trustedProxies` in your auth config.
+2026-03-19T07:29:25.226Z WARN [Better Auth]: Rate limiting skipped: could not determine client IP address. If you're behind a reverse proxy, make sure to configure `trustedProxies` in your auth config.
+^C

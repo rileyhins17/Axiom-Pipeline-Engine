@@ -2,10 +2,14 @@ import type { LeadRecord as Lead } from "../prisma";
 import {
     CsvPreset,
     CsvColumnDef,
-    formatPhoneDigits,
-    formatDate,
     buildPainSummary,
+    formatContactQuality,
+    formatDate,
+    formatJsonFlags,
     formatPainReadable,
+    formatPhoneDisplay,
+    formatWebsiteDomain,
+    formatWebsiteUrl,
     truncateString
 } from "./csv";
 
@@ -38,25 +42,25 @@ const callSheetColumns: CsvColumnDef[] = [
     { key: "score", header: "Axiom Score", resolve: (l: Lead) => l.axiomScore ?? "" },
     { key: "company", header: "Company", resolve: (l: Lead) => l.businessName || "" },
     { key: "niche", header: "Niche", resolve: (l: Lead) => l.niche || "" },
+    { key: "category", header: "Category", resolve: (l: Lead) => l.category || "" },
     { key: "city", header: "City", resolve: (l: Lead) => extractCityName(l.city) },
-    { key: "phone", header: "Phone", resolve: (l: Lead) => formatPhoneDigits(l.phone) },
+    { key: "contact_name", header: "Contact Name", resolve: (l: Lead) => l.contactName || "" },
+    { key: "phone", header: "Phone", resolve: (l: Lead) => formatPhoneDisplay(l.phone) },
     { key: "email", header: "Email", resolve: (l: Lead) => l.email || "" },
     {
         key: "contact_quality",
         header: "Contact Quality",
-        resolve: (l: Lead) => {
-            const eConf = l.emailConfidence !== null && l.emailConfidence !== undefined ? String(l.emailConfidence) : "";
-            const eType = l.emailType || "unknown";
-            const ePart = (l.email && eConf) ? `E:${eConf} (${eType})` : "E:-";
-
-            const pConf = l.phoneConfidence !== null && l.phoneConfidence !== undefined ? String(l.phoneConfidence) : "";
-            const pPart = (l.phone && pConf) ? `P:${pConf}` : "P:-";
-
-            return `${ePart} ${pPart}`;
-        }
+        resolve: (l: Lead) => formatContactQuality(l)
     },
+    { key: "email_type", header: "Email Type", resolve: (l: Lead) => l.emailType || "unknown" },
+    { key: "email_confidence", header: "Email Confidence", resolve: (l: Lead) => l.emailConfidence ?? "" },
+    { key: "email_flags", header: "Email Flags", resolve: (l: Lead) => formatJsonFlags(l.emailFlags) },
+    { key: "phone_confidence", header: "Phone Confidence", resolve: (l: Lead) => l.phoneConfidence ?? "" },
+    { key: "phone_flags", header: "Phone Flags", resolve: (l: Lead) => formatJsonFlags(l.phoneFlags) },
     { key: "website_status", header: "Website Status", resolve: (l: Lead) => l.websiteStatus || "" },
-    { key: "website", header: "Website", resolve: (l: Lead) => l.socialLink || "" },
+    { key: "website_url", header: "Website URL", resolve: (l: Lead) => formatWebsiteUrl(l.websiteUrl) },
+    { key: "website_domain", header: "Website Domain", resolve: (l: Lead) => l.websiteDomain || formatWebsiteDomain(l.websiteUrl) },
+    { key: "social_link", header: "Social Link", resolve: (l: Lead) => l.socialLink || "" },
     { key: "pain_summary", header: "Pain Summary", resolve: (l: Lead) => buildPainSummary(l) },
     { key: "pain1", header: "Pain 1", resolve: (l: Lead) => formatPainReadable(l.painSignals)[0] || "" },
     { key: "pain2", header: "Pain 2", resolve: (l: Lead) => formatPainReadable(l.painSignals)[1] || "" },
@@ -64,6 +68,8 @@ const callSheetColumns: CsvColumnDef[] = [
     { key: "opener_short", header: "Call Opener (Short)", resolve: (l: Lead) => truncateString(l.callOpener, 180) },
     { key: "followup_short", header: "Follow-Up (Short)", resolve: (l: Lead) => truncateString(l.followUpQuestion, 120) },
     { key: "website_grade", header: "Website Grade", resolve: (l: Lead) => l.websiteGrade || "" },
+    { key: "disqualify_reason", header: "Disqualify Reason", resolve: (l: Lead) => l.disqualifyReason || "" },
+    { key: "disqualifiers", header: "Disqualifiers", resolve: (l: Lead) => (parseJsonSafe(l.disqualifiers, []) || []).join("; ") },
     {
         key: "top_fix_1",
         header: "Top Fix 1",
@@ -97,9 +103,13 @@ const callSheetColumns: CsvColumnDef[] = [
 
 const crmBasicColumns: CsvColumnDef[] = [
     { key: "company", header: "Company", resolve: (l: Lead) => l.businessName || "" },
-    { key: "website", header: "Website", resolve: (l: Lead) => l.socialLink || "" },
-    { key: "phone", header: "Phone", resolve: (l: Lead) => formatPhoneDigits(l.phone) },
+    { key: "category", header: "Category", resolve: (l: Lead) => l.category || "" },
+    { key: "website_url", header: "Website URL", resolve: (l: Lead) => formatWebsiteUrl(l.websiteUrl) },
+    { key: "website_domain", header: "Website Domain", resolve: (l: Lead) => l.websiteDomain || formatWebsiteDomain(l.websiteUrl) },
+    { key: "social_link", header: "Social Link", resolve: (l: Lead) => l.socialLink || "" },
+    { key: "phone", header: "Phone", resolve: (l: Lead) => formatPhoneDisplay(l.phone) },
     { key: "email", header: "Email", resolve: (l: Lead) => l.email || "" },
+    { key: "contact_name", header: "Contact Name", resolve: (l: Lead) => l.contactName || "" },
     { key: "address", header: "Address", resolve: (l: Lead) => l.address || "" },
     { key: "city", header: "City", resolve: (l: Lead) => extractCityName(l.city) },
     { key: "province", header: "Province/Region", resolve: (l: Lead) => extractProvince(l.city) },

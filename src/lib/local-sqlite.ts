@@ -5,8 +5,6 @@
  * Wraps `better-sqlite3` to match the D1 prepare/bind/all/first/run API
  * so the existing prisma.ts ORM layer works without changes.
  */
-import "server-only";
-
 import type { D1DatabaseLike, D1PreparedStatementLike } from "@/lib/cloudflare";
 
 let cachedDb: D1DatabaseLike | null = null;
