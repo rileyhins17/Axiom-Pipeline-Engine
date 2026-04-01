@@ -7,7 +7,7 @@ $studioScriptRel = "scripts\worker-studio.ts"
 $powershellPath = Join-Path $env:WINDIR "System32\WindowsPowerShell\v1.0\powershell.exe"
 
 if (Test-Path -LiteralPath $tsxPath) {
-    Start-Process -FilePath $tsxPath -ArgumentList @($studioScript) -WorkingDirectory $PSScriptRoot -WindowStyle Hidden | Out-Null
+    Start-Process -FilePath $tsxPath -ArgumentList @("`"$studioScript`"") -WorkingDirectory $PSScriptRoot -WindowStyle Hidden | Out-Null
     return
 }
 
