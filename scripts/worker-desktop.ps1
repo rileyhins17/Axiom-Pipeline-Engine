@@ -372,7 +372,7 @@ shell.Run "$($escaped -replace '"', '""')", 0, False
     Set-Content -LiteralPath $vbsPath -Value $vbs -Encoding ASCII
 
     $wscriptPath = Join-Path $env:WINDIR "System32\wscript.exe"
-    Start-Process -FilePath $wscriptPath -ArgumentList @("//B", "//NoLogo", $vbsPath) -WorkingDirectory $WorkingDirectory -WindowStyle Hidden | Out-Null
+    Start-Process -FilePath $wscriptPath -ArgumentList @("//B", "//NoLogo", "`"$vbsPath`"") -WorkingDirectory $WorkingDirectory -WindowStyle Hidden | Out-Null
 }
 
 function Start-BackendIfNeeded {

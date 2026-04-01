@@ -5,6 +5,7 @@ const PUBLIC_PATH_PREFIXES = [
   "/sign-in",
   "/sign-up",
   "/api/auth",
+  "/api/agent",
   "/_next",
   "/favicon.ico",
 ];
