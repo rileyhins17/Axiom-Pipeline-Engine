@@ -17,6 +17,7 @@ export const OUTREACH_CHANNEL_OPTIONS = [
 
 export type OutreachStatus = (typeof OUTREACH_STATUS_OPTIONS)[number]["value"];
 export type OutreachChannel = (typeof OUTREACH_CHANNEL_OPTIONS)[number]["value"];
+export const OUTREACH_AUTO_INCLUDE_MIN_SCORE = 35;
 
 export type OutreachLeadFields = {
   outreachStatus: string | null;
@@ -51,6 +52,19 @@ export function getOutreachChannelLabel(channel: string | null | undefined) {
 
 export function isContactedOutreachStatus(status: string | null | undefined) {
   return !!status && status !== "NOT_CONTACTED";
+}
+
+export function isLeadAutoIncludedInOutreachHub(score: number | null | undefined) {
+  return typeof score === "number" && Number.isFinite(score) && score > OUTREACH_AUTO_INCLUDE_MIN_SCORE;
+}
+
+export function getOutreachHubLeadWhere() {
+  return {
+    OR: [
+      { outreachStatus: { not: "NOT_CONTACTED" } },
+      { axiomScore: { gt: OUTREACH_AUTO_INCLUDE_MIN_SCORE } },
+    ],
+  };
 }
 
 export function formatOutreachDate(value: string | Date | null | undefined, includeTime = false) {

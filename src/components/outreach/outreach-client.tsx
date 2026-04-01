@@ -17,9 +17,11 @@ import { OutreachStatusBadge } from "@/components/outreach/outreach-status-badge
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { TierBadge } from "@/components/ui/tier-badge";
 import { useToast } from "@/components/ui/toast-provider";
 import {
   formatOutreachDate,
+  isContactedOutreachStatus,
   OUTREACH_CHANNEL_OPTIONS,
   OUTREACH_STATUS_OPTIONS,
 } from "@/lib/outreach";
@@ -74,7 +76,6 @@ export function OutreachClient({ initialLeads, enableSelection = false, onEnrich
     const now = Date.now();
 
     return [...leads]
-      .filter((lead) => lead.outreachStatus && lead.outreachStatus !== "NOT_CONTACTED")
       .filter((lead) => {
         if (filters.status !== "ALL" && lead.outreachStatus !== filters.status) return false;
         if (filters.channel !== "ALL" && (lead.outreachChannel || "") !== filters.channel) return false;
@@ -113,16 +114,33 @@ export function OutreachClient({ initialLeads, enableSelection = false, onEnrich
         return true;
       })
       .sort((a, b) => {
+        const aIsContacted = isContactedOutreachStatus(a.outreachStatus);
+        const bIsContacted = isContactedOutreachStatus(b.outreachStatus);
+
+        if (aIsContacted !== bIsContacted) {
+          return aIsContacted ? -1 : 1;
+        }
+
         const aFollowUp = a.nextFollowUpDue ? new Date(a.nextFollowUpDue).getTime() : Number.MAX_SAFE_INTEGER;
         const bFollowUp = b.nextFollowUpDue ? new Date(b.nextFollowUpDue).getTime() : Number.MAX_SAFE_INTEGER;
 
-        if (aFollowUp !== bFollowUp) {
+        if (aIsContacted && bIsContacted && aFollowUp !== bFollowUp) {
           return aFollowUp - bFollowUp;
         }
 
         const aLastContact = a.lastContactedAt ? new Date(a.lastContactedAt).getTime() : 0;
         const bLastContact = b.lastContactedAt ? new Date(b.lastContactedAt).getTime() : 0;
-        return bLastContact - aLastContact;
+        if (aIsContacted && bIsContacted && aLastContact !== bLastContact) {
+          return bLastContact - aLastContact;
+        }
+
+        const aScore = a.axiomScore ?? -1;
+        const bScore = b.axiomScore ?? -1;
+        if (aScore !== bScore) {
+          return bScore - aScore;
+        }
+
+        return a.businessName.localeCompare(b.businessName);
       });
   }, [filters, leads]);
 
@@ -133,9 +151,7 @@ export function OutreachClient({ initialLeads, enableSelection = false, onEnrich
         ? prev.map((lead) => (lead.id === updatedLead.id ? { ...lead, ...updatedLead } : lead))
         : [updatedLead, ...prev];
 
-      return updatedLead.outreachStatus === "NOT_CONTACTED"
-        ? next.filter((lead) => lead.id !== updatedLead.id)
-        : next;
+      return next;
     });
   }, []);
 
@@ -217,7 +233,7 @@ export function OutreachClient({ initialLeads, enableSelection = false, onEnrich
           className="h-9 rounded-md border border-white/10 bg-black/30 px-3 text-sm text-white outline-none focus:border-cyan-500/50"
         >
           <option value="ALL">All Statuses</option>
-          {OUTREACH_STATUS_OPTIONS.filter((option) => option.value !== "NOT_CONTACTED").map((option) => (
+          {OUTREACH_STATUS_OPTIONS.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
             </option>
@@ -346,7 +362,12 @@ export function OutreachClient({ initialLeads, enableSelection = false, onEnrich
                     </button>
                   )}
                   <div className="min-w-0 space-y-1">
-                    <div className="text-sm font-semibold text-white">{lead.businessName}</div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="text-sm font-semibold text-white">{lead.businessName}</div>
+                      {lead.axiomScore !== null && lead.axiomScore !== undefined ? (
+                        <TierBadge tier={lead.axiomTier} score={lead.axiomScore} size="xs" />
+                      ) : null}
+                    </div>
                     <div className="text-[11px] text-zinc-500">
                       {lead.city} • {lead.niche}
                     </div>
@@ -495,7 +516,12 @@ export function OutreachClient({ initialLeads, enableSelection = false, onEnrich
                   )}
                   <TableCell className="whitespace-normal align-top">
                     <div className="min-w-[180px] space-y-1">
-                      <div className="font-medium text-white">{lead.businessName}</div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="font-medium text-white">{lead.businessName}</div>
+                        {lead.axiomScore !== null && lead.axiomScore !== undefined ? (
+                          <TierBadge tier={lead.axiomTier} score={lead.axiomScore} size="xs" />
+                        ) : null}
+                      </div>
                       <div className="flex flex-wrap items-center gap-2 text-[11px] text-zinc-500">
                         <span>{lead.city}</span>
                         <span>•</span>

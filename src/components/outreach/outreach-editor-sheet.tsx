@@ -34,6 +34,8 @@ export type OutreachEditableLead = {
   phone: string | null;
   email: string | null;
   contactName?: string | null;
+  axiomScore?: number | null;
+  axiomTier?: string | null;
 } & OutreachLeadFields;
 
 type OutreachEditorSheetProps = {

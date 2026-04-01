@@ -1,11 +1,10 @@
-import { Brain, Inbox, Mail, MessageSquareText, Send } from "lucide-react";
+import { Brain, MessageSquareText, Send } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat-card";
 import { ToastProvider } from "@/components/ui/toast-provider";
 import { OutreachHub } from "@/components/outreach/outreach-hub";
 import { getPrisma } from "@/lib/prisma";
+import { getOutreachHubLeadWhere, OUTREACH_AUTO_INCLUDE_MIN_SCORE } from "@/lib/outreach";
 import { requireSession } from "@/lib/session";
 
 export default async function OutreachPage() {
@@ -13,13 +12,11 @@ export default async function OutreachPage() {
 
   const prisma = getPrisma();
 
-  // Fetch pipeline leads (already contacted)
+  // Fetch the outreach pool: active conversations plus every lead above the auto-include score.
   const pipelineLeads = await prisma.lead.findMany({
-    where: {
-      outreachStatus: { not: "NOT_CONTACTED" },
-    },
+    where: getOutreachHubLeadWhere(),
     orderBy: {
-      lastContactedAt: "desc",
+      axiomScore: "desc",
     },
     select: {
       id: true,
@@ -29,6 +26,8 @@ export default async function OutreachPage() {
       contactName: true,
       phone: true,
       email: true,
+      axiomScore: true,
+      axiomTier: true,
       outreachStatus: true,
       outreachChannel: true,
       firstContactedAt: true,
@@ -99,6 +98,9 @@ export default async function OutreachPage() {
         <p className="mt-2 text-sm text-muted-foreground">
           AI-powered lead enrichment, personalized email generation, and autonomous sending — all in one place.
         </p>
+        <p className="mt-1 text-xs text-zinc-500">
+          Leads scoring above {OUTREACH_AUTO_INCLUDE_MIN_SCORE} are auto-included in the outreach pool.
+        </p>
       </div>
 
       <div className="grid animate-slide-up grid-cols-2 gap-4 lg:grid-cols-6" style={{ animationDelay: "100ms" }}>
@@ -106,8 +108,8 @@ export default async function OutreachPage() {
           glowClass="glow-cyan"
           icon={<MessageSquareText />}
           iconColor="text-cyan-400"
-          label="Contacted"
-          subtitle="active pipeline"
+          label="Outreach Pool"
+          subtitle={`score > ${OUTREACH_AUTO_INCLUDE_MIN_SCORE} + active threads`}
           value={pipelineLeads.length}
         />
         <StatCard
