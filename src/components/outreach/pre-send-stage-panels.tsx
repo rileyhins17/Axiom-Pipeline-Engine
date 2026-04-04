@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast-provider";
 import type { EnrichmentResult } from "@/lib/outreach-enrichment";
 import {
+  getCanonicalLifecycleStage,
   getMissingDataSummary,
   getReadinessChecklist,
   getReadinessLabel,
@@ -103,6 +104,21 @@ function readinessCopy(state: PipelineReadinessState) {
   }
 }
 
+function getPrepStageBadge(lead: PreSendLead) {
+  const stage = getCanonicalLifecycleStage(lead);
+  if (stage === "INTAKE") {
+    return {
+      label: "Intake",
+      classes: "border-cyan-500/20 bg-cyan-500/10 text-cyan-200",
+    };
+  }
+
+  return {
+    label: "Enrichment",
+    classes: "border-white/10 bg-white/[0.04] text-zinc-300",
+  };
+}
+
 function statusTone(state: PreSendSequence["state"]) {
   switch (state) {
     case "QUEUED":
@@ -167,15 +183,25 @@ export function EnrichmentWorkspace({
   const [busyLeadId, setBusyLeadId] = useState<number | null>(null);
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return leads;
-    const query = search.toLowerCase();
-    return leads.filter(
-      (lead) =>
-        lead.businessName.toLowerCase().includes(query) ||
-        lead.city.toLowerCase().includes(query) ||
-        lead.niche.toLowerCase().includes(query) ||
-        (lead.email || "").toLowerCase().includes(query),
-    );
+    const query = search.trim().toLowerCase();
+    const visible = !query
+      ? leads
+      : leads.filter(
+          (lead) =>
+            lead.businessName.toLowerCase().includes(query) ||
+            lead.city.toLowerCase().includes(query) ||
+            lead.niche.toLowerCase().includes(query) ||
+            (lead.email || "").toLowerCase().includes(query),
+        );
+
+    const stageWeight = (lead: PreSendLead) =>
+      getCanonicalLifecycleStage(lead) === "INTAKE" ? 0 : 1;
+
+    return [...visible].sort((a, b) => {
+      const stageDiff = stageWeight(a) - stageWeight(b);
+      if (stageDiff !== 0) return stageDiff;
+      return (new Date(b.lastUpdated || b.createdAt || 0).getTime() || 0) - (new Date(a.lastUpdated || a.createdAt || 0).getTime() || 0);
+    });
   }, [leads, search]);
 
   useEffect(() => {
@@ -211,6 +237,7 @@ export function EnrichmentWorkspace({
   const missing = currentLead ? getMissingDataSummary(currentLead) : [];
   const checklist = currentLead ? getReadinessChecklist(currentLead) : [];
   const enrichment = parseEnrichment(currentLead?.enrichmentData || null);
+  const currentLeadStage = currentLead ? getPrepStageBadge(currentLead) : null;
 
   return (
     <div className="space-y-5">
@@ -234,13 +261,22 @@ export function EnrichmentWorkspace({
             </div>
 
             <div className="space-y-3">
-              {filtered.map((lead) => {
+              {filtered.map((lead, index) => {
                 const state = getReadinessState(lead);
                 const isActive = lead.id === currentLead?.id;
+                const stage = getCanonicalLifecycleStage(lead);
+                const stageBadge = getPrepStageBadge(lead);
+                const previousStage = index > 0 ? getCanonicalLifecycleStage(filtered[index - 1]) : null;
+                const showStageHeader = index === 0 || stage !== previousStage;
 
                 return (
-                  <button
-                    key={lead.id}
+                  <div key={lead.id} className="space-y-3">
+                    {showStageHeader ? (
+                      <div className="px-1 text-[11px] uppercase tracking-[0.24em] text-zinc-500">
+                        {stage === "INTAKE" ? "Incoming intake" : "Needs enrichment"}
+                      </div>
+                    ) : null}
+                    <button
                     type="button"
                     onClick={() => setSelectedId(lead.id)}
                     className={`w-full rounded-[22px] border px-4 py-4 text-left transition-all ${
@@ -256,9 +292,14 @@ export function EnrichmentWorkspace({
                           {lead.city} · {lead.niche}
                         </div>
                       </div>
-                      <span className={`rounded-full border px-2 py-0.5 text-[10px] ${getReadinessTone(state)}`}>
-                        {getReadinessLabel(state)}
-                      </span>
+                      <div className="flex flex-col items-end gap-2">
+                        <span className={`rounded-full border px-2 py-0.5 text-[10px] ${stageBadge.classes}`}>
+                          {stageBadge.label}
+                        </span>
+                        <span className={`rounded-full border px-2 py-0.5 text-[10px] ${getReadinessTone(state)}`}>
+                          {getReadinessLabel(state)}
+                        </span>
+                      </div>
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-zinc-400">
                       <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-1">
@@ -268,10 +309,11 @@ export function EnrichmentWorkspace({
                         {lead.email ? "Email found" : "No email"}
                       </span>
                       <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-1">
-                        {lead.enrichedAt ? "Reviewed" : "New intake"}
+                        {stage === "INTAKE" ? lead.source || "Source pending" : lead.enrichedAt ? "Reviewed" : "Awaiting review"}
                       </span>
                     </div>
                   </button>
+                  </div>
                 );
               })}
             </div>
@@ -292,6 +334,11 @@ export function EnrichmentWorkspace({
                 </div>
 
                 <div className="flex flex-wrap gap-2">
+                  {currentLeadStage ? (
+                    <span className={`rounded-full border px-3 py-1.5 text-xs ${currentLeadStage.classes}`}>
+                      {currentLeadStage.label}
+                    </span>
+                  ) : null}
                   <span className={`rounded-full border px-3 py-1.5 text-xs ${getReadinessTone(readinessState)}`}>
                     {getReadinessLabel(readinessState)}
                   </span>

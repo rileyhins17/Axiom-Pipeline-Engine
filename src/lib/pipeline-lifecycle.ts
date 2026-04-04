@@ -3,7 +3,7 @@ import { isContactedOutreachStatus, READY_FOR_FIRST_TOUCH_STATUS } from "@/lib/o
 
 type PipelineLeadLike = {
   axiomScore?: number | null | undefined;
-  email: string | null | undefined;
+  email?: string | null | undefined;
   emailConfidence?: number | null | undefined;
   emailFlags?: string | null | string[] | undefined;
   emailType?: string | null | undefined;
@@ -16,34 +16,81 @@ type PipelineLeadLike = {
 };
 
 export type PipelineReadinessState = "NOT_READY" | "ALMOST_READY" | "READY";
+export type PipelineLifecycleStage =
+  | "INTAKE"
+  | "ENRICHMENT"
+  | "QUALIFICATION"
+  | "INITIAL_OUTREACH"
+  | "FOLLOW_UP"
+  | "CLOSED";
+
+function hasCapturedEnrichment(lead: PipelineLeadLike) {
+  return Boolean(lead.enrichedAt || lead.enrichmentData);
+}
 
 export function isReadyForFirstTouchStatus(status: string | null | undefined) {
   return status === READY_FOR_FIRST_TOUCH_STATUS;
 }
 
 export function isIntakeLead(lead: PipelineLeadLike) {
-  if (lead.isArchived) return false;
-  if (isContactedOutreachStatus(lead.outreachStatus)) return false;
-  if (isReadyForFirstTouchStatus(lead.outreachStatus)) return false;
-  return Boolean(lead.source) && !lead.enrichedAt;
+  return getCanonicalLifecycleStage(lead) === "INTAKE";
 }
 
 export function isQualificationLead(lead: PipelineLeadLike) {
-  if (lead.isArchived) return false;
-  if (isContactedOutreachStatus(lead.outreachStatus)) return false;
-  if (isReadyForFirstTouchStatus(lead.outreachStatus)) return false;
-  return Boolean(lead.enrichedAt || lead.enrichmentData);
+  return getCanonicalLifecycleStage(lead) === "QUALIFICATION";
+}
+
+export function isEnrichmentStageLead(lead: PipelineLeadLike) {
+  return getCanonicalLifecycleStage(lead) === "ENRICHMENT";
+}
+
+export function getCanonicalLifecycleStage(input: PipelineLeadLike & {
+  hasActiveSequence?: boolean;
+  hasSentAnyStep?: boolean;
+}): PipelineLifecycleStage {
+  if (input.isArchived) return "CLOSED";
+  if (input.hasActiveSequence && input.hasSentAnyStep) return "FOLLOW_UP";
+  if (input.hasActiveSequence && !input.hasSentAnyStep) return "INITIAL_OUTREACH";
+  if (isContactedOutreachStatus(input.outreachStatus)) return "FOLLOW_UP";
+  if (isReadyForFirstTouchStatus(input.outreachStatus)) return "INITIAL_OUTREACH";
+
+  if (!hasCapturedEnrichment(input)) {
+    return input.source ? "INTAKE" : "ENRICHMENT";
+  }
+
+  return getReadinessState(input) === "NOT_READY" ? "ENRICHMENT" : "QUALIFICATION";
+}
+
+export function partitionPreSendLeads<T extends PipelineLeadLike>(leads: T[]) {
+  const intake: T[] = [];
+  const enrichment: T[] = [];
+  const qualification: T[] = [];
+  const initial: T[] = [];
+
+  for (const lead of leads) {
+    const stage = getCanonicalLifecycleStage(lead);
+    if (stage === "INTAKE") intake.push(lead);
+    else if (stage === "ENRICHMENT") enrichment.push(lead);
+    else if (stage === "QUALIFICATION") qualification.push(lead);
+    else if (stage === "INITIAL_OUTREACH") initial.push(lead);
+  }
+
+  return { intake, enrichment, qualification, initial };
 }
 
 export function getReadinessChecklist(lead: PipelineLeadLike) {
   const websiteAssessed = Boolean(lead.websiteStatus);
-  const validContactFound = hasValidPipelineEmail(lead);
+  const validContactFound = hasValidPipelineEmail({
+    ...lead,
+    email: lead.email ?? null,
+  });
   const scoreComputed =
     typeof lead.axiomScore === "number" && Number.isFinite(lead.axiomScore);
   const enrichmentCaptured = Boolean(lead.enrichmentData || lead.enrichedAt);
   const outreachEligibilityDetermined = enrichmentCaptured && scoreComputed;
   const fitConfirmed = isLeadOutreachEligible({
     ...lead,
+    email: lead.email ?? null,
     axiomScore: lead.axiomScore ?? null,
   });
 
@@ -68,6 +115,7 @@ export function getReadinessState(lead: PipelineLeadLike): PipelineReadinessStat
     completed === checklist.length &&
     isLeadOutreachEligible({
       ...lead,
+      email: lead.email ?? null,
       axiomScore: lead.axiomScore ?? null,
     })
   ) {
@@ -112,7 +160,12 @@ export function getMissingDataSummary(lead: PipelineLeadLike) {
   if (!lead.websiteStatus) {
     missing.push("Website not assessed");
   }
-  if (!hasValidPipelineEmail(lead)) {
+  if (
+    !hasValidPipelineEmail({
+      ...lead,
+      email: lead.email ?? null,
+    })
+  ) {
     missing.push("No valid email");
   }
   if (!(typeof lead.axiomScore === "number" && Number.isFinite(lead.axiomScore))) {
@@ -122,6 +175,7 @@ export function getMissingDataSummary(lead: PipelineLeadLike) {
     lead.enrichmentData &&
     !isLeadOutreachEligible({
       ...lead,
+      email: lead.email ?? null,
       axiomScore: lead.axiomScore ?? null,
     })
   ) {
@@ -136,13 +190,30 @@ export function getLifecycleOwnerHref(input: {
   hasSentAnyStep?: boolean;
   outreachStatus?: string | null | undefined;
   isArchived?: boolean | null | undefined;
+  enrichedAt?: string | Date | null | undefined;
+  enrichmentData?: string | null | undefined;
+  source?: string | null | undefined;
+  axiomScore?: number | null | undefined;
+  email?: string | null | undefined;
+  emailConfidence?: number | null | undefined;
+  emailFlags?: string | null | string[] | undefined;
+  emailType?: string | null | undefined;
+  websiteStatus?: string | null | undefined;
 }) {
-  if (input.isArchived) return "/vault";
-  if (input.hasActiveSequence && input.hasSentAnyStep) return "/automation";
-  if (input.hasActiveSequence && !input.hasSentAnyStep) return "/outreach?stage=initial";
-  if (isReadyForFirstTouchStatus(input.outreachStatus)) return "/outreach?stage=initial";
-  if (isContactedOutreachStatus(input.outreachStatus)) return "/automation";
-  return "/outreach?stage=enrichment";
+  switch (getCanonicalLifecycleStage(input)) {
+    case "FOLLOW_UP":
+      return "/automation";
+    case "INITIAL_OUTREACH":
+      return "/outreach?stage=initial";
+    case "QUALIFICATION":
+      return "/outreach?stage=qualification";
+    case "INTAKE":
+      return "/hunt";
+    case "CLOSED":
+      return "/vault";
+    default:
+      return "/outreach?stage=enrichment";
+  }
 }
 
 export function getLifecycleStageLabel(input: {
@@ -153,13 +224,25 @@ export function getLifecycleStageLabel(input: {
   isArchived?: boolean | null | undefined;
   outreachStatus?: string | null | undefined;
   source?: string | null | undefined;
+  axiomScore?: number | null | undefined;
+  email?: string | null | undefined;
+  emailConfidence?: number | null | undefined;
+  emailFlags?: string | null | string[] | undefined;
+  emailType?: string | null | undefined;
+  websiteStatus?: string | null | undefined;
 }) {
-  if (input.isArchived) return "Closed";
-  if (input.hasActiveSequence && input.hasSentAnyStep) return "Follow-Up";
-  if (input.hasActiveSequence && !input.hasSentAnyStep) return "Initial Outreach";
-  if (isReadyForFirstTouchStatus(input.outreachStatus)) return "Initial Outreach";
-  if (isContactedOutreachStatus(input.outreachStatus)) return "Follow-Up";
-  if (input.enrichedAt || input.enrichmentData) return "Qualification";
-  if (input.source) return "Intake";
-  return "Enrichment";
+  switch (getCanonicalLifecycleStage(input)) {
+    case "INTAKE":
+      return "Intake";
+    case "ENRICHMENT":
+      return "Enrichment";
+    case "QUALIFICATION":
+      return "Qualification";
+    case "INITIAL_OUTREACH":
+      return "Initial Outreach";
+    case "FOLLOW_UP":
+      return "Follow-Up";
+    default:
+      return "Closed";
+  }
 }

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { partitionPreSendLeads } from "@/lib/pipeline-lifecycle";
 import { isContactedOutreachStatus, READY_FOR_FIRST_TOUCH_STATUS } from "@/lib/outreach";
 import { getActiveAutomationLeadIds } from "@/lib/outreach-automation";
 import { getPrisma } from "@/lib/prisma";
@@ -46,13 +47,16 @@ export async function GET(request: Request) {
       },
     });
 
+    const stageEligibleLeads = leads.filter((lead) => {
+      if (automationLeadIds.has(lead.id)) return false;
+      if (lead.outreachStatus === READY_FOR_FIRST_TOUCH_STATUS) return false;
+      if (isContactedOutreachStatus(lead.outreachStatus)) return false;
+      return true;
+    });
+    const stages = partitionPreSendLeads(stageEligibleLeads);
+
     return NextResponse.json({
-      leads: leads.filter((lead) => {
-        if (automationLeadIds.has(lead.id)) return false;
-        if (lead.outreachStatus === READY_FOR_FIRST_TOUCH_STATUS) return false;
-        if (isContactedOutreachStatus(lead.outreachStatus)) return false;
-        return true;
-      }),
+      leads: stages.qualification,
     });
   } catch (error: any) {
     console.error("Qualification stage fetch error:", error);

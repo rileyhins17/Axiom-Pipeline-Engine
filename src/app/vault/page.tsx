@@ -6,8 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { StatCard } from "@/components/ui/stat-card";
 import { ToastProvider } from "@/components/ui/toast-provider";
 import { hasValidPipelineEmail, isLeadOutreachEligible } from "@/lib/lead-qualification";
-import { getLifecycleStageLabel, isIntakeLead } from "@/lib/pipeline-lifecycle";
-import { getActiveAutomationLeadIds } from "@/lib/outreach-automation";
+import { getCanonicalLifecycleStage, isIntakeLead } from "@/lib/pipeline-lifecycle";
 import { getPrisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/session";
 
@@ -15,25 +14,58 @@ export default async function VaultPage() {
   await requireSession();
 
   const prisma = getPrisma();
-  const activeAutomationLeadIds = new Set(await getActiveAutomationLeadIds().catch(() => []));
-  const leads = await prisma.lead.findMany({
-    orderBy: { createdAt: "desc" },
-  });
+  const [leads, sequences] = await Promise.all([
+    prisma.lead.findMany({
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.outreachSequence.findMany({
+      select: {
+        leadId: true,
+        lastSentAt: true,
+        status: true,
+      },
+    }).catch(() => []),
+  ]);
+
+  const activePreSendLeadIds = new Set(
+    sequences
+      .filter((sequence) =>
+        ["QUEUED", "ACTIVE", "PAUSED", "SENDING"].includes(sequence.status) && !sequence.lastSentAt,
+      )
+      .map((sequence) => sequence.leadId),
+  );
+  const postSendLeadIds = new Set(
+    sequences.filter((sequence) => sequence.lastSentAt).map((sequence) => sequence.leadId),
+  );
 
   const totalLeads = leads.length;
   const intakeLeads = leads.filter((lead) => isIntakeLead(lead)).length;
   const preSendLeads = leads.filter(
-    (lead) =>
-      getLifecycleStageLabel({
+    (lead) => {
+      const stage = getCanonicalLifecycleStage({
         enrichedAt: lead.enrichedAt,
         enrichmentData: lead.enrichmentData,
-        hasActiveSequence: activeAutomationLeadIds.has(lead.id),
-        hasSentAnyStep: false,
+        hasActiveSequence: activePreSendLeadIds.has(lead.id) || postSendLeadIds.has(lead.id),
+        hasSentAnyStep: postSendLeadIds.has(lead.id),
         outreachStatus: lead.outreachStatus,
         source: lead.source,
-      }) !== "Follow-Up",
+        axiomScore: lead.axiomScore,
+        email: lead.email,
+        emailConfidence: lead.emailConfidence,
+        emailFlags: lead.emailFlags,
+        emailType: lead.emailType,
+        websiteStatus: lead.websiteStatus,
+        isArchived: lead.isArchived,
+      });
+      return (
+        stage === "INTAKE" ||
+        stage === "ENRICHMENT" ||
+        stage === "QUALIFICATION" ||
+        stage === "INITIAL_OUTREACH"
+      );
+    },
   ).length;
-  const followUpLeads = leads.filter((lead) => activeAutomationLeadIds.has(lead.id)).length;
+  const followUpLeads = leads.filter((lead) => postSendLeadIds.has(lead.id)).length;
   const withEmail = leads.filter((lead) => hasValidPipelineEmail(lead)).length;
   const outreachReady = leads.filter((lead) => isLeadOutreachEligible(lead)).length;
 

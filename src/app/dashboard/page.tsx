@@ -12,8 +12,7 @@ import {
 import { BrandMark } from "@/components/brand-mark";
 import { Button } from "@/components/ui/button";
 import { StatCard } from "@/components/ui/stat-card";
-import { isLeadOutreachEligible } from "@/lib/lead-qualification";
-import { isIntakeLead } from "@/lib/pipeline-lifecycle";
+import { partitionPreSendLeads } from "@/lib/pipeline-lifecycle";
 import { listAutomationOverview } from "@/lib/outreach-automation";
 import { getPrisma } from "@/lib/prisma";
 import { listScrapeJobs } from "@/lib/scrape-jobs";
@@ -111,12 +110,15 @@ export default async function DashboardPage() {
     orderBy: { createdAt: "desc" },
   });
 
-  const intakeBacklog = leads.filter((lead) => isIntakeLead(lead)).length;
-  const enrichmentBacklog = leads.filter((lead) => {
-    if (isContactedOutreachStatus(lead.outreachStatus)) return false;
-    if (lead.outreachStatus === READY_FOR_FIRST_TOUCH_STATUS) return false;
-    return !lead.enrichedAt || !lead.enrichmentData || !isLeadOutreachEligible(lead);
-  }).length;
+  const preSendStages = partitionPreSendLeads(
+    leads.filter((lead) => {
+      if (isContactedOutreachStatus(lead.outreachStatus)) return false;
+      if (lead.outreachStatus === READY_FOR_FIRST_TOUCH_STATUS) return false;
+      return true;
+    }),
+  );
+  const intakeBacklog = preSendStages.intake.length;
+  const enrichmentBacklog = preSendStages.enrichment.length;
   const firstTouchQueued = automationOverview.sequences.filter(
     (sequence: any) => !sequence.hasSentAnyStep && (sequence.state === "QUEUED" || sequence.state === "SENDING"),
   ).length;
@@ -137,8 +139,8 @@ export default async function DashboardPage() {
     {
       label: "Intake backlog",
       value: intakeBacklog,
-      href: "/outreach?stage=enrichment",
-      detail: "Sourced leads waiting to enter prep",
+      href: "/hunt",
+      detail: "Sourced batch output waiting for handoff",
       icon: <Radar className="h-4 w-4 text-cyan-400" />,
     },
     {

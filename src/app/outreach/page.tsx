@@ -3,7 +3,7 @@ import { Brain, Clock3, MailCheck, ShieldCheck } from "lucide-react";
 import { OutreachHub } from "@/components/outreach/outreach-hub";
 import { ToastProvider } from "@/components/ui/toast-provider";
 import { StatCard } from "@/components/ui/stat-card";
-import { isIntakeLead } from "@/lib/pipeline-lifecycle";
+import { partitionPreSendLeads } from "@/lib/pipeline-lifecycle";
 import { getActiveAutomationLeadIds, listAutomationOverview } from "@/lib/outreach-automation";
 import { getPrisma } from "@/lib/prisma";
 import {
@@ -132,19 +132,15 @@ export default async function OutreachPage({
     },
   }).catch(() => []);
 
-  const enrichmentLeads = allPreSendLeads.filter((lead) => {
+  const stageEligibleLeads = allPreSendLeads.filter((lead) => {
     if (automationLeadIds.has(lead.id)) return false;
     if (lead.outreachStatus === READY_FOR_FIRST_TOUCH_STATUS) return false;
     if (isContactedOutreachStatus(lead.outreachStatus)) return false;
-    return Boolean(lead.source) || !lead.enrichedAt || !lead.enrichmentData;
+    return true;
   });
-
-  const qualificationLeads = allPreSendLeads.filter((lead) => {
-    if (automationLeadIds.has(lead.id)) return false;
-    if (lead.outreachStatus === READY_FOR_FIRST_TOUCH_STATUS) return false;
-    if (isContactedOutreachStatus(lead.outreachStatus)) return false;
-    return Boolean(lead.enrichedAt);
-  });
+  const preSendStages = partitionPreSendLeads(stageEligibleLeads);
+  const enrichmentLeads = [...preSendStages.intake, ...preSendStages.enrichment];
+  const qualificationLeads = preSendStages.qualification;
 
   const readyLeads = await prisma.lead.findMany({
     where: getOutreachPipelineLeadWhere(),
@@ -213,7 +209,7 @@ export default async function OutreachPage({
   const followUpDue = contactedLeads.filter(
     (lead) => lead.nextFollowUpDue && new Date(lead.nextFollowUpDue).getTime() <= now,
   ).length;
-  const intakeBacklog = allPreSendLeads.filter((lead) => isIntakeLead(lead)).length;
+  const intakeBacklog = preSendStages.intake.length;
   const lastRun = automationOverview.recentRuns[0];
   const followUpSequences = automationOverview.sequences.filter((sequence: any) => sequence.hasSentAnyStep);
 
