@@ -263,6 +263,32 @@ function HuntInner({ initialIntakeLeads }: { initialIntakeLeads: IntakeLead[] })
             </div>
           </div>
         </div>
+
+        <div className="mt-5 grid gap-3 md:grid-cols-[1.15fr_0.85fr]">
+          <div className="rounded-[22px] border border-cyan-500/10 bg-cyan-500/[0.04] px-4 py-4">
+            <div className="text-[11px] uppercase tracking-[0.22em] text-cyan-300/80">Next handoff</div>
+            <div className="mt-2 text-lg font-semibold text-white">
+              {intakeLeads.length > 0 ? `${intakeLeads.length} sourced leads waiting for Outreach` : "No intake backlog right now"}
+            </div>
+            <div className="mt-2 text-sm text-zinc-400">
+              Lead Generator owns sourcing. Outreach takes over once these records need prep and qualification.
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 rounded-[22px] border border-white/[0.06] bg-black/20 px-4 py-4">
+            <Button asChild className="rounded-full bg-white px-4 text-sm text-black hover:bg-zinc-200">
+              <Link href="/outreach?stage=enrichment">
+                Open Outreach Intake
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+            </Button>
+            <Button asChild variant="ghost" className="rounded-full border border-white/10 px-4 text-sm text-white hover:bg-white/[0.04]">
+              <Link href="/vault">
+                Open Vault
+                <Database className="h-4 w-4" />
+              </Link>
+            </Button>
+          </div>
+        </div>
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[1.06fr_0.94fr] xl:items-start">

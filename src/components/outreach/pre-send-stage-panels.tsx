@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
-  ArrowRight,
   Brain,
   CheckCircle2,
   ChevronRight,
@@ -96,7 +95,7 @@ function formatWhen(value: string | null | undefined, fallback = "No timestamp")
 function readinessCopy(state: PipelineReadinessState) {
   switch (state) {
     case "READY":
-      return "This lead has enough signal to move into qualification review.";
+      return "This lead has enough signal to move into Initial Outreach.";
     case "ALMOST_READY":
       return "The lead is close, but one or two key gaps still need attention.";
     default:
@@ -172,15 +171,17 @@ function SectionHeader({
 export function EnrichmentWorkspace({
   leads,
   onEnrichRequested,
-  onOpenQualification,
+  onRefresh,
 }: {
   leads: PreSendLead[];
   onEnrichRequested: (leadIds: number[]) => Promise<void>;
-  onOpenQualification: () => void;
+  onRefresh: () => Promise<void>;
 }) {
+  const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(leads[0]?.id ?? null);
   const [busyLeadId, setBusyLeadId] = useState<number | null>(null);
+  const [busyAction, setBusyAction] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -221,13 +222,63 @@ export function EnrichmentWorkspace({
     }
   };
 
+  const approveLead = async (leadId: number) => {
+    setBusyAction(`${leadId}:approve`);
+    try {
+      const response = await fetch(`/api/leads/${leadId}/outreach`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ outreachStatus: READY_FOR_FIRST_TOUCH_STATUS }),
+      });
+
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(data?.error || "Failed to approve lead");
+      }
+
+      toast("Lead moved into Initial Outreach", { type: "success", icon: "note" });
+      await onRefresh();
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "Failed to approve lead", {
+        type: "error",
+        icon: "note",
+      });
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const archiveLead = async (leadId: number) => {
+    setBusyAction(`${leadId}:archive`);
+    try {
+      const response = await fetch(`/api/leads/${leadId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isArchived: true }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(data?.error || "Failed to archive lead");
+      }
+      toast("Lead archived", { type: "success", icon: "note" });
+      await onRefresh();
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "Failed to archive lead", {
+        type: "error",
+        icon: "note",
+      });
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
   if (leads.length === 0) {
     return (
       <div className="rounded-[24px] border border-white/[0.06] bg-black/20 px-6 py-16 text-center">
         <Brain className="mx-auto h-10 w-10 text-zinc-700" />
         <div className="mt-4 text-lg font-medium text-white">No enrichment backlog</div>
         <p className="mt-2 text-sm leading-6 text-zinc-400">
-          Intake is clear right now. Launch a new market in Lead Generator or revisit qualification if something needs another pass.
+          Intake is clear right now. Launch a new market in Lead Generator or revisit Prep if something needs another pass.
         </p>
       </div>
     );
@@ -242,8 +293,8 @@ export function EnrichmentWorkspace({
   return (
     <div className="space-y-5">
       <SectionHeader
-        title="Enrichment"
-        description="Move incoming and incomplete leads toward decision-ready quality. The list stays on the left; the current record stays in focus on the right."
+        title="Prep"
+        description="Handle the minimum prep needed to either approve a lead for first-touch or fix the blocker holding it back."
         count={leads.length}
       />
 
@@ -342,37 +393,13 @@ export function EnrichmentWorkspace({
                   <span className={`rounded-full border px-3 py-1.5 text-xs ${getReadinessTone(readinessState)}`}>
                     {getReadinessLabel(readinessState)}
                   </span>
-                  <Button
-                    type="button"
-                    onClick={() => void handleEnrich(currentLead.id)}
-                    disabled={busyLeadId === currentLead.id}
-                    className="rounded-full bg-white px-4 text-sm text-black hover:bg-zinc-200"
-                  >
-                    {busyLeadId === currentLead.id ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <RefreshCw className="mr-2 h-4 w-4" />
-                    )}
-                    {currentLead.enrichedAt ? "Re-run enrichment" : "Run enrichment"}
-                  </Button>
-                  {currentLead.enrichedAt && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      onClick={onOpenQualification}
-                      className="rounded-full border border-white/10 px-4 text-sm text-white hover:bg-white/[0.04]"
-                    >
-                      Open Qualification
-                      <ArrowRight className="ml-2 h-4 w-4" />
-                    </Button>
-                  )}
                 </div>
               </div>
 
               <div className="rounded-[22px] border border-white/[0.06] bg-black/20 p-4">
                 <div className="flex items-center gap-2 text-sm font-medium text-white">
                   <ShieldCheck className="h-4 w-4 text-emerald-400" />
-                  Readiness summary
+                  What this lead needs next
                 </div>
                 <p className="mt-3 text-sm leading-6 text-zinc-400">{readinessCopy(readinessState)}</p>
                 <div className="mt-4 flex flex-wrap gap-2">
@@ -431,10 +458,10 @@ export function EnrichmentWorkspace({
 
                 <div className="space-y-5">
                   <div className="rounded-[22px] border border-white/[0.06] bg-black/20 p-4">
-                    <div className="text-sm font-medium text-white">Qualification notes</div>
+                    <div className="text-sm font-medium text-white">Context</div>
                     <p className="mt-3 text-sm leading-6 text-zinc-400">
                       {enrichment?.enrichmentSummary ||
-                        "Run enrichment to pull a stronger preparation summary, contact quality read, and next-step recommendation."}
+                        "Run enrichment to pull a clearer read on contact quality, site quality, and fit before approving this lead."}
                     </p>
                     {enrichment?.keyPainPoint ? (
                       <div className="mt-3 rounded-2xl border border-white/[0.06] bg-white/[0.02] px-3 py-3 text-sm text-amber-200">
@@ -452,6 +479,73 @@ export function EnrichmentWorkspace({
                     </div>
                   </div>
                 </div>
+              </div>
+
+              <div className="rounded-[22px] border border-white/[0.06] bg-black/20 p-4">
+                <div className="text-sm font-medium text-white">Next move</div>
+                <p className="mt-3 text-sm leading-6 text-zinc-400">
+                  {readinessState === "READY"
+                    ? "This lead is ready to move straight into Initial Outreach."
+                    : "Keep this in Prep and fix the missing pieces first. If the current read feels stale, refresh enrichment."}
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-3 border-t border-white/[0.06] pt-4 sm:flex-row sm:flex-wrap">
+                {readinessState === "READY" ? (
+                  <Button
+                    type="button"
+                    onClick={() => void approveLead(currentLead.id)}
+                    disabled={busyLeadId !== null || busyAction !== null}
+                    className="rounded-full bg-white px-4 text-sm text-black hover:bg-zinc-200"
+                  >
+                    {busyAction === `${currentLead.id}:approve` ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <CheckCircle2 className="mr-2 h-4 w-4" />
+                    )}
+                    Approve for First Touch
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    onClick={() => void handleEnrich(currentLead.id)}
+                    disabled={busyLeadId === currentLead.id || busyAction !== null}
+                    className="rounded-full bg-white px-4 text-sm text-black hover:bg-zinc-200"
+                  >
+                    {busyLeadId === currentLead.id ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="mr-2 h-4 w-4" />
+                    )}
+                    {currentLead.enrichedAt ? "Refresh Prep" : "Run Enrichment"}
+                  </Button>
+                )}
+                {readinessState === "READY" ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => void handleEnrich(currentLead.id)}
+                    disabled={busyLeadId === currentLead.id || busyAction !== null}
+                    className="rounded-full border border-white/10 px-4 text-sm text-white hover:bg-white/[0.04]"
+                  >
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    Refresh Prep
+                  </Button>
+                ) : null}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => void archiveLead(currentLead.id)}
+                  disabled={busyLeadId !== null || busyAction !== null}
+                  className="rounded-full border border-rose-500/20 px-4 text-sm text-rose-200 hover:bg-rose-500/10"
+                >
+                  {busyAction === `${currentLead.id}:archive` ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <AlertTriangle className="mr-2 h-4 w-4" />
+                  )}
+                  Disqualify
+                </Button>
               </div>
             </div>
           ) : null}
@@ -770,6 +864,7 @@ export function InitialOutreachPanel({
 
   const queuedOrSending = sequences.filter((sequence) => sequence.state === "QUEUED" || sequence.state === "SENDING");
   const blocked = sequences.filter((sequence) => sequence.state === "BLOCKED");
+  const selectedCount = selectedIds.size;
 
   const toggleLead = (leadId: number) => {
     setSelectedIds((previous) => {
@@ -810,9 +905,9 @@ export function InitialOutreachPanel({
       });
       const data = await response.json().catch(() => null);
       if (!response.ok) {
-        throw new Error(data?.error || "Failed to move lead back to qualification");
+        throw new Error(data?.error || "Failed to move lead back to Prep");
       }
-      toast("Lead moved back to Qualification", { type: "success", icon: "note" });
+      toast("Lead moved back to Prep", { type: "success", icon: "note" });
       await onRefresh();
     } catch (error) {
       toast(error instanceof Error ? error.message : "Failed to move lead", {
@@ -829,6 +924,24 @@ export function InitialOutreachPanel({
         description="This stage owns only unsent first-touch work. Once a first send succeeds, the lead leaves this page and moves into Follow-Up."
         count={leads.length + sequences.length}
       />
+
+      <div className="grid gap-3 md:grid-cols-3">
+        <div className="rounded-[22px] border border-emerald-500/10 bg-emerald-500/[0.04] px-4 py-4">
+          <div className="text-[11px] uppercase tracking-[0.22em] text-emerald-300/80">Ready</div>
+          <div className="mt-1 text-2xl font-semibold text-white">{leads.length}</div>
+          <div className="mt-1 text-xs text-zinc-500">qualified leads still waiting on first-touch</div>
+        </div>
+        <div className="rounded-[22px] border border-cyan-500/10 bg-cyan-500/[0.04] px-4 py-4">
+          <div className="text-[11px] uppercase tracking-[0.22em] text-cyan-300/80">Queued</div>
+          <div className="mt-1 text-2xl font-semibold text-white">{queuedOrSending.length}</div>
+          <div className="mt-1 text-xs text-zinc-500">first-touch work already scheduled or sending</div>
+        </div>
+        <div className="rounded-[22px] border border-amber-500/10 bg-amber-500/[0.04] px-4 py-4">
+          <div className="text-[11px] uppercase tracking-[0.22em] text-amber-300/80">Blocked</div>
+          <div className="mt-1 text-2xl font-semibold text-white">{blocked.length}</div>
+          <div className="mt-1 text-xs text-zinc-500">pre-send blockers that need intervention</div>
+        </div>
+      </div>
 
       <div className="grid gap-5 xl:grid-cols-[1.08fr_0.92fr]">
         <div className="space-y-5">
@@ -870,10 +983,16 @@ export function InitialOutreachPanel({
               </div>
             </div>
 
+            <div className="mt-4 rounded-[20px] border border-white/[0.06] bg-black/20 px-4 py-3 text-sm text-zinc-400">
+              {selectedCount > 0
+                ? `${selectedCount} lead${selectedCount === 1 ? "" : "s"} selected. Send manually for hands-on first-touch, or queue them so automation handles first-touch timing.`
+                : "Select one or more leads, then choose between manual sending and queued first-touch automation."}
+            </div>
+
             <div className="mt-4 space-y-3">
               {leads.length === 0 ? (
                 <div className="rounded-[20px] border border-white/[0.06] bg-black/20 px-4 py-10 text-center text-sm text-zinc-500">
-                  No leads are approved for first-touch right now.
+                  No leads are approved for first-touch right now. Finish Prep first, then come back here to launch them.
                 </div>
               ) : (
                 leads.map((lead) => (
@@ -908,7 +1027,7 @@ export function InitialOutreachPanel({
                       onClick={() => void moveBackToQualification(lead.id)}
                       className="rounded-full border border-white/10 px-3 text-xs text-white hover:bg-white/[0.04]"
                     >
-                      Move Back
+                      Move to Prep
                     </Button>
                   </div>
                 ))

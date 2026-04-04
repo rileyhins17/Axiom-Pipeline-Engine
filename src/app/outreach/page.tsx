@@ -90,13 +90,11 @@ export default async function OutreachPage({
   const params = (await searchParams) || {};
   const requestedStage = params.stage;
   const initialTab =
-    requestedStage === "qualification"
-      ? "qualification"
-      : requestedStage === "initial"
+    requestedStage === "initial"
         ? "initial"
         : requestedStage === "log"
           ? "log"
-          : "enrichment";
+          : "prep";
 
   const automationLeadIds = new Set(await getActiveAutomationLeadIds().catch(() => []));
   const automationOverview = await listAutomationOverview().catch(() => emptyAutomationOverview());
@@ -141,6 +139,7 @@ export default async function OutreachPage({
   const preSendStages = partitionPreSendLeads(stageEligibleLeads);
   const enrichmentLeads = [...preSendStages.intake, ...preSendStages.enrichment];
   const qualificationLeads = preSendStages.qualification;
+  const prepLeads = [...preSendStages.intake, ...preSendStages.enrichment, ...qualificationLeads];
 
   const readyLeads = await prisma.lead.findMany({
     where: getOutreachPipelineLeadWhere(),
@@ -226,7 +225,7 @@ export default async function OutreachPage({
                 Outreach
               </h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">
-                Outreach is now the full pre-send console: intake lands here for enrichment, qualification makes approval explicit, and Initial Outreach owns only leads that have never had a successful first send.
+                Outreach is the simple pre-send console: prep the lead, launch the first touch, then hand it off to Follow-Up.
               </p>
             </div>
           </div>
@@ -264,9 +263,9 @@ export default async function OutreachPage({
           iconColor="text-cyan-400"
         />
         <StatCard
-          label="Qualification Queue"
-          value={qualificationLeads.length}
-          subtitle="enriched leads awaiting approval"
+          label="Prep Queue"
+          value={prepLeads.length}
+          subtitle={`${qualificationLeads.length} close to approval`}
           icon={<ShieldCheck />}
           iconColor="text-purple-400"
         />
@@ -288,7 +287,7 @@ export default async function OutreachPage({
 
       <ToastProvider>
         <OutreachHub
-          initialEnrichmentLeads={JSON.parse(JSON.stringify(enrichmentLeads))}
+          initialPrepLeads={JSON.parse(JSON.stringify(prepLeads))}
           initialQualificationLeads={JSON.parse(JSON.stringify(qualificationLeads))}
           initialReadyLeads={JSON.parse(JSON.stringify(initialOutreachLeads))}
           initialAutomationOverview={JSON.parse(JSON.stringify(automationOverview))}

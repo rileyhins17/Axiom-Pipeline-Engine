@@ -432,6 +432,17 @@ export function AutomationPanel({ overview, onOverviewUpdated }: AutomationPanel
 
           <div className="flex flex-wrap gap-2">
             <Button
+              asChild
+              size="sm"
+              variant="ghost"
+              className="rounded-full border border-white/10 px-4 text-xs text-zinc-300 hover:bg-white/[0.04]"
+            >
+              <Link href="/outreach?stage=initial">
+                Open Initial Outreach
+                <ArrowRight className="h-3 w-3" />
+              </Link>
+            </Button>
+            <Button
               size="sm"
               variant="ghost"
               onClick={() => void handleSyncReplies()}
@@ -478,6 +489,17 @@ export function AutomationPanel({ overview, onOverviewUpdated }: AutomationPanel
               {overview.stats.blocked} / {overview.stats.replied}
             </div>
             <div className="mt-1 text-xs text-zinc-500">needs review or already replied</div>
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-[22px] border border-white/[0.06] bg-black/20 px-4 py-4">
+          <div className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">What needs attention now</div>
+          <div className="mt-2 text-sm text-zinc-300">
+            {blockedSequences.length > 0
+              ? `${blockedSequences.length} post-send sequence${blockedSequences.length === 1 ? "" : "s"} are blocked and need review before they can continue.`
+              : overview.engine.nextSendAt
+                ? `The engine is clear right now. The next follow-up is due ${formatDateTime(overview.engine.nextSendAt)}.`
+                : "The engine is clear right now. No post-send follow-up is currently due."}
           </div>
         </div>
       </section>

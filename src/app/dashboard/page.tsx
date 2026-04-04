@@ -141,6 +141,7 @@ export default async function DashboardPage() {
       value: intakeBacklog,
       href: "/hunt",
       detail: "Sourced batch output waiting for handoff",
+      action: "Open Lead Generator",
       icon: <Radar className="h-4 w-4 text-cyan-400" />,
     },
     {
@@ -148,6 +149,7 @@ export default async function DashboardPage() {
       value: enrichmentBacklog,
       href: "/outreach?stage=enrichment",
       detail: "Records still missing prep before approval",
+      action: "Open Enrichment",
       icon: <Brain className="h-4 w-4 text-purple-400" />,
     },
     {
@@ -155,6 +157,7 @@ export default async function DashboardPage() {
       value: automationOverview.stats.ready,
       href: "/outreach?stage=initial",
       detail: "Approved leads waiting on first-touch action",
+      action: "Open Initial Outreach",
       icon: <MailCheck className="h-4 w-4 text-emerald-400" />,
     },
     {
@@ -162,6 +165,7 @@ export default async function DashboardPage() {
       value: blockedFollowUps,
       href: "/automation",
       detail: "Post-send sequences needing intervention",
+      action: "Open Automation",
       icon: <AlertTriangle className="h-4 w-4 text-amber-400" />,
     },
   ];
@@ -267,6 +271,10 @@ export default async function DashboardPage() {
                   <div className="text-lg font-semibold text-white">{item.value}</div>
                 </div>
                 <div className="mt-3 text-sm leading-6 text-zinc-400">{item.detail}</div>
+                <div className="mt-4 inline-flex items-center gap-2 text-xs font-medium text-white/80">
+                  {item.action}
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </div>
               </Link>
             ))}
           </div>

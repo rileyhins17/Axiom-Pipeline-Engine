@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowRight, Brain, Inbox, MailCheck, ShieldCheck, Sparkles } from "lucide-react";
+import { ArrowRight, Brain, Inbox, MailCheck, Sparkles } from "lucide-react";
 
 import { EmailComposer } from "@/components/outreach/email-composer";
 import { EmailLogTable } from "@/components/outreach/email-log-table";
@@ -10,14 +10,13 @@ import { GmailConnectCard } from "@/components/outreach/gmail-connect-card";
 import {
   EnrichmentWorkspace,
   InitialOutreachPanel,
-  QualificationPanel,
   type PreSendLead,
   type PreSendSequence,
 } from "@/components/outreach/pre-send-stage-panels";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast-provider";
 
-type Tab = "enrichment" | "qualification" | "initial" | "log";
+type Tab = "prep" | "initial" | "log";
 
 const TAB_CONFIG: Array<{
   id: Tab;
@@ -26,27 +25,21 @@ const TAB_CONFIG: Array<{
   icon: typeof Brain;
 }> = [
   {
-    id: "enrichment",
-    label: "Enrichment",
-    description: "Prepare intake leads and surface what is still missing before qualification.",
+    id: "prep",
+    label: "Prep",
+    description: "Do the minimum prep needed to get the lead ready for first-touch.",
     icon: Brain,
-  },
-  {
-    id: "qualification",
-    label: "Qualification",
-    description: "Make the pre-send approval explicit before anything enters first-touch.",
-    icon: ShieldCheck,
   },
   {
     id: "initial",
     label: "Initial Outreach",
-    description: "Own only unsent first-touch work. No follow-up lifecycle appears here.",
+    description: "Own only unsent first-touch work. Follow-up does not live here.",
     icon: MailCheck,
   },
   {
     id: "log",
     label: "Email Log",
-    description: "Reference sent history and thread activity without changing stage ownership.",
+    description: "Reference sent history and thread activity without changing ownership.",
     icon: Inbox,
   },
 ];
@@ -71,24 +64,39 @@ type AutomationOverview = {
 };
 
 type OutreachHubProps = {
-  initialEnrichmentLeads: PreSendLead[];
-  initialQualificationLeads: PreSendLead[];
+  initialPrepLeads: PreSendLead[];
+  initialQualificationLeads?: PreSendLead[];
   initialReadyLeads: PreSendLead[];
   initialAutomationOverview: AutomationOverview;
   initialTab?: Tab;
 };
 
+function mergePrepLeads(...groups: PreSendLead[][]) {
+  const byId = new Map<number, PreSendLead>();
+  for (const group of groups) {
+    for (const lead of group) {
+      byId.set(lead.id, lead);
+    }
+  }
+  return Array.from(byId.values()).sort((a, b) => {
+    const aTime = new Date(a.lastUpdated || a.createdAt || 0).getTime() || 0;
+    const bTime = new Date(b.lastUpdated || b.createdAt || 0).getTime() || 0;
+    return bTime - aTime;
+  });
+}
+
 export function OutreachHub({
-  initialEnrichmentLeads,
-  initialQualificationLeads,
+  initialPrepLeads,
+  initialQualificationLeads = [],
   initialReadyLeads,
   initialAutomationOverview,
-  initialTab = "enrichment",
+  initialTab = "prep",
 }: OutreachHubProps) {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<Tab>(initialTab);
-  const [enrichmentLeads, setEnrichmentLeads] = useState<PreSendLead[]>(initialEnrichmentLeads);
-  const [qualificationLeads, setQualificationLeads] = useState<PreSendLead[]>(initialQualificationLeads);
+  const [prepLeads, setPrepLeads] = useState<PreSendLead[]>(
+    mergePrepLeads(initialPrepLeads, initialQualificationLeads),
+  );
   const [readyLeads, setReadyLeads] = useState<PreSendLead[]>(initialReadyLeads);
   const [automationOverview, setAutomationOverview] = useState(initialAutomationOverview);
   const [gmailConnected, setGmailConnected] = useState(false);
@@ -103,21 +111,17 @@ export function OutreachHub({
 
   const refreshEnrichmentStage = useCallback(async () => {
     try {
-      const [enrichmentRes, qualificationRes, initialRes, automationRes] = await Promise.all([
+      const [prepRes, qualificationRes, initialRes, automationRes] = await Promise.all([
         fetch("/api/outreach/enrichment-stage"),
         fetch("/api/outreach/qualification-stage"),
         fetch("/api/outreach/pipeline"),
         fetch("/api/outreach/automation/overview"),
       ]);
 
-      if (enrichmentRes.ok) {
-        const data = await enrichmentRes.json();
-        setEnrichmentLeads(data.leads || []);
-      }
-      if (qualificationRes.ok) {
-        const data = await qualificationRes.json();
-        setQualificationLeads(data.leads || []);
-      }
+      const nextPrep = prepRes.ok ? ((await prepRes.json()).leads || []) : [];
+      const nextQualification = qualificationRes.ok ? ((await qualificationRes.json()).leads || []) : [];
+      setPrepLeads(mergePrepLeads(nextPrep, nextQualification));
+
       if (initialRes.ok) {
         const data = await initialRes.json();
         setReadyLeads(data.leads || []);
@@ -208,8 +212,7 @@ export function OutreachHub({
   );
 
   const tabCounts: Record<Tab, number | null> = {
-    enrichment: enrichmentLeads.length,
-    qualification: qualificationLeads.length,
+    prep: prepLeads.length,
     initial: readyLeads.length + preSendSequences.length,
     log: null,
   };
@@ -224,21 +227,27 @@ export function OutreachHub({
           <div className="max-w-3xl">
             <div className="flex items-center gap-2 text-sm font-medium text-white">
               <Sparkles className="h-4 w-4 text-blue-400" />
-              Outreach now owns the full pre-send pipeline
+              Simpler pre-send workflow
             </div>
             <p className="mt-2 text-sm leading-6 text-zinc-400">
-              Move leads from enrichment into qualification, approve only the right records for first-touch, then let Follow-Up automation take over after the first send lands.
+              Prep the lead, launch the first touch, then let Follow-Up take over. The visible flow stays simple from start to finish.
             </p>
-            <div className="mt-3 flex flex-wrap gap-2 text-xs text-zinc-400">
-              <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1.5">
-                {enrichmentLeads.length} in enrichment
-              </span>
-              <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1.5">
-                {qualificationLeads.length} in qualification
-              </span>
-              <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1.5">
-                {automationOverview.stats.ready} ready for first touch
-              </span>
+            <div className="mt-4 grid gap-2 sm:grid-cols-3">
+              <div className="rounded-2xl border border-cyan-500/10 bg-black/20 px-3 py-3">
+                <div className="text-[11px] uppercase tracking-[0.22em] text-cyan-300/80">Step 1</div>
+                <div className="mt-1 text-sm font-medium text-white">Prep</div>
+                <div className="mt-1 text-xs text-zinc-500">{prepLeads.length} leads still need prep</div>
+              </div>
+              <div className="rounded-2xl border border-emerald-500/10 bg-black/20 px-3 py-3">
+                <div className="text-[11px] uppercase tracking-[0.22em] text-emerald-300/80">Step 2</div>
+                <div className="mt-1 text-sm font-medium text-white">Initial Outreach</div>
+                <div className="mt-1 text-xs text-zinc-500">{readyLeads.length} leads ready to launch</div>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-black/20 px-3 py-3">
+                <div className="text-[11px] uppercase tracking-[0.22em] text-zinc-400">Step 3</div>
+                <div className="mt-1 text-sm font-medium text-white">Follow-Up</div>
+                <div className="mt-1 text-xs text-zinc-500">Automation takes over after first send</div>
+              </div>
             </div>
           </div>
 
@@ -252,7 +261,7 @@ export function OutreachHub({
       </div>
 
       <div className="rounded-[24px] border border-white/[0.06] bg-white/[0.02] p-2">
-        <div className="grid gap-2 md:grid-cols-4">
+        <div className="grid gap-2 md:grid-cols-3">
           {TAB_CONFIG.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -271,13 +280,11 @@ export function OutreachHub({
                   <div className="flex items-center gap-2 text-sm font-medium text-white">
                     <Icon
                       className={`h-4 w-4 ${
-                        tab.id === "enrichment"
+                        tab.id === "prep"
                           ? "text-cyan-400"
-                          : tab.id === "qualification"
-                            ? "text-purple-400"
-                            : tab.id === "initial"
-                              ? "text-emerald-400"
-                              : "text-zinc-300"
+                          : tab.id === "initial"
+                            ? "text-emerald-400"
+                            : "text-zinc-300"
                       }`}
                     />
                     {tab.label}
@@ -310,20 +317,11 @@ export function OutreachHub({
           )}
         </div>
 
-        {activeTab === "enrichment" && (
+        {activeTab === "prep" && (
           <EnrichmentWorkspace
-            leads={enrichmentLeads}
+            leads={prepLeads}
             onEnrichRequested={handleEnrichRequested}
-            onOpenQualification={() => setActiveTab("qualification")}
-          />
-        )}
-
-        {activeTab === "qualification" && (
-          <QualificationPanel
-            leads={qualificationLeads}
             onRefresh={refreshEnrichmentStage}
-            onReEnrich={handleEnrichRequested}
-            onOpenEnrichment={() => setActiveTab("enrichment")}
           />
         )}
 
