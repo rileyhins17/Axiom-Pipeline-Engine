@@ -16,18 +16,16 @@ type SendResult = {
 type EmailComposerProps = {
   leadIds: number[];
   onClose: () => void;
-  onComplete: (sentLeadIds: number[]) => void;
+  onComplete: (results: SendResult[]) => void;
 };
 
 export function EmailComposer({ leadIds, onClose, onComplete }: EmailComposerProps) {
   const { toast } = useToast();
   const [phase, setPhase] = useState<"confirm" | "sending" | "done">("confirm");
-  const [progress, setProgress] = useState(0);
   const [results, setResults] = useState<SendResult[]>([]);
 
   const handleSend = async () => {
     setPhase("sending");
-    setProgress(0);
 
     try {
       const res = await fetch("/api/outreach/send", {
@@ -44,6 +42,7 @@ export function EmailComposer({ leadIds, onClose, onComplete }: EmailComposerPro
       const data = await res.json();
       setResults(data.results || []);
       setPhase("done");
+      onComplete(data.results || []);
 
       const sent = data.results?.filter((r: SendResult) => r.status === "sent").length || 0;
       toast(`Sent ${sent} email${sent !== 1 ? "s" : ""} successfully`, {
@@ -78,10 +77,7 @@ export function EmailComposer({ leadIds, onClose, onComplete }: EmailComposerPro
           </div>
           {phase !== "sending" && (
             <button
-              onClick={phase === "done" ? () => {
-                onComplete(results.filter((r) => r.status === "sent").map((r) => r.leadId));
-                onClose();
-              } : onClose}
+              onClick={onClose}
               className="rounded-lg p-1 text-zinc-600 transition-colors hover:bg-white/5 hover:text-white"
             >
               <X className="h-5 w-5" />
@@ -217,10 +213,7 @@ export function EmailComposer({ leadIds, onClose, onComplete }: EmailComposerPro
           )}
           {phase === "done" && (
             <Button
-              onClick={() => {
-                onComplete(results.filter((r) => r.status === "sent").map((r) => r.leadId));
-                onClose();
-              }}
+              onClick={onClose}
               className="gap-1.5 bg-gradient-to-r from-emerald-600 to-cyan-600 font-bold text-white hover:from-emerald-500 hover:to-cyan-500"
             >
               <CheckCircle2 className="h-3.5 w-3.5" />

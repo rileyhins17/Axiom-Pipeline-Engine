@@ -281,6 +281,9 @@ type TableSpec<T extends Record<string, unknown>> = {
 type PrismaLike = {
   auditEvent: {
     create(args: CreateArgs): Promise<AuditEventRecord>;
+    findMany<S extends SelectMap<AuditEventRecord> | undefined = undefined>(
+      args?: FindManyArgs<AuditEventRecord, S>,
+    ): Promise<Array<Selected<AuditEventRecord, S>>>;
   };
   lead: {
     count(args?: CountArgs): Promise<number>;
