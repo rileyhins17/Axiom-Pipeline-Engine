@@ -1,0 +1,3 @@
+- generic [ref=e32]:
+  - 'heading "Application error: a server-side exception has occurred while loading 127.0.0.1 (see the server logs for more information)." [level=2] [ref=e33]'
+  - paragraph [ref=e34]: "Digest: 1928258573"

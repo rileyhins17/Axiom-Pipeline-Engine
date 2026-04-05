@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { updateMailbox } from "@/lib/outreach-automation";
+import { listAutomationOverview, updateMailbox } from "@/lib/outreach-automation";
 import { requireAdminApiSession } from "@/lib/session";
 
 export async function PATCH(
@@ -16,7 +16,8 @@ export async function PATCH(
     const body = (await request.json()) as Record<string, unknown>;
     const { id } = await params;
     const mailbox = await updateMailbox(id, body);
-    return NextResponse.json({ mailbox });
+    const overview = await listAutomationOverview();
+    return NextResponse.json({ mailbox, overview });
   } catch (error: any) {
     console.error("Mailbox update error:", error);
     return NextResponse.json(

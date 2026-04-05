@@ -1,0 +1,16 @@
+▲ Next.js 16.1.6
+- Local:         http://127.0.0.1:3004
+- Network:       http://127.0.0.1:3004
+
+✓ Starting...
+✓ Ready in 670ms
+⨯ SqliteError: near "FROM": syntax error
+    at Object.all (C:\Users\riley\Documents\Playground\.next\server\app\api\agent\jobs\[id]\logs\route.js:1:12750)
+    at E (C:\Users\riley\Documents\Playground\.next\server\chunks\4564.js:1:14403)
+    at Object.findMany (C:\Users\riley\Documents\Playground\.next\server\chunks\4564.js:1:16183)
+    at async y (C:\Users\riley\Documents\Playground\.next\server\chunks\7864.js:51:6753)
+    at async r (C:\Users\riley\Documents\Playground\.next\server\app\outreach\page.js:1:7199) {
+  code: 'SQLITE_ERROR',
+  digest: '2682096007'
+}
+^C

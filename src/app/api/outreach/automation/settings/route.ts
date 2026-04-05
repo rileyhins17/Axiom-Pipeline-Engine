@@ -29,7 +29,8 @@ export async function PATCH(request: Request) {
   try {
     const body = (await request.json()) as Record<string, unknown>;
     const settings = await updateAutomationSettings(body);
-    return NextResponse.json({ settings });
+    const overview = await listAutomationOverview();
+    return NextResponse.json({ settings, overview });
   } catch (error: any) {
     return NextResponse.json(
       { error: error.message || "Failed to update automation settings" },

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { queueLeadsForAutomation } from "@/lib/outreach-automation";
+import { listAutomationOverview, queueLeadsForAutomation } from "@/lib/outreach-automation";
 import { requireAdminApiSession } from "@/lib/session";
 
 export async function POST(request: Request) {
@@ -20,7 +20,8 @@ export async function POST(request: Request) {
       queuedByUserId: authResult.session.user.id,
     });
 
-    return NextResponse.json(result);
+    const overview = await listAutomationOverview();
+    return NextResponse.json({ ...result, overview });
   } catch (error: any) {
     console.error("Automation queue error:", error);
     return NextResponse.json(

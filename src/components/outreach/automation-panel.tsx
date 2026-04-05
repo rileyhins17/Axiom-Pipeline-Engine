@@ -159,6 +159,10 @@ type ReplySyncResult = {
   stopped: number;
 };
 
+type WithOverview<T> = T & {
+  overview?: AutomationOverview;
+};
+
 type ManualActionSummary =
   | {
       kind: "run";
@@ -172,7 +176,7 @@ type ManualActionSummary =
 
 type AutomationPanelProps = {
   overview: AutomationOverview;
-  onOverviewUpdated: () => Promise<void>;
+  onOverviewUpdated: (nextOverview?: AutomationOverview) => Promise<void>;
 };
 
 function formatDateTime(value: string | Date | null | undefined, fallback = "Not scheduled") {
@@ -259,15 +263,79 @@ export function AutomationPanel({ overview, onOverviewUpdated }: AutomationPanel
   }, [overview.settings]);
 
   useEffect(() => {
-    const timer = window.setInterval(() => setTick((value) => value + 1), 30_000);
-    return () => window.clearInterval(timer);
+    let timer: number | null = null;
+    let cancelled = false;
+
+    const scheduleTick = () => {
+      timer = window.setTimeout(() => {
+        if (cancelled) return;
+        if (!document.hidden) {
+          setTick((value) => value + 1);
+        }
+        scheduleTick();
+      }, 30_000);
+    };
+
+    scheduleTick();
+
+    return () => {
+      cancelled = true;
+      if (timer !== null) {
+        window.clearTimeout(timer);
+      }
+    };
   }, []);
 
   useEffect(() => {
-    const timer = window.setInterval(() => {
-      void onOverviewUpdated().catch(() => {});
-    }, 45_000);
-    return () => window.clearInterval(timer);
+    let timer: number | null = null;
+    let cancelled = false;
+
+    const scheduleRefresh = (delayMs: number) => {
+      timer = window.setTimeout(() => {
+        if (cancelled) return;
+        if (document.hidden) {
+          scheduleRefresh(45_000);
+          return;
+        }
+
+        void onOverviewUpdated()
+          .then(() => {
+            scheduleRefresh(45_000);
+          })
+          .catch(() => {
+            scheduleRefresh(90_000);
+          });
+      }, delayMs);
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden || cancelled) {
+        return;
+      }
+
+      if (timer !== null) {
+        window.clearTimeout(timer);
+      }
+
+      void onOverviewUpdated()
+        .catch(() => {})
+        .finally(() => {
+          if (!cancelled) {
+            scheduleRefresh(45_000);
+          }
+        });
+    };
+
+    scheduleRefresh(45_000);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      cancelled = true;
+      if (timer !== null) {
+        window.clearTimeout(timer);
+      }
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [onOverviewUpdated]);
 
   const executeAction = async <T,>(key: string, fn: () => Promise<Response>) => {
@@ -318,7 +386,7 @@ export function AutomationPanel({ overview, onOverviewUpdated }: AutomationPanel
   }, [blockedSequences]);
 
   const handleRunScheduler = async () => {
-    const data = await executeAction<ManualRunResult>("run", () =>
+    const data = await executeAction<WithOverview<ManualRunResult>>("run", () =>
       fetch("/api/outreach/automation/run", { method: "POST" }),
     );
     if (!data) return;
@@ -333,11 +401,11 @@ export function AutomationPanel({ overview, onOverviewUpdated }: AutomationPanel
         : "Automation check finished with no sends",
       { type: "success", icon: "note" },
     );
-    await onOverviewUpdated();
+    await onOverviewUpdated(data.overview);
   };
 
   const handleSyncReplies = async () => {
-    const data = await executeAction<ReplySyncResult>("sync", () =>
+    const data = await executeAction<WithOverview<ReplySyncResult>>("sync", () =>
       fetch("/api/outreach/automation/replies/sync", { method: "POST" }),
     );
     if (!data) return;
@@ -352,11 +420,11 @@ export function AutomationPanel({ overview, onOverviewUpdated }: AutomationPanel
         : "Reply sync finished",
       { type: "success", icon: "note" },
     );
-    await onOverviewUpdated();
+    await onOverviewUpdated(data.overview);
   };
 
   const updateSequence = async (sequenceId: string, action: "pause" | "resume" | "stop" | "remove") => {
-    const data = await executeAction(
+    const data = await executeAction<WithOverview<{ sequence: unknown }>>(
       `${action}:${sequenceId}`,
       () =>
         fetch(`/api/outreach/automation/sequences/${sequenceId}`, {
@@ -377,11 +445,11 @@ export function AutomationPanel({ overview, onOverviewUpdated }: AutomationPanel
             : "Sequence stopped",
       { type: "success", icon: "note" },
     );
-    await onOverviewUpdated();
+    await onOverviewUpdated(data.overview);
   };
 
   const updateMailbox = async (mailboxId: string, status: string) => {
-    const data = await executeAction(
+    const data = await executeAction<WithOverview<{ mailbox: unknown }>>(
       `mailbox:${mailboxId}`,
       () =>
         fetch(`/api/outreach/automation/mailboxes/${mailboxId}`, {
@@ -396,11 +464,11 @@ export function AutomationPanel({ overview, onOverviewUpdated }: AutomationPanel
       type: "success",
       icon: "note",
     });
-    await onOverviewUpdated();
+    await onOverviewUpdated(data.overview);
   };
 
   const saveSettings = async () => {
-    const data = await executeAction("settings", () =>
+    const data = await executeAction<WithOverview<{ settings: AutomationOverview["settings"] }>>("settings", () =>
       fetch("/api/outreach/automation/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -410,7 +478,7 @@ export function AutomationPanel({ overview, onOverviewUpdated }: AutomationPanel
     if (!data) return;
 
     toast("Automation settings updated", { type: "success", icon: "note" });
-    await onOverviewUpdated();
+    await onOverviewUpdated(data.overview);
   };
 
   return (

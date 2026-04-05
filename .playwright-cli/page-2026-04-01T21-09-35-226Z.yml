@@ -1,0 +1,212 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e5]:
+      - link "Axiom Axiom Pipeline Engine" [ref=e7] [cursor=pointer]:
+        - /url: /dashboard
+        - generic [ref=e8]:
+          - img "Axiom" [ref=e10]
+          - generic [ref=e11]:
+            - generic [ref=e12]: Axiom
+            - generic [ref=e13]: Pipeline Engine
+      - list [ref=e17]:
+        - listitem [ref=e18]:
+          - link "Dashboard Cmd+1" [ref=e19] [cursor=pointer]:
+            - /url: /dashboard
+            - img [ref=e20]
+            - generic [ref=e25]: Dashboard
+            - generic [ref=e26]: Cmd+1
+        - listitem [ref=e27]:
+          - link "Hunt Cmd+2" [ref=e28] [cursor=pointer]:
+            - /url: /hunt
+            - img [ref=e29]
+            - generic [ref=e33]: Hunt
+            - generic [ref=e34]: Cmd+2
+        - listitem [ref=e35]:
+          - link "Vault Cmd+3" [ref=e36] [cursor=pointer]:
+            - /url: /vault
+            - img [ref=e37]
+            - generic [ref=e41]: Vault
+            - generic [ref=e42]: Cmd+3
+        - listitem [ref=e43]:
+          - link "Outreach Cmd+5" [ref=e44] [cursor=pointer]:
+            - /url: /outreach
+            - img [ref=e46]
+            - generic [ref=e48]: Outreach
+            - generic [ref=e49]: Cmd+5
+        - listitem [ref=e50]:
+          - link "Settings Cmd+4" [ref=e51] [cursor=pointer]:
+            - /url: /settings
+            - img [ref=e52]
+            - generic [ref=e55]: Settings
+            - generic [ref=e56]: Cmd+4
+      - generic [ref=e58]:
+        - generic [ref=e59]:
+          - generic [ref=e60]: Leads
+          - generic [ref=e61]: "0"
+        - generic [ref=e62]: "Added today: 0"
+    - main [ref=e63]:
+      - generic [ref=e65]:
+        - button "Toggle Sidebar" [ref=e66]:
+          - img
+          - generic [ref=e67]: Toggle Sidebar
+        - generic [ref=e68]:
+          - img [ref=e69]
+          - generic [ref=e71]: Outreach
+        - button "Search… ⌘K" [ref=e73]:
+          - img [ref=e74]
+          - generic [ref=e77]: Search…
+          - generic [ref=e78]: ⌘K
+      - generic [ref=e80]:
+        - generic [ref=e82]:
+          - generic [ref=e83]:
+            - paragraph [ref=e84]: Axiom Pipeline Engine
+            - generic [ref=e85]:
+              - heading "Outreach" [level=1] [ref=e86]
+              - paragraph [ref=e87]: Manual sending, enrichment, and automation now live in one cleaner workspace. The scheduler continues running on its normal cadence, and manual runs still use the same automation engine underneath.
+          - generic [ref=e88]:
+            - generic [ref=e89]:
+              - generic [ref=e90]: Last scheduler run
+              - generic [ref=e91]: Idle
+              - generic [ref=e92]: No runs recorded yet
+            - generic [ref=e93]:
+              - generic [ref=e94]: Follow-up due
+              - generic [ref=e95]: "0"
+              - generic [ref=e96]: manual conversations waiting
+            - generic [ref=e97]:
+              - generic [ref=e98]: Pipeline rule
+              - generic [ref=e99]: Score above 35
+              - generic [ref=e100]: unsent leads stay visible here
+        - generic [ref=e101]:
+          - generic [ref=e102]:
+            - generic [ref=e103]:
+              - generic [ref=e104]: Pipeline
+              - img [ref=e106]
+            - generic [ref=e110]: "0"
+            - generic [ref=e111]: manual candidates above 35
+          - generic [ref=e112]:
+            - generic [ref=e113]:
+              - generic [ref=e114]: Enriched
+              - img [ref=e116]
+            - generic [ref=e124]: "0"
+            - generic [ref=e125]: ready for send or automation
+          - generic [ref=e126]:
+            - generic [ref=e127]:
+              - generic [ref=e128]: Automation Live
+              - img [ref=e130]
+            - generic [ref=e133]: "0"
+            - generic [ref=e134]: queued, active, or paused
+          - generic [ref=e135]:
+            - generic [ref=e136]:
+              - generic [ref=e137]: Sent Today
+              - img [ref=e139]
+            - generic [ref=e142]: "0"
+            - generic [ref=e143]: 0 conversations still active
+        - generic [ref=e144]:
+          - generic [ref=e145]:
+            - generic [ref=e146]:
+              - img [ref=e147]
+              - text: What needs attention now
+            - paragraph [ref=e150]: Manual follow-ups, newly enriched leads, and any blocked automation sequences should be handled from the tabs below.
+          - generic [ref=e151]:
+            - generic [ref=e152]: How automation behaves
+            - paragraph [ref=e153]: Manual scheduler runs and automatic cron runs use the same queue, mailbox rules, reply stops, and pacing settings.
+          - generic [ref=e154]:
+            - generic [ref=e155]: What the tabs mean
+            - paragraph [ref=e156]: Pipeline is manual unsent work, Enriched is ready for review, Automation shows queued and running sequences, and Email Log tracks delivered outreach.
+        - generic [ref=e157]:
+          - generic [ref=e158]:
+            - img [ref=e159]
+            - generic [ref=e161]: Checking connected Gmail mailboxes...
+          - generic [ref=e163]:
+            - button "Pipeline 0 Manual outreach candidates that have not been sent yet." [ref=e164]:
+              - generic [ref=e165]:
+                - generic [ref=e166]:
+                  - img [ref=e167]
+                  - text: Pipeline
+                - generic [ref=e169]: "0"
+              - paragraph [ref=e170]: Manual outreach candidates that have not been sent yet.
+            - button "Enriched 0 Reviewed leads ready for manual send or automation queueing." [ref=e171]:
+              - generic [ref=e172]:
+                - generic [ref=e173]:
+                  - img [ref=e174]
+                  - text: Enriched
+                - generic [ref=e182]: "0"
+              - paragraph [ref=e183]: Reviewed leads ready for manual send or automation queueing.
+            - button "Automation 0 Queued, active, paused, and completed scheduler work." [ref=e184]:
+              - generic [ref=e185]:
+                - generic [ref=e186]:
+                  - img [ref=e187]
+                  - text: Automation
+                - generic [ref=e190]: "0"
+              - paragraph [ref=e191]: Queued, active, paused, and completed scheduler work.
+            - button "Email Log Sent history and one-click follow-up actions." [ref=e192]:
+              - generic [ref=e194]:
+                - img [ref=e195]
+                - text: Email Log
+              - paragraph [ref=e198]: Sent history and one-click follow-up actions.
+          - generic [ref=e199]:
+            - generic [ref=e200]:
+              - generic [ref=e201]:
+                - heading "Pipeline" [level=2] [ref=e202]
+                - paragraph [ref=e203]: Manual outreach candidates that have not been sent yet.
+              - generic [ref=e204]: 0 items
+            - generic [ref=e205]:
+              - generic [ref=e206]:
+                - generic [ref=e207]:
+                  - img [ref=e208]
+                  - textbox "Search business, contact, notes, status..." [ref=e211]
+                - combobox [ref=e212]:
+                  - option "All Statuses" [selected]
+                  - option "Not Contacted"
+                  - option "Outreached"
+                  - option "Follow-Up Due"
+                  - option "Replied"
+                  - option "Interested"
+                  - option "Closed"
+                  - option "Not Interested"
+                - combobox [ref=e213]:
+                  - option "All Channels" [selected]
+                  - option "Email"
+                  - option "Text"
+                  - option "Instagram"
+                  - option "Call"
+                - combobox [ref=e214]:
+                  - option "All Follow-Ups" [selected]
+                  - option "Due Now"
+                  - option "Upcoming"
+                  - option "No Follow-Up Set"
+                - combobox [ref=e215]:
+                  - option "All Niches" [selected]
+                - combobox [ref=e216]:
+                  - option "All Cities" [selected]
+              - generic [ref=e217]:
+                - generic [ref=e218]:
+                  - img [ref=e219]
+                  - generic [ref=e221]: 0 outreach leads in view
+                - generic [ref=e222]:
+                  - button "Select All" [ref=e223]:
+                    - img
+                    - text: Select All
+                  - button "Reset Filters" [ref=e224]
+              - table [ref=e227]:
+                - rowgroup [ref=e228]:
+                  - row "Business Contact Status Channel First Contacted Last Contacted Next Follow-Up Notes Actions" [ref=e229]:
+                    - columnheader [ref=e230]:
+                      - button [ref=e231]
+                    - columnheader "Business" [ref=e232]
+                    - columnheader "Contact" [ref=e233]
+                    - columnheader "Status" [ref=e234]
+                    - columnheader "Channel" [ref=e235]
+                    - columnheader "First Contacted" [ref=e236]
+                    - columnheader "Last Contacted" [ref=e237]
+                    - columnheader "Next Follow-Up" [ref=e238]
+                    - columnheader "Notes" [ref=e239]
+                    - columnheader "Actions" [ref=e240]
+                - rowgroup [ref=e241]:
+                  - row "No outreach leads match these filters Adjust the status, channel, niche, city, or follow-up filter to widen the view." [ref=e242]:
+                    - cell "No outreach leads match these filters Adjust the status, channel, niche, city, or follow-up filter to widen the view." [ref=e243]:
+                      - generic [ref=e244]:
+                        - img [ref=e245]
+                        - generic [ref=e249]: No outreach leads match these filters
+                        - generic [ref=e250]: Adjust the status, channel, niche, city, or follow-up filter to widen the view.
+  - alert [ref=e251]
