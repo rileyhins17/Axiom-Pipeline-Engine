@@ -1,0 +1,27 @@
+▲ Next.js 16.1.6
+- Local:         http://127.0.0.1:3003
+- Network:       http://127.0.0.1:3003
+
+✓ Starting...
+✓ Ready in 752ms
+⨯ SqliteError: near "FROM": syntax error
+    at Object.first (C:\Users\riley\Documents\Playground\.next\server\app\api\agent\jobs\[id]\logs\route.js:1:12842)
+    at F (C:\Users\riley\Documents\Playground\.next\server\chunks\4564.js:1:14487)
+    at Object.findUnique (C:\Users\riley\Documents\Playground\.next\server\chunks\4564.js:1:16479)
+    at async p (C:\Users\riley\Documents\Playground\.next\server\chunks\7864.js:51:3590)
+    at async D (C:\Users\riley\Documents\Playground\.next\server\chunks\7864.js:51:9249)
+    at async x (C:\Users\riley\Documents\Playground\.next\server\app\dashboard\page.js:1:5932) {
+  code: 'SQLITE_ERROR',
+  digest: '1928258573'
+}
+⨯ SqliteError: near "FROM": syntax error
+    at Object.first (C:\Users\riley\Documents\Playground\.next\server\app\api\agent\jobs\[id]\logs\route.js:1:12842)
+    at F (C:\Users\riley\Documents\Playground\.next\server\chunks\4564.js:1:14487)
+    at Object.findUnique (C:\Users\riley\Documents\Playground\.next\server\chunks\4564.js:1:16479)
+    at async p (C:\Users\riley\Documents\Playground\.next\server\chunks\7864.js:51:3590)
+    at async D (C:\Users\riley\Documents\Playground\.next\server\chunks\7864.js:51:9249)
+    at async x (C:\Users\riley\Documents\Playground\.next\server\app\dashboard\page.js:1:5932) {
+  code: 'SQLITE_ERROR',
+  digest: '1928258573'
+}
+^C

@@ -1,0 +1,228 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e5]:
+      - link "Axiom Axiom Pipeline Engine" [ref=e7] [cursor=pointer]:
+        - /url: /dashboard
+        - generic [ref=e8]:
+          - img "Axiom" [ref=e10]
+          - generic [ref=e11]:
+            - generic [ref=e12]: Axiom
+            - generic [ref=e13]: Pipeline Engine
+      - list [ref=e17]:
+        - listitem [ref=e18]:
+          - link "Dashboard Cmd+1" [ref=e19] [cursor=pointer]:
+            - /url: /dashboard
+            - img [ref=e20]
+            - generic [ref=e25]: Dashboard
+            - generic [ref=e26]: Cmd+1
+        - listitem [ref=e27]:
+          - link "Hunt Cmd+2" [ref=e28] [cursor=pointer]:
+            - /url: /hunt
+            - img [ref=e30]
+            - generic [ref=e34]: Hunt
+            - generic [ref=e35]: Cmd+2
+        - listitem [ref=e36]:
+          - link "Vault Cmd+3" [ref=e37] [cursor=pointer]:
+            - /url: /vault
+            - img [ref=e38]
+            - generic [ref=e42]: Vault
+            - generic [ref=e43]: Cmd+3
+        - listitem [ref=e44]:
+          - link "Outreach Cmd+5" [ref=e45] [cursor=pointer]:
+            - /url: /outreach
+            - img [ref=e46]
+            - generic [ref=e48]: Outreach
+            - generic [ref=e49]: Cmd+5
+        - listitem [ref=e50]:
+          - link "Settings Cmd+4" [ref=e51] [cursor=pointer]:
+            - /url: /settings
+            - img [ref=e52]
+            - generic [ref=e55]: Settings
+            - generic [ref=e56]: Cmd+4
+      - generic [ref=e58]:
+        - generic [ref=e59]:
+          - generic [ref=e60]: Leads
+          - generic [ref=e61]: "0"
+        - generic [ref=e62]: "Added today: 0"
+    - main [ref=e63]:
+      - generic [ref=e65]:
+        - button "Toggle Sidebar" [ref=e66]:
+          - img
+          - generic [ref=e67]: Toggle Sidebar
+        - generic [ref=e68]:
+          - img [ref=e69]
+          - generic [ref=e73]: Hunt
+        - button "Search… ⌘K" [ref=e75]:
+          - img [ref=e76]
+          - generic [ref=e79]: Search…
+          - generic [ref=e80]: ⌘K
+      - generic [ref=e82]:
+        - generic [ref=e85]:
+          - heading "The Hunt" [level=1] [ref=e86]
+          - paragraph [ref=e87]: Build multi-target extraction queues, deep-mine prospects with AI intelligence, and auto-score every lead.
+        - generic [ref=e90]:
+          - generic [ref=e91]:
+            - generic [ref=e92]:
+              - generic [ref=e93]:
+                - img [ref=e94]
+                - heading "Worker Watch" [level=3] [ref=e97]
+              - paragraph [ref=e98]: No worker heartbeat recorded yet
+            - generic [ref=e99]: IDLE
+          - generic [ref=e101]:
+            - generic [ref=e102]:
+              - generic [ref=e103]: Worker
+              - generic [ref=e104]: Not claimed
+            - generic [ref=e105]:
+              - generic [ref=e106]: Heartbeat
+              - generic [ref=e107]:
+                - img [ref=e108]
+                - text: No heartbeat yet
+                - generic [ref=e111]: Never
+            - generic [ref=e112]:
+              - generic [ref=e113]: Active job
+              - generic [ref=e114]: None
+        - generic [ref=e140]:
+          - generic [ref=e141]:
+            - generic [ref=e142]:
+              - generic [ref=e145]:
+                - generic [ref=e146]:
+                  - generic [ref=e147]:
+                    - img [ref=e148]
+                    - text: Queue Builder
+                  - generic [ref=e152]: Pick a niche, anchor a city, then choose how wide and deep the sweep should run.
+                - generic [ref=e153]:
+                  - generic [ref=e154]: Standby
+                  - generic [ref=e155]: 0 queued
+              - generic [ref=e156]:
+                - generic [ref=e158]:
+                  - generic [ref=e159]:
+                    - img [ref=e161]
+                    - generic [ref=e165]:
+                      - generic [ref=e166]: Target lane
+                      - generic [ref=e167]: Build sequential targets before you launch the run.
+                  - generic [ref=e168]:
+                    - generic [ref=e169]: Queue
+                    - generic [ref=e170]: Preset
+                    - generic [ref=e171]: Launch
+                - generic [ref=e172]:
+                  - generic [ref=e173]:
+                    - img [ref=e174]
+                    - text: Niche / Profession
+                  - textbox "Niche / Profession" [ref=e178]:
+                    - /placeholder: Roofers, med spas, landscapers...
+                  - paragraph [ref=e179]: Choose the market segment you want to mine.
+                  - generic [ref=e180]:
+                    - button "Roofers" [ref=e181]
+                    - button "Concrete" [ref=e182]
+                    - button "Med-Spas" [ref=e183]
+                    - button "Landscaping" [ref=e184]
+                    - button "Plumbing" [ref=e185]
+                    - button "HVAC" [ref=e186]
+                    - button "Electricians" [ref=e187]
+                    - button "Auto Detailing" [ref=e188]
+                    - button "Commercial Cleaning" [ref=e189]
+                    - button "Custom Cabinetry" [ref=e190]
+                - generic [ref=e191]:
+                  - generic [ref=e192]:
+                    - img [ref=e193]
+                    - text: Target City
+                  - textbox "Target City" [ref=e196]:
+                    - /placeholder: Hamilton, Guelph, London...
+                  - paragraph [ref=e197]: Use the city center; the radius handles the spread.
+                  - generic [ref=e198]:
+                    - button "Kitchener" [ref=e199]
+                    - button "Waterloo" [ref=e200]
+                    - button "Cambridge" [ref=e201]
+                    - button "Guelph" [ref=e202]
+                    - button "Hamilton" [ref=e203]
+                    - button "London" [ref=e204]
+                - generic [ref=e205]:
+                  - generic [ref=e206]:
+                    - img [ref=e207]
+                    - text: Scan Preset
+                  - paragraph [ref=e214]: Presets tune radius and depth together; you can still edit both fields.
+                  - generic [ref=e215]:
+                    - button "Quick Scan Fastest pass when you want signal before breadth. R 5 km | D 1" [ref=e216]:
+                      - generic [ref=e218]: Quick Scan
+                      - generic [ref=e219]: Fastest pass when you want signal before breadth.
+                      - generic [ref=e220]: R 5 km | D 1
+                    - button "Standard Scan Recommended Balanced default for most local campaigns. R 10 km | D 2" [ref=e221]:
+                      - generic [ref=e222]:
+                        - generic [ref=e223]: Standard Scan
+                        - generic [ref=e224]: Recommended
+                      - generic [ref=e225]: Balanced default for most local campaigns.
+                      - generic [ref=e226]: R 10 km | D 2
+                    - button "Deep Scan Broader sweep for denser markets or tougher niches. R 15 km | D 4" [ref=e227]:
+                      - generic [ref=e229]: Deep Scan
+                      - generic [ref=e230]: Broader sweep for denser markets or tougher niches.
+                      - generic [ref=e231]: R 15 km | D 4
+                  - generic [ref=e232]: Manual values in use
+                - generic [ref=e233]:
+                  - generic [ref=e234]:
+                    - generic [ref=e235]:
+                      - generic [ref=e236]:
+                        - img [ref=e237]
+                        - text: Radius (km)
+                      - generic [ref=e244]: Coverage window
+                    - spinbutton "Radius (km)" [ref=e245]: "10"
+                  - generic [ref=e246]:
+                    - generic [ref=e247]:
+                      - generic [ref=e248]:
+                        - img [ref=e249]
+                        - text: Scroll Depth
+                      - generic [ref=e251]: How far to inspect
+                    - spinbutton "Scroll Depth" [ref=e252]: "5"
+              - generic [ref=e253]:
+                - generic [ref=e254]:
+                  - generic [ref=e255]: Fill niche and city to arm the next target.
+                  - generic [ref=e256]: Targets launch in order.
+                - button "Add to Queue" [disabled]:
+                  - img
+                  - text: Add to Queue
+            - generic [ref=e257]:
+              - generic [ref=e259]:
+                - generic [ref=e260]:
+                  - generic [ref=e261]:
+                    - img [ref=e262]
+                    - text: Extraction Queue
+                  - generic [ref=e264]: Queue targets run top to bottom. Failed or stale jobs can be requeued inline.
+                - generic [ref=e265]:
+                  - generic [ref=e266]: 0 jobs
+                  - generic [ref=e268]: Idle
+                  - generic [ref=e270]: Awaiting first target
+              - generic [ref=e272]:
+                - generic [ref=e273]:
+                  - img [ref=e275]
+                  - generic [ref=e277]:
+                    - generic [ref=e278]: Queue is empty
+                    - generic [ref=e279]: Build a target above, then launch when you are ready. Runs stay sequential and can be requeued inline.
+                - generic [ref=e280]:
+                  - generic [ref=e281]: Sequential
+                  - generic [ref=e282]: Scored
+                  - generic [ref=e283]: Retryable
+              - generic [ref=e284]:
+                - generic [ref=e285]:
+                  - generic [ref=e286]: Add at least one target to launch.
+                  - generic [ref=e287]: Sequential execution
+                - button "Launch Queue (0 targets)" [disabled]:
+                  - generic:
+                    - img
+                    - text: Launch Queue (0 targets)
+          - generic [ref=e289]:
+            - generic [ref=e290]:
+              - button "Live Feed (0 lines)" [ref=e291]:
+                - img [ref=e292]
+                - generic [ref=e298]: Live Feed
+                - generic [ref=e299]: (0 lines)
+              - generic [ref=e301]:
+                - img [ref=e302]
+                - textbox "Search logs..." [ref=e305]
+            - generic [ref=e308]:
+              - img [ref=e310]
+              - generic [ref=e317]: Feed standing by
+              - paragraph [ref=e318]: Add a target on the left, then launch the queue to arm this terminal.
+              - generic [ref=e319]:
+                - generic [ref=e320]: Live logs
+                - generic [ref=e321]: Pinned lines
+                - generic [ref=e322]: Search feed
+  - alert [ref=e323]

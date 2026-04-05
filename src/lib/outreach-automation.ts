@@ -50,6 +50,11 @@ export type MailboxAllocationResult = {
   reason: "least-loaded";
 };
 
+type MailboxLoad = {
+  sentToday: number;
+  sentThisHour: number;
+};
+
 export type ReplyDetectionResult = {
   detected: boolean;
   inboundMessageId?: string;
@@ -625,20 +630,80 @@ async function getMailboxLoad(prisma: PrismaLike, mailboxId: string, now: Date) 
   return { sentToday, sentThisHour };
 }
 
+async function getMailboxLoadMap(
+  prisma: PrismaLike,
+  mailboxIds: string[],
+  now: Date,
+) {
+  if (mailboxIds.length === 0) {
+    return new Map<string, MailboxLoad>();
+  }
+
+  const dayStart = startOfDay(now);
+  const hourStartMs = startOfHour(now).getTime();
+  const sentEmails = await prisma.outreachEmail.findMany({
+    where: {
+      mailboxId: { in: mailboxIds },
+      status: "sent",
+      sentAt: { gte: dayStart },
+    },
+    select: {
+      mailboxId: true,
+      sentAt: true,
+    },
+  });
+
+  const loadMap = new Map<string, MailboxLoad>(
+    mailboxIds.map((mailboxId) => [mailboxId, { sentToday: 0, sentThisHour: 0 }]),
+  );
+
+  for (const email of sentEmails) {
+    if (!email.mailboxId) {
+      continue;
+    }
+
+    const current = loadMap.get(email.mailboxId) || { sentToday: 0, sentThisHour: 0 };
+    current.sentToday += 1;
+    if (email.sentAt && new Date(email.sentAt).getTime() >= hourStartMs) {
+      current.sentThisHour += 1;
+    }
+    loadMap.set(email.mailboxId, current);
+  }
+
+  return loadMap;
+}
+
+function getMailboxLoadFromMap(
+  mailboxLoadMap: ReadonlyMap<string, MailboxLoad>,
+  mailboxId: string,
+) {
+  return mailboxLoadMap.get(mailboxId) || { sentToday: 0, sentThisHour: 0 };
+}
+
 async function allocateMailbox(
   prisma: PrismaLike,
   now: Date,
   pendingAssignments: Map<string, number> = new Map(),
+  options?: {
+    mailboxes?: OutreachMailboxRecord[];
+    mailboxLoadMap?: ReadonlyMap<string, MailboxLoad>;
+  },
 ): Promise<MailboxAllocationResult | null> {
-  const mailboxes = await listSendableMailboxes(prisma);
+  const mailboxes = options?.mailboxes ?? (await listSendableMailboxes(prisma));
   if (mailboxes.length === 0) return null;
 
-  const loads = await Promise.all(
-    mailboxes.map(async (mailbox) => ({
-      mailbox,
-      ...(await getMailboxLoad(prisma, mailbox.id, now)),
-    })),
-  );
+  const mailboxLoadMap =
+    options?.mailboxLoadMap ??
+    (await getMailboxLoadMap(
+      prisma,
+      mailboxes.map((mailbox) => mailbox.id),
+      now,
+    ));
+
+  const loads = mailboxes.map((mailbox) => ({
+    mailbox,
+    ...getMailboxLoadFromMap(mailboxLoadMap, mailbox.id),
+  }));
 
   loads.sort((a, b) => {
     const pendingA = pendingAssignments.get(a.mailbox.id) || 0;
@@ -679,8 +744,10 @@ export async function getActiveAutomationLeadIds() {
   return Array.from(new Set(sequences.map((sequence) => sequence.leadId)));
 }
 
-async function listAutomationReadyLeads(prisma: PrismaLike) {
-  const activeLeadIds = new Set(await getActiveAutomationLeadIds());
+async function listAutomationReadyLeads(
+  prisma: PrismaLike,
+  activeLeadIds: ReadonlySet<number>,
+) {
   const leads = (await prisma.lead.findMany({
     where: {
       enrichedAt: { not: null },
@@ -751,10 +818,12 @@ function getMailboxNextAvailableAt(
 }
 
 async function getSequenceRuntimeBlockers(
-  prisma: PrismaLike,
   sequence: OutreachSequenceSummary,
   settings: OutreachAutomationSettingRecord,
   now: Date,
+  mailboxLoadMap: ReadonlyMap<string, MailboxLoad>,
+  suppressedEmails: ReadonlySet<string>,
+  suppressedDomains: ReadonlySet<string>,
 ) {
   const blockers: AutomationBlockerReason[] = [];
   const normalizedStatus = sequence.status.toUpperCase();
@@ -792,12 +861,9 @@ async function getSequenceRuntimeBlockers(
   }
 
   if (lead?.email) {
-    const suppression = await prisma.outreachSuppression.findFirst({
-      where: {
-        OR: [{ email: normalizeEmail(lead.email) }, { domain: getDomainFromEmail(lead.email) }],
-      },
-    });
-    if (suppression) {
+    const normalizedEmail = normalizeEmail(lead.email);
+    const domain = getDomainFromEmail(lead.email);
+    if (suppressedEmails.has(normalizedEmail) || (domain && suppressedDomains.has(domain))) {
       blockers.push("suppressed");
     }
   }
@@ -807,7 +873,7 @@ async function getSequenceRuntimeBlockers(
   } else if (!MAILBOX_SENDABLE_STATUSES.includes(mailbox.status as (typeof MAILBOX_SENDABLE_STATUSES)[number])) {
     blockers.push("mailbox_disabled");
   } else {
-    const { sentToday, sentThisHour } = await getMailboxLoad(prisma, mailbox.id, now);
+    const { sentToday, sentThisHour } = getMailboxLoadFromMap(mailboxLoadMap, mailbox.id);
     if (sentToday >= mailbox.dailyLimit) blockers.push("daily_cap_reached");
     if (sentThisHour >= mailbox.hourlyLimit) blockers.push("hourly_cap_reached");
 
@@ -839,12 +905,21 @@ async function getSequenceRuntimeBlockers(
 }
 
 async function enrichSequenceSummary(
-  prisma: PrismaLike,
   sequence: OutreachSequenceSummary,
   settings: OutreachAutomationSettingRecord,
   now: Date,
+  mailboxLoadMap: ReadonlyMap<string, MailboxLoad>,
+  suppressedEmails: ReadonlySet<string>,
+  suppressedDomains: ReadonlySet<string>,
 ) {
-  const blockers = await getSequenceRuntimeBlockers(prisma, sequence, settings, now);
+  const blockers = await getSequenceRuntimeBlockers(
+    sequence,
+    settings,
+    now,
+    mailboxLoadMap,
+    suppressedEmails,
+    suppressedDomains,
+  );
   const primaryBlocker = getPrimaryBlocker(blockers);
   const nextSendAt = coerceDate(sequence.nextScheduledAt || sequence.nextStep?.scheduledFor || null);
   const hasSentAnyStep = Boolean(sequence.lastSentAt);
@@ -905,6 +980,18 @@ export async function queueLeadsForAutomation(input: {
   const leadMap = new Map(leads.map((lead) => [lead.id, lead]));
   const activeSequences = await getActiveSequencesForLeads(prisma, input.leadIds);
   const activeLeadIds = new Set(activeSequences.map((sequence) => sequence.leadId));
+  const sendableMailboxes = await listSendableMailboxes(prisma);
+  const mailboxLoadMap = await getMailboxLoadMap(
+    prisma,
+    sendableMailboxes.map((mailbox) => mailbox.id),
+    now,
+  );
+  const suppressionIndex = await getSuppressionIndex(
+    prisma,
+    leads
+      .map((lead) => lead.email || null)
+      .filter((email): email is string => Boolean(email)),
+  );
 
   for (const leadId of input.leadIds) {
     const lead = leadMap.get(leadId);
@@ -941,20 +1028,20 @@ export async function queueLeadsForAutomation(input: {
       continue;
     }
 
-    const suppression = await prisma.outreachSuppression.findFirst({
-      where: {
-        OR: [
-          { email: normalizeEmail(lead.email) },
-          { domain: getDomainFromEmail(lead.email) },
-        ],
-      },
-    });
-    if (suppression) {
+    const normalizedEmail = normalizeEmail(lead.email);
+    const domain = getDomainFromEmail(lead.email);
+    if (
+      suppressionIndex.suppressedEmails.has(normalizedEmail) ||
+      (domain && suppressionIndex.suppressedDomains.has(domain))
+    ) {
       result.skipped.push({ leadId, reason: "Lead is suppressed from automation" });
       continue;
     }
 
-    const allocation = await allocateMailbox(prisma, now, pendingAssignments);
+    const allocation = await allocateMailbox(prisma, now, pendingAssignments, {
+      mailboxes: sendableMailboxes,
+      mailboxLoadMap,
+    });
     if (!allocation) {
       result.skipped.push({ leadId, reason: "No active mailbox is available right now" });
       continue;
@@ -1012,33 +1099,77 @@ async function getLeadMap(prisma: PrismaLike, leadIds: number[]) {
   return new Map(leads.map((lead) => [lead.id, lead]));
 }
 
-async function getMailboxMap(prisma: PrismaLike, mailboxIds: string[]) {
-  if (mailboxIds.length === 0) return new Map<string, OutreachMailboxRecord>();
-  const mailboxes = (await prisma.outreachMailbox.findMany({
-    where: { id: { in: mailboxIds } },
-  })) as OutreachMailboxRecord[];
-  return new Map(mailboxes.map((mailbox) => [mailbox.id, mailbox]));
-}
+async function getNextPendingStepMap(prisma: PrismaLike, sequenceIds: string[]) {
+  if (sequenceIds.length === 0) return new Map<string, OutreachSequenceStepRecord>();
 
-async function getNextPendingStep(prisma: PrismaLike, sequenceId: string) {
-  return prisma.outreachSequenceStep.findFirst({
+  const steps = (await prisma.outreachSequenceStep.findMany({
     where: {
-      sequenceId,
+      sequenceId: { in: sequenceIds },
       status: { in: ["SCHEDULED", "CLAIMED", "SENDING"] },
     },
     orderBy: { stepNumber: "asc" },
-  }) as Promise<OutreachSequenceStepRecord | null>;
+  })) as OutreachSequenceStepRecord[];
+
+  const stepMap = new Map<string, OutreachSequenceStepRecord>();
+  for (const step of steps) {
+    if (!stepMap.has(step.sequenceId)) {
+      stepMap.set(step.sequenceId, step);
+    }
+  }
+
+  return stepMap;
+}
+
+async function getNextPendingStep(prisma: PrismaLike, sequenceId: string) {
+  return getNextPendingStepMap(prisma, [sequenceId]).then((stepMap) => stepMap.get(sequenceId) ?? null);
+}
+
+async function getSuppressionIndex(prisma: PrismaLike, emails: string[]) {
+  const normalizedEmails = Array.from(
+    new Set(emails.map((email) => normalizeEmail(email)).filter(Boolean)),
+  );
+  const domains = Array.from(
+    new Set(normalizedEmails.map((email) => getDomainFromEmail(email)).filter(Boolean)),
+  );
+
+  if (normalizedEmails.length === 0 && domains.length === 0) {
+    return {
+      suppressedEmails: new Set<string>(),
+      suppressedDomains: new Set<string>(),
+    };
+  }
+
+  const suppressions = await prisma.outreachSuppression.findMany({
+    where: {
+      OR: [
+        ...(normalizedEmails.length > 0 ? [{ email: { in: normalizedEmails } }] : []),
+        ...(domains.length > 0 ? [{ domain: { in: domains } }] : []),
+      ],
+    },
+    select: {
+      email: true,
+      domain: true,
+    },
+  });
+
+  return {
+    suppressedEmails: new Set(
+      suppressions.map((suppression) => normalizeEmail(suppression.email)).filter(Boolean),
+    ),
+    suppressedDomains: new Set(
+      suppressions.map((suppression) => (suppression.domain || "").trim().toLowerCase()).filter(Boolean),
+    ),
+  };
 }
 
 export async function listAutomationOverview() {
   const prisma = getPrisma();
   const now = new Date();
   const settings = await getSettings(prisma);
-  const [mailboxes, sequences, recentRuns, ready, recentSentRaw] = await Promise.all([
+  const [mailboxes, sequences, recentRuns, recentSentRaw] = await Promise.all([
     prisma.outreachMailbox.findMany({ orderBy: { updatedAt: "desc" } }) as Promise<OutreachMailboxRecord[]>,
     prisma.outreachSequence.findMany({ orderBy: { createdAt: "desc" }, take: 300 }) as Promise<OutreachSequenceRecord[]>,
     prisma.outreachRun.findMany({ orderBy: { startedAt: "desc" }, take: 20 }) as Promise<OutreachRunRecord[]>,
-    listAutomationReadyLeads(prisma),
     prisma.outreachEmail.findMany({
       where: { status: "sent", sequenceId: { not: null } },
       orderBy: { sentAt: "desc" },
@@ -1046,33 +1177,56 @@ export async function listAutomationOverview() {
     }),
   ]);
 
-  const leadMap = await getLeadMap(prisma, Array.from(new Set(sequences.map((sequence) => sequence.leadId))));
-  const mailboxMap = await getMailboxMap(prisma, Array.from(new Set(sequences.map((sequence) => sequence.assignedMailboxId).filter(Boolean) as string[])));
-
-  const rawSummaries = await Promise.all(
-    sequences.map(async (sequence) => ({
-      ...sequence,
-      lead: leadMap.get(sequence.leadId) ?? null,
-      mailbox: sequence.assignedMailboxId ? mailboxMap.get(sequence.assignedMailboxId) ?? null : null,
-      nextStep: await getNextPendingStep(prisma, sequence.id),
-    })),
+  const activeLeadIds = new Set(sequences.map((sequence) => sequence.leadId));
+  const sequenceIds = sequences.map((sequence) => sequence.id);
+  const allLeadIds = Array.from(
+    new Set([
+      ...sequences.map((sequence) => sequence.leadId),
+      ...recentSentRaw
+        .map((email) => email.leadId)
+        .filter((value): value is number => typeof value === "number"),
+    ]),
   );
 
-  const mailboxStats = await Promise.all(
-    mailboxes.map(async (mailbox) => ({
-      ...mailbox,
-      ...(await getMailboxLoad(prisma, mailbox.id, now)),
-      nextAvailableAt: getMailboxNextAvailableAt(mailbox, settings, now),
-    })),
+  const mailboxIds = mailboxes.map((mailbox) => mailbox.id);
+  const mailboxMap = new Map(mailboxes.map((mailbox) => [mailbox.id, mailbox]));
+  const [ready, leadMap, nextStepMap, mailboxLoadMap] = await Promise.all([
+    listAutomationReadyLeads(prisma, activeLeadIds),
+    getLeadMap(prisma, allLeadIds),
+    getNextPendingStepMap(prisma, sequenceIds),
+    getMailboxLoadMap(prisma, mailboxIds, now),
+  ]);
+  const suppressionIndex = await getSuppressionIndex(
+    prisma,
+    sequences
+      .map((sequence) => leadMap.get(sequence.leadId)?.email || null)
+      .filter((email): email is string => Boolean(email)),
   );
+
+  const rawSummaries = sequences.map((sequence) => ({
+    ...sequence,
+    lead: leadMap.get(sequence.leadId) ?? null,
+    mailbox: sequence.assignedMailboxId ? mailboxMap.get(sequence.assignedMailboxId) ?? null : null,
+    nextStep: nextStepMap.get(sequence.id) ?? null,
+  }));
+
+  const mailboxStats = mailboxes.map((mailbox) => ({
+    ...mailbox,
+    ...getMailboxLoadFromMap(mailboxLoadMap, mailbox.id),
+    nextAvailableAt: getMailboxNextAvailableAt(mailbox, settings, now),
+  }));
 
   const summaries = await Promise.all(
-    rawSummaries.map((sequence) => enrichSequenceSummary(prisma, sequence, settings, now)),
-  );
-
-  const recentSentLeadMap = await getLeadMap(
-    prisma,
-    Array.from(new Set(recentSentRaw.map((email) => email.leadId).filter((value): value is number => typeof value === "number"))),
+    rawSummaries.map((sequence) =>
+      enrichSequenceSummary(
+        sequence,
+        settings,
+        now,
+        mailboxLoadMap,
+        suppressionIndex.suppressedEmails,
+        suppressionIndex.suppressedDomains,
+      ),
+    ),
   );
 
   const recentSent = recentSentRaw.map((email) => ({
@@ -1082,7 +1236,7 @@ export async function listAutomationOverview() {
     senderEmail: email.senderEmail,
     recipientEmail: email.recipientEmail,
     sequenceId: email.sequenceId,
-    lead: email.leadId ? recentSentLeadMap.get(email.leadId) ?? null : null,
+    lead: email.leadId ? leadMap.get(email.leadId) ?? null : null,
   }));
 
   const queued = summaries.filter((sequence) => sequence.state === "QUEUED");
@@ -1770,13 +1924,32 @@ async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: numbe
     take: batchSize * 3,
   }) as OutreachSequenceStepRecord[];
 
+  if (dueSteps.length === 0) {
+    return [];
+  }
+
+  const sequenceIds = Array.from(new Set(dueSteps.map((step) => step.sequenceId)));
+  const sequences = (await prisma.outreachSequence.findMany({
+    where: { id: { in: sequenceIds } },
+  })) as OutreachSequenceRecord[];
+  const sequenceMap = new Map(sequences.map((sequence) => [sequence.id, sequence]));
+  const mailboxIds = Array.from(
+    new Set(
+      sequences
+        .map((sequence) => sequence.assignedMailboxId)
+        .filter((mailboxId): mailboxId is string => Boolean(mailboxId)),
+    ),
+  );
+  const mailboxes = (await prisma.outreachMailbox.findMany({
+    where: { id: { in: mailboxIds } },
+  })) as OutreachMailboxRecord[];
+  const mailboxMap = new Map(mailboxes.map((mailbox) => [mailbox.id, mailbox]));
+
   const claims: SchedulerClaim[] = [];
   const seenMailboxes = new Set<string>();
 
   for (const step of dueSteps) {
-    const sequence = await prisma.outreachSequence.findUnique({
-      where: { id: step.sequenceId },
-    }) as OutreachSequenceRecord | null;
+    const sequence = sequenceMap.get(step.sequenceId) ?? null;
     if (!sequence || !sequence.assignedMailboxId) {
       continue;
     }
@@ -1784,9 +1957,7 @@ async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: numbe
       continue;
     }
 
-    const mailbox = await prisma.outreachMailbox.findUnique({
-      where: { id: sequence.assignedMailboxId },
-    }) as OutreachMailboxRecord | null;
+    const mailbox = mailboxMap.get(sequence.assignedMailboxId) ?? null;
     if (!mailbox || seenMailboxes.has(mailbox.id)) {
       continue;
     }

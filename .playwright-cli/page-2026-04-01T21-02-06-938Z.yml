@@ -1,0 +1,23 @@
+- generic [active] [ref=e1]:
+  - main [ref=e2]:
+    - generic [ref=e5]:
+      - img "Axiom" [ref=e8]
+      - generic [ref=e9]:
+        - generic [ref=e10]:
+          - generic [ref=e11]: Axiom Pipeline Engine
+          - generic [ref=e12]: Sign in to access the protected Axiom operations workspace.
+        - generic [ref=e13]:
+          - generic [ref=e14]:
+            - generic [ref=e15]:
+              - generic [ref=e16]: Email
+              - textbox "Email" [ref=e17]
+            - generic [ref=e18]:
+              - generic [ref=e19]: Password
+              - textbox "Password" [ref=e20]
+            - button "Sign In" [ref=e21]
+          - paragraph [ref=e22]:
+            - text: Need an account?
+            - link "Create one with your approved Axiom ops email" [ref=e23] [cursor=pointer]:
+              - /url: /sign-up
+            - text: .
+  - alert [ref=e24]

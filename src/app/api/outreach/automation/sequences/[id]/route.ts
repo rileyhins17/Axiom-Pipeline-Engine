@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { mutateSequence } from "@/lib/outreach-automation";
+import { listAutomationOverview, mutateSequence } from "@/lib/outreach-automation";
 import { requireAdminApiSession } from "@/lib/session";
 
 export async function PATCH(
@@ -20,7 +20,8 @@ export async function PATCH(
 
     const { id } = await params;
     const sequence = await mutateSequence(id, body.action);
-    return NextResponse.json({ sequence });
+    const overview = await listAutomationOverview();
+    return NextResponse.json({ sequence, overview });
   } catch (error: any) {
     console.error("Sequence mutation error:", error);
     return NextResponse.json(

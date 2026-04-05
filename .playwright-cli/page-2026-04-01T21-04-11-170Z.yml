@@ -1,0 +1,29 @@
+- generic [active] [ref=e1]:
+  - main [ref=e2]:
+    - generic [ref=e5]:
+      - img "Axiom" [ref=e8]
+      - generic [ref=e9]:
+        - generic [ref=e10]:
+          - generic [ref=e11]: Create Internal Access
+          - generic [ref=e12]: Only pre-approved Axiom ops email addresses can register.
+        - generic [ref=e13]:
+          - generic [ref=e14]:
+            - generic [ref=e15]:
+              - generic [ref=e16]: Full Name
+              - textbox "Full Name" [ref=e17]
+            - generic [ref=e18]:
+              - generic [ref=e19]: Work Email
+              - textbox "Work Email" [ref=e20]
+            - generic [ref=e21]:
+              - generic [ref=e22]: Password
+              - textbox "Password" [ref=e23]
+            - generic [ref=e24]:
+              - generic [ref=e25]: Confirm Password
+              - textbox "Confirm Password" [ref=e26]
+            - button "Create Account" [ref=e27]
+          - paragraph [ref=e28]:
+            - text: Already have access?
+            - link "Sign in" [ref=e29] [cursor=pointer]:
+              - /url: /sign-in
+            - text: .
+  - alert [ref=e30]

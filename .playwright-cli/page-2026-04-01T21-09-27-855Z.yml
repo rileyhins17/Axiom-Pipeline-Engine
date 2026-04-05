@@ -1,0 +1,160 @@
+- generic [active] [ref=e1]:
+  - alert [ref=e24]
+  - generic [ref=e25]:
+    - generic [ref=e28]:
+      - link "Axiom Axiom Pipeline Engine" [ref=e30] [cursor=pointer]:
+        - /url: /dashboard
+        - generic [ref=e31]:
+          - img "Axiom" [ref=e33]
+          - generic [ref=e34]:
+            - generic [ref=e35]: Axiom
+            - generic [ref=e36]: Pipeline Engine
+      - list [ref=e40]:
+        - listitem [ref=e41]:
+          - link "Dashboard Cmd+1" [ref=e42] [cursor=pointer]:
+            - /url: /dashboard
+            - img [ref=e44]
+            - generic [ref=e49]: Dashboard
+            - generic [ref=e50]: Cmd+1
+        - listitem [ref=e51]:
+          - link "Hunt Cmd+2" [ref=e52] [cursor=pointer]:
+            - /url: /hunt
+            - img [ref=e53]
+            - generic [ref=e57]: Hunt
+            - generic [ref=e58]: Cmd+2
+        - listitem [ref=e59]:
+          - link "Vault Cmd+3" [ref=e60] [cursor=pointer]:
+            - /url: /vault
+            - img [ref=e61]
+            - generic [ref=e65]: Vault
+            - generic [ref=e66]: Cmd+3
+        - listitem [ref=e67]:
+          - link "Outreach Cmd+5" [ref=e68] [cursor=pointer]:
+            - /url: /outreach
+            - img [ref=e69]
+            - generic [ref=e71]: Outreach
+            - generic [ref=e72]: Cmd+5
+        - listitem [ref=e73]:
+          - link "Settings Cmd+4" [ref=e74] [cursor=pointer]:
+            - /url: /settings
+            - img [ref=e75]
+            - generic [ref=e78]: Settings
+            - generic [ref=e79]: Cmd+4
+      - generic [ref=e81]:
+        - generic [ref=e82]:
+          - generic [ref=e83]: Leads
+          - generic [ref=e84]: "0"
+        - generic [ref=e85]: "Added today: 0"
+    - main [ref=e86]:
+      - generic [ref=e88]:
+        - button "Toggle Sidebar" [ref=e89]:
+          - img
+          - generic [ref=e90]: Toggle Sidebar
+        - generic [ref=e91]:
+          - img [ref=e92]
+          - generic [ref=e97]: Dashboard
+        - button "Search… ⌘K" [ref=e99]:
+          - img [ref=e100]
+          - generic [ref=e103]: Search…
+          - generic [ref=e104]: ⌘K
+      - generic [ref=e106]:
+        - generic [ref=e108]:
+          - img "Axiom" [ref=e110]
+          - generic [ref=e111]:
+            - paragraph [ref=e112]: Axiom Pipeline Engine
+            - heading "Clean operations control for lead intake, outreach, and automation." [level=1] [ref=e113]
+            - paragraph [ref=e114]: "This home screen is now focused on what matters right now: pipeline volume, outreach momentum, automation load, and the next actions worth your attention."
+          - generic [ref=e115]:
+            - link "Start Hunt" [ref=e116] [cursor=pointer]:
+              - /url: /hunt
+              - text: Start Hunt
+              - img
+            - link "Open Outreach" [ref=e117] [cursor=pointer]:
+              - /url: /outreach
+              - text: Open Outreach
+              - img
+        - generic [ref=e118]:
+          - generic [ref=e119]:
+            - generic [ref=e120]:
+              - generic [ref=e121]: Total Leads
+              - img [ref=e123]
+            - generic [ref=e130]: "0"
+            - generic [ref=e131]: active records
+          - generic [ref=e132]:
+            - generic [ref=e133]:
+              - generic [ref=e134]: Contactable
+              - img [ref=e136]
+            - generic [ref=e139]: "0"
+            - generic [ref=e140]: email or phone present
+          - generic [ref=e141]:
+            - generic [ref=e142]:
+              - generic [ref=e143]: Queued
+              - img [ref=e145]
+            - generic [ref=e148]: "0"
+            - generic [ref=e149]: awaiting automation
+          - generic [ref=e150]:
+            - generic [ref=e151]:
+              - generic [ref=e152]: Active
+              - img [ref=e154]
+            - generic [ref=e157]: "0"
+            - generic [ref=e158]: automation in progress
+          - generic [ref=e159]:
+            - generic [ref=e160]:
+              - generic [ref=e161]: Follow-Up Due
+              - img [ref=e163]
+            - generic [ref=e165]: "0"
+            - generic [ref=e166]: needs a decision
+          - generic [ref=e167]:
+            - generic [ref=e168]:
+              - generic [ref=e169]: Sent Today
+              - img [ref=e171]
+            - generic [ref=e174]: "0"
+            - generic [ref=e175]: delivered emails
+        - generic [ref=e176]:
+          - generic [ref=e177]:
+            - generic [ref=e178]:
+              - generic [ref=e179]:
+                - paragraph [ref=e180]: Automation Status
+                - heading "What the system is doing now" [level=2] [ref=e181]
+              - link "Open Automation" [ref=e182] [cursor=pointer]:
+                - /url: /outreach
+            - generic [ref=e183]:
+              - generic [ref=e184]:
+                - generic [ref=e185]: Last Scheduler Run
+                - generic [ref=e186]: Idle
+                - generic [ref=e187]: No runs yet
+              - generic [ref=e188]:
+                - generic [ref=e189]: Mailbox Pool
+                - generic [ref=e190]: 0 connected
+                - generic [ref=e191]: 0 active right now
+              - generic [ref=e192]:
+                - generic [ref=e193]: Blocked or Paused
+                - generic [ref=e194]: "0"
+                - generic [ref=e195]: sequences not currently sending
+            - generic [ref=e196]:
+              - generic [ref=e197]: Next actions
+              - generic [ref=e198]:
+                - generic [ref=e201]: 0 queued for first send
+                - generic [ref=e204]: 0 automation sequences in progress
+                - generic [ref=e207]: 0 follow-up items due
+                - generic [ref=e210]: No scheduler history yet. Manual runs and cron runs will appear here.
+          - generic [ref=e211]:
+            - generic [ref=e212]:
+              - paragraph [ref=e213]: Needs Attention
+              - generic [ref=e214]:
+                - generic [ref=e215]:
+                  - generic [ref=e216]: Follow-ups due
+                  - generic [ref=e217]: "0"
+                  - generic [ref=e218]: Manual follow-up work waiting in outreach.
+                - generic [ref=e219]:
+                  - generic [ref=e220]: Queued automation
+                  - generic [ref=e221]: "0"
+                  - generic [ref=e222]: Ready for the next eligible scheduler window.
+            - generic [ref=e223]:
+              - generic [ref=e224]:
+                - generic [ref=e225]:
+                  - paragraph [ref=e226]: High Priority Leads
+                  - heading "Recent strong-fit opportunities" [level=2] [ref=e227]
+                - link "Open Vault" [ref=e228] [cursor=pointer]:
+                  - /url: /vault
+              - generic [ref=e230]: No high-priority leads yet.

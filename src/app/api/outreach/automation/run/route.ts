@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { runAutomationScheduler } from "@/lib/outreach-automation";
+import { listAutomationOverview, runAutomationScheduler } from "@/lib/outreach-automation";
 import { requireAdminApiSession } from "@/lib/session";
 
 export async function POST(request: Request) {
@@ -11,7 +11,8 @@ export async function POST(request: Request) {
 
   try {
     const result = await runAutomationScheduler();
-    return NextResponse.json(result);
+    const overview = await listAutomationOverview();
+    return NextResponse.json({ ...result, overview });
   } catch (error: any) {
     console.error("Automation run error:", error);
     return NextResponse.json(

@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 
-import { listAutomationOverview } from "@/lib/outreach-automation";
 import { getPrisma } from "@/lib/prisma";
 import { requireApiSession } from "@/lib/session";
 
@@ -23,8 +22,16 @@ export async function GET(request: Request) {
         updatedAt: true,
       },
     });
-    const automation = await listAutomationOverview();
-    const mailboxes = automation.mailboxes.filter((mailbox) => mailbox.userId === authResult.session.user.id);
+    const mailboxes = await prisma.outreachMailbox.findMany({
+      where: { userId: authResult.session.user.id },
+      orderBy: { updatedAt: "desc" },
+      select: {
+        id: true,
+        gmailAddress: true,
+        label: true,
+        status: true,
+      },
+    });
 
     if (connections.length === 0) {
       return NextResponse.json({ connected: false, connections: [], mailboxes: [] });

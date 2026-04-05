@@ -1,0 +1,180 @@
+[ 8957353ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 8972313ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[ 8972313ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 8987313ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9002303ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[ 9002313ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9017312ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9032314ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[ 9032314ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9047313ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9062302ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[ 9062303ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9077300ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9092313ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[ 9092313ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9107331ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9122329ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[ 9122329ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9137313ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9152313ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[ 9152329ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9167329ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9182312ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[ 9182312ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9197314ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9212304ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[ 9212313ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9227297ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9242321ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[ 9242321ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9257321ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9272315ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[ 9272315ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9287329ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9302314ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[ 9302330ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9317314ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9332297ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[ 9332297ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9347303ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9362329ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[ 9362329ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9377313ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9392300ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[ 9392314ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9407314ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9422314ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[ 9422321ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9437314ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9452320ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[ 9452320ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9467314ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9482301ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[ 9482302ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9497315ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9512314ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[ 9512314ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9527306ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9542309ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[ 9542309ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9557315ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9572315ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[ 9572315ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9587316ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9602315ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[ 9602315ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9617316ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9632317ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[ 9632317ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9647323ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9662300ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[ 9662316ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9677299ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9692315ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[ 9692315ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9707322ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9722315ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[ 9722315ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9737301ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9752306ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[ 9752306ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9767331ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9782331ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[ 9782332ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9797350ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9812314ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[ 9812314ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9827315ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9842314ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[ 9842314ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9857323ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9872326ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[ 9872326ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9887322ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9902316ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[ 9902323ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9917309ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9932316ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[ 9932316ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9947338ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9962339ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[ 9962339ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9977306ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[ 9992333ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[ 9992333ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10007348ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10022322ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[10022322ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10037339ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10052316ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[10052333ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10067339ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10082339ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[10082339ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10097338ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10112331ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[10112331ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10127331ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10142325ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[10142325ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10157314ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10172322ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[10172322ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10187331ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10202315ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[10202315ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10217332ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10232324ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[10232325ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10247316ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10262321ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[10262323ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10277347ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10292305ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[10292306ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10307315ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10322332ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[10322332ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10337315ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10352305ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[10352343ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10367317ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10382316ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[10382334ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10397324ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10412333ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[10412333ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10427317ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10442323ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[10442333ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10457318ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10472316ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[10472317ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10487322ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10502332ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[10502332ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10517307ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10532317ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[10532317ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10547331ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10562316ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[10562318ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10577331ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10592329ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[10592329ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10607321ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10622331ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[10622332ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10637334ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10652331ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[10652331ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10667354ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10682331ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[10682331ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10697347ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10712332ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[10712332ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10727337ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0
+[10742323ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/worker-health:0
+[10742324ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3005/api/scrape/jobs?limit=8:0

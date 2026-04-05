@@ -7,6 +7,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { BrandMark } from "@/components/brand-mark";
+import { fetchJsonWithCache } from "@/lib/client-json-cache";
 import {
   Sidebar,
   SidebarContent,
@@ -59,20 +60,40 @@ const navItems = [
   },
 ];
 
+const LEAD_STATS_CACHE_KEY = "lead-stats";
+const LEAD_STATS_TTL_MS = 60_000;
+
 export function AppSidebar() {
   const pathname = usePathname();
   const [stats, setStats] = React.useState<{ total: number; todayLeads: number } | null>(null);
 
   React.useEffect(() => {
-    fetch("/api/leads/stats")
-      .then((response) => response.json())
+    const controller = new AbortController();
+
+    fetchJsonWithCache<{ total?: number; todayLeads?: number }>(
+      LEAD_STATS_CACHE_KEY,
+      "/api/leads/stats",
+      {
+        ttlMs: LEAD_STATS_TTL_MS,
+        signal: controller.signal,
+      },
+    )
       .then((data) =>
         setStats({
           total: data.total ?? 0,
           todayLeads: data.todayLeads ?? 0,
         }),
       )
-      .catch(() => setStats({ total: 0, todayLeads: 0 }));
+      .catch((error) => {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+        setStats({ total: 0, todayLeads: 0 });
+      });
+
+    return () => {
+      controller.abort();
+    };
   }, [pathname]);
 
   return (

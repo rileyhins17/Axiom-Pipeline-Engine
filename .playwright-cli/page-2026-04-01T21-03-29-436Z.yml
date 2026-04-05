@@ -1,0 +1,30 @@
+- generic [active] [ref=e1]:
+  - main [ref=e2]:
+    - generic [ref=e27]:
+      - img "Axiom" [ref=e30]
+      - generic [ref=e31]:
+        - generic [ref=e32]:
+          - generic [ref=e33]: Create Internal Access
+          - generic [ref=e34]: Only pre-approved Axiom ops email addresses can register.
+        - generic [ref=e35]:
+          - generic [ref=e36]:
+            - generic [ref=e37]:
+              - generic [ref=e38]: Full Name
+              - textbox "Full Name" [ref=e39]: Riley Hinsperger
+            - generic [ref=e40]:
+              - generic [ref=e41]: Work Email
+              - textbox "Work Email" [ref=e42]: riley@getaxiom.ca
+            - generic [ref=e43]:
+              - generic [ref=e44]: Password
+              - textbox "Password" [ref=e45]: Angelfish7-Napping6-Raving3-Bobbed4-District1
+            - generic [ref=e46]:
+              - generic [ref=e47]: Confirm Password
+              - textbox "Confirm Password" [ref=e48]: Angelfish7-Napping6-Raving3-Bobbed4-District1
+            - paragraph [ref=e52]: This email address is not authorized for Axiom ops access.
+            - button "Create Account" [ref=e49]
+          - paragraph [ref=e50]:
+            - text: Already have access?
+            - link "Sign in" [ref=e51] [cursor=pointer]:
+              - /url: /sign-in
+            - text: .
+  - alert [ref=e24]

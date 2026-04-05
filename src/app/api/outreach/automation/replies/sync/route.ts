@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { syncAutomationReplies } from "@/lib/outreach-automation";
+import { listAutomationOverview, syncAutomationReplies } from "@/lib/outreach-automation";
 import { requireAdminApiSession } from "@/lib/session";
 
 export async function POST(request: Request) {
@@ -11,7 +11,8 @@ export async function POST(request: Request) {
 
   try {
     const result = await syncAutomationReplies();
-    return NextResponse.json(result);
+    const overview = await listAutomationOverview();
+    return NextResponse.json({ ...result, overview });
   } catch (error: any) {
     console.error("Reply sync error:", error);
     return NextResponse.json(
