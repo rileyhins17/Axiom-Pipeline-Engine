@@ -3,6 +3,8 @@ import { isIntakeLead } from "@/lib/pipeline-lifecycle";
 import { getPrisma } from "@/lib/prisma";
 import { requireAdminSession } from "@/lib/session";
 
+export const dynamic = 'force-dynamic';
+
 export default async function HuntPage() {
     await requireAdminSession();
 

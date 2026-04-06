@@ -5,6 +5,8 @@ import { getAdminEmails, getAllowedEmails, getServerEnv } from "@/lib/env";
 import { getPrisma } from "@/lib/prisma";
 import { requireAdminSession } from "@/lib/session";
 
+export const dynamic = 'force-dynamic';
+
 export default async function SettingsPage() {
   const session = await requireAdminSession();
 

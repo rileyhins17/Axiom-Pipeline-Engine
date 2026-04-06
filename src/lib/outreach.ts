@@ -1,5 +1,8 @@
+export const READY_FOR_FIRST_TOUCH_STATUS = "READY_FOR_FIRST_TOUCH";
+
 export const OUTREACH_STATUS_OPTIONS = [
   { value: "NOT_CONTACTED", label: "Not Contacted", shortLabel: "Idle", classes: "border-white/10 bg-white/5 text-zinc-300" },
+  { value: READY_FOR_FIRST_TOUCH_STATUS, label: "Ready to Pitch", shortLabel: "Ready", classes: "border-purple-500/20 bg-purple-500/10 text-purple-300" },
   { value: "OUTREACHED", label: "Outreached", shortLabel: "Sent", classes: "border-cyan-500/20 bg-cyan-500/10 text-cyan-300" },
   { value: "FOLLOW_UP_DUE", label: "Follow-Up Due", shortLabel: "Due", classes: "border-amber-500/20 bg-amber-500/10 text-amber-300" },
   { value: "REPLIED", label: "Replied", shortLabel: "Replied", classes: "border-blue-500/20 bg-blue-500/10 text-blue-300" },
@@ -51,6 +54,30 @@ export function getOutreachChannelLabel(channel: string | null | undefined) {
 
 export function isContactedOutreachStatus(status: string | null | undefined) {
   return !!status && status !== "NOT_CONTACTED";
+}
+
+export const OUTREACH_AUTO_INCLUDE_MIN_SCORE = 35;
+
+export function isLeadAutoIncludedInOutreachHub(score: number | null | undefined) {
+  return typeof score === "number" && Number.isFinite(score) && score > OUTREACH_AUTO_INCLUDE_MIN_SCORE;
+}
+
+export function getOutreachPipelineLeadWhere() {
+  return {
+    AND: [
+      { axiomScore: { gt: OUTREACH_AUTO_INCLUDE_MIN_SCORE } },
+      { email: { not: null } },
+      {
+        OR: [{ outreachStatus: "NOT_CONTACTED" }, { outreachStatus: null }],
+      },
+    ],
+  };
+}
+
+export function getContactedOutreachLeadWhere() {
+  return {
+    outreachStatus: { not: "NOT_CONTACTED" },
+  };
 }
 
 export function formatOutreachDate(value: string | Date | null | undefined, includeTime = false) {

@@ -10,6 +10,8 @@ import { getCanonicalLifecycleStage, isIntakeLead } from "@/lib/pipeline-lifecyc
 import { getPrisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/session";
 
+export const dynamic = 'force-dynamic';
+
 export default async function VaultPage() {
   await requireSession();
 

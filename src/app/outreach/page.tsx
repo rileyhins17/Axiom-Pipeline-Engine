@@ -59,6 +59,8 @@ function toneForStatus(status: string | null | undefined): ActivityTone {
   }
 }
 
+export const dynamic = 'force-dynamic';
+
 export default async function OutreachPage() {
   const session = await requireSession();
   const prisma = getPrisma();
