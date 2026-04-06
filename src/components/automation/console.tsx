@@ -51,7 +51,12 @@ function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview
   const handleRun = async () => {
     const d = await exec<any>("run", () => fetch("/api/outreach/automation/run", { method: "POST" }));
     if (!d) return;
-    toast(d.sent > 0 ? `Sent ${d.sent} email${d.sent === 1 ? "" : "s"}` : "Check complete — no sends", { type: "success", icon: "note" });
+    const parts: string[] = [];
+    if (d.pipeline?.enriched > 0) parts.push(`${d.pipeline.enriched} enriched`);
+    if (d.pipeline?.qualified > 0) parts.push(`${d.pipeline.qualified} qualified`);
+    if (d.pipeline?.queued > 0) parts.push(`${d.pipeline.queued} queued`);
+    if (d.sent > 0) parts.push(`${d.sent} sent`);
+    toast(parts.length > 0 ? parts.join(", ") : "Check complete — nothing to do", { type: "success", icon: "note" });
     await refresh();
   };
 

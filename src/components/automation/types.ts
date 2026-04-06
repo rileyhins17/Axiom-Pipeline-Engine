@@ -106,6 +106,12 @@ export type AutomationOverview = {
     waitingCount: number;
     sendingCount: number;
   };
+  pipeline: {
+    needsEnrichment: number;
+    enriching: number;
+    enriched: number;
+    readyForTouch: number;
+  };
   stats: {
     ready: number;
     queued: number;

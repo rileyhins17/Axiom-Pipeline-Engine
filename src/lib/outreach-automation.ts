@@ -150,6 +150,12 @@ export type AutomationOverview = {
     waitingCount: number;
     sendingCount: number;
   };
+  pipeline: {
+    needsEnrichment: number;
+    enriching: number;
+    enriched: number;
+    readyForTouch: number;
+  };
   recentRuns: OutreachRunRecord[];
   stats: {
     ready: number;
@@ -1107,6 +1113,14 @@ export async function listAutomationOverview() {
   const waitingCount = summaries.filter((sequence) => sequence.state === "WAITING").length;
   const repliedCount = summaries.filter((sequence) => sequence.blockerReason === "reply_detected").length;
 
+  // Pipeline stage counts (for auto-pipeline visibility)
+  const [needsEnrichCount, enrichingCount, enrichedCount, readyForTouchCount] = await Promise.all([
+    prisma.lead.count({ where: { enrichedAt: null, enrichmentData: null, email: { not: null }, axiomScore: { not: null }, isArchived: false, outreachStatus: "NOT_CONTACTED" } }),
+    prisma.lead.count({ where: { outreachStatus: "ENRICHING", isArchived: false } }),
+    prisma.lead.count({ where: { outreachStatus: "ENRICHED", isArchived: false } }),
+    prisma.lead.count({ where: { outreachStatus: READY_FOR_FIRST_TOUCH_STATUS, isArchived: false } }),
+  ]);
+
   return {
     settings,
     ready,
@@ -1126,6 +1140,12 @@ export async function listAutomationOverview() {
       queuedCount: queued.length,
       waitingCount,
       sendingCount,
+    },
+    pipeline: {
+      needsEnrichment: needsEnrichCount,
+      enriching: enrichingCount,
+      enriched: enrichedCount,
+      readyForTouch: readyForTouchCount,
     },
     recentRuns,
     stats: {
@@ -1871,6 +1891,7 @@ async function setSequenceBlocked(
 }
 
 export async function runAutomationScheduler() {
+  const { runAutoPipeline } = await import("@/lib/auto-pipeline");
   const prisma = getPrisma();
   const settings = await getSettings(prisma);
   const run = await prisma.outreachRun.create({
@@ -1885,6 +1906,7 @@ export async function runAutomationScheduler() {
   let sentCount = 0;
   let failedCount = 0;
   let skippedCount = 0;
+  let pipeline = { enriched: 0, enrichFailed: 0, qualified: 0, queued: 0, queueSkipped: 0 };
 
   try {
     if (!settings.enabled || settings.globalPaused) {
@@ -1905,8 +1927,16 @@ export async function runAutomationScheduler() {
         sent: 0,
         failed: 0,
         skipped: 0,
+        pipeline,
         replySync: { checked: 0, stopped: 0 },
       };
+    }
+
+    // Auto-pipeline: enrich → qualify → queue new leads
+    try {
+      pipeline = await runAutoPipeline("system");
+    } catch (pipelineError) {
+      console.error("[scheduler] Auto-pipeline error (non-fatal):", pipelineError);
     }
 
     const replySync = await syncAutomationReplies();
@@ -1984,6 +2014,7 @@ export async function runAutomationScheduler() {
         metadata: JSON.stringify({
           source: "scheduler",
           replySync,
+          pipeline,
         }),
       },
     });
@@ -1994,6 +2025,7 @@ export async function runAutomationScheduler() {
       sent: sentCount,
       failed: failedCount,
       skipped: skippedCount,
+      pipeline,
       replySync,
     };
   } catch (error) {
