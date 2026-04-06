@@ -1,10 +1,23 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, ArrowRight, Clock, Mail, Zap } from "lucide-react";
 import type { AutomationOverview, AutomationSequence } from "./types";
 import { fmtCountdown, fmtDt, fmtWindow, stageLabel, stateColor, stateLabel } from "./helpers";
+
+/* Transient blockers that don't need human attention */
+const TRANSIENT_BLOCKERS = new Set([
+  "outside_send_window",
+  "awaiting_follow_up_window",
+  "mailbox_cooldown",
+  "hourly_cap_reached",
+  "global_pause",
+]);
+
+function isRealIssue(seq: AutomationSequence) {
+  return seq.state === "BLOCKED" && !TRANSIENT_BLOCKERS.has(seq.blockerReason || "");
+}
 
 export function OverviewTab({ overview }: { overview: AutomationOverview }) {
   const allSeqs = overview.sequences;
@@ -12,6 +25,9 @@ export function OverviewTab({ overview }: { overview: AutomationOverview }) {
   const sending = useMemo(() => allSeqs.filter((s) => s.state === "SENDING"), [allSeqs]);
   const waiting = useMemo(() => allSeqs.filter((s) => s.state === "WAITING" && s.hasSentAnyStep), [allSeqs]);
   const blocked = useMemo(() => allSeqs.filter((s) => s.state === "BLOCKED"), [allSeqs]);
+  const issues = useMemo(() => allSeqs.filter(isRealIssue), [allSeqs]);
+  const waitingForWindow = useMemo(() => blocked.filter((s) => TRANSIENT_BLOCKERS.has(s.blockerReason || "")), [blocked]);
+
   const nextUp = useMemo(() => {
     const active = [...queued, ...sending, ...waiting]
       .filter((s) => s.nextSendAt)
@@ -21,19 +37,19 @@ export function OverviewTab({ overview }: { overview: AutomationOverview }) {
 
   const atCapMailboxes = overview.mailboxes.filter((m) => m.sentToday >= m.dailyLimit);
   const pausedMailboxes = overview.mailboxes.filter((m) => m.status === "PAUSED");
-  const hasAttention = blocked.length > 0 || atCapMailboxes.length > 0 || pausedMailboxes.length > 0 || overview.settings.globalPaused;
+  const hasAttention = issues.length > 0 || atCapMailboxes.length > 0 || pausedMailboxes.length > 0 || overview.settings.globalPaused;
 
   return (
     <div className="space-y-5">
-      {/* ── Engine status strip ── */}
+      {/* Engine status strip */}
       <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-white/[0.06] bg-white/[0.03] sm:grid-cols-3 lg:grid-cols-6">
         {[
           { label: "Engine", value: overview.settings.globalPaused ? "Paused" : overview.engine.mode, warn: overview.settings.globalPaused },
           { label: "Initial outreach", value: `${queued.length} queued`, warn: false },
-          { label: "Follow-ups", value: `${waiting.length} active`, warn: false },
+          { label: "Follow-ups", value: `${waiting.length + sending.length} active`, warn: false },
           { label: "Next send", value: fmtCountdown(overview.engine.nextSendAt), warn: false },
           { label: "Due today", value: String(overview.stats.scheduledToday), warn: false },
-          { label: "Blocked", value: String(overview.stats.blocked), warn: overview.stats.blocked > 0 },
+          { label: "Issues", value: String(issues.length), warn: issues.length > 0 },
         ].map((item) => (
           <div key={item.label} className="border-r border-b border-white/[0.04] px-4 py-3 last:border-r-0">
             <div className="text-[11px] text-zinc-500">{item.label}</div>
@@ -43,9 +59,9 @@ export function OverviewTab({ overview }: { overview: AutomationOverview }) {
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[1fr_300px]">
-        {/* ── Left column ── */}
+        {/* Left column */}
         <div className="space-y-5">
-          {/* Sending now / Next up */}
+          {/* Sending next */}
           <section>
             <h3 className="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-zinc-500">
               <Clock className="h-3 w-3" /> Sending next
@@ -69,10 +85,14 @@ export function OverviewTab({ overview }: { overview: AutomationOverview }) {
                   </tbody>
                 </table>
               </div>
+            ) : waitingForWindow.length > 0 ? (
+              <div className="rounded-lg border border-white/[0.06] bg-white/[0.015] px-4 py-4 text-sm text-zinc-400">
+                <span className="text-zinc-200">{waitingForWindow.length} sequence{waitingForWindow.length !== 1 && "s"}</span> waiting for business hours.
+                {overview.engine.nextSendAt && <span> Next send window opens {fmtCountdown(overview.engine.nextSendAt)}.</span>}
+              </div>
             ) : (
               <p className="py-4 text-center text-sm text-zinc-500">
                 No outreach scheduled right now.
-                {overview.engine.nextSendAt && <span className="text-zinc-400"> Next send {fmtCountdown(overview.engine.nextSendAt)}.</span>}
               </p>
             )}
           </section>
@@ -98,7 +118,7 @@ export function OverviewTab({ overview }: { overview: AutomationOverview }) {
           )}
         </div>
 
-        {/* ── Right column ── */}
+        {/* Right column */}
         <div className="space-y-4">
           {/* Mailbox snapshot */}
           <div className="rounded-lg border border-white/[0.06] bg-white/[0.015] p-4">
@@ -128,7 +148,7 @@ export function OverviewTab({ overview }: { overview: AutomationOverview }) {
             )}
           </div>
 
-          {/* Engine summary */}
+          {/* Summary */}
           <div className="rounded-lg border border-white/[0.06] bg-white/[0.015] p-4">
             <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-zinc-500">Summary</h3>
             <dl className="space-y-2 text-sm">
@@ -136,7 +156,8 @@ export function OverviewTab({ overview }: { overview: AutomationOverview }) {
               <Row label="Ready leads" value={String(overview.stats.ready)} />
               <Row label="Queued (initial)" value={String(overview.stats.queued)} />
               <Row label="Follow-ups" value={String(overview.stats.waiting + overview.stats.sending)} />
-              <Row label="Blocked" value={String(overview.stats.blocked)} warn={overview.stats.blocked > 0} />
+              <Row label="Waiting for window" value={String(waitingForWindow.length)} />
+              <Row label="Issues" value={String(issues.length)} warn={issues.length > 0} />
               <Row label="Completed" value={String(overview.stats.completed)} />
               <Row label="Replied" value={String(overview.stats.replied)} />
             </dl>
@@ -150,7 +171,7 @@ export function OverviewTab({ overview }: { overview: AutomationOverview }) {
               </h3>
               <ul className="space-y-1.5 text-sm text-zinc-300">
                 {overview.settings.globalPaused && <li>• Engine is globally paused</li>}
-                {blocked.length > 0 && <li>• {blocked.length} blocked sequence{blocked.length !== 1 && "s"}</li>}
+                {issues.length > 0 && <li>• {issues.length} sequence{issues.length !== 1 && "s"} need review</li>}
                 {atCapMailboxes.length > 0 && <li>• {atCapMailboxes.length} mailbox{atCapMailboxes.length !== 1 && "es"} at daily cap</li>}
                 {pausedMailboxes.length > 0 && <li>• {pausedMailboxes.length} mailbox{pausedMailboxes.length !== 1 && "es"} paused</li>}
               </ul>

@@ -11,7 +11,7 @@ import { fmtCountdown } from "./helpers";
 import { OverviewTab } from "./tab-overview";
 import { QueueTab } from "./tab-queue";
 import { MailboxesTab } from "./tab-mailboxes";
-import { BlockedTab } from "./tab-blocked";
+import { IssuesTab } from "./tab-blocked";
 import { RulesTab } from "./tab-rules";
 
 export function AutomationConsole({ initialOverview }: { initialOverview: AutomationOverview }) {
@@ -85,14 +85,15 @@ function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview
 
   const isActive = overview.engine.mode === "ACTIVE" && !overview.settings.globalPaused;
   const engineLabel = overview.settings.globalPaused ? "Paused" : overview.engine.mode;
-  const blockedCount = overview.stats.blocked;
+  const TRANSIENT = new Set(["outside_send_window", "awaiting_follow_up_window", "mailbox_cooldown", "hourly_cap_reached", "global_pause"]);
+  const issuesCount = overview.sequences.filter((s) => s.state === "BLOCKED" && !TRANSIENT.has(s.blockerReason || "")).length;
   const queueCount = overview.sequences.filter((s) => s.state !== "STOPPED" && s.state !== "COMPLETED").length;
 
   const tabs: { id: TabId; label: string; count?: number }[] = [
     { id: "overview", label: "Overview" },
     { id: "queue", label: "Queue", count: queueCount },
     { id: "mailboxes", label: "Mailboxes", count: overview.mailboxes.length },
-    { id: "blocked", label: "Blocked", count: blockedCount },
+    { id: "blocked", label: "Issues", count: issuesCount },
     { id: "rules", label: "Rules" },
   ];
 
@@ -111,7 +112,7 @@ function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview
             <span className="text-xs text-zinc-500">Next: <span className="text-zinc-300">{fmtCountdown(overview.engine.nextSendAt)}</span></span>
             <span className="text-zinc-700">·</span>
             <span className="text-xs text-zinc-500">Today: <span className="text-zinc-300">{overview.stats.scheduledToday}</span></span>
-            {blockedCount > 0 && <><span className="text-zinc-700">·</span><span className="text-xs text-amber-400/80">{blockedCount} blocked</span></>}
+            {issuesCount > 0 && <><span className="text-zinc-700">·</span><span className="text-xs text-amber-400/80">{issuesCount} issue{issuesCount !== 1 && "s"}</span></>}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -157,7 +158,7 @@ function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview
         {tab === "overview" && <OverviewTab overview={overview} />}
         {tab === "queue" && <QueueTab overview={overview} busyKey={busyKey} onUpdateSeq={updateSeq} />}
         {tab === "mailboxes" && <MailboxesTab mailboxes={overview.mailboxes} busyKey={busyKey} onUpdateMailbox={updateMailbox} />}
-        {tab === "blocked" && <BlockedTab sequences={overview.sequences} busyKey={busyKey} onUpdateSeq={updateSeq} />}
+        {tab === "blocked" && <IssuesTab sequences={overview.sequences} busyKey={busyKey} onUpdateSeq={updateSeq} />}
         {tab === "rules" && <RulesTab settings={settingsDraft} onChange={setSettingsDraft} onSave={saveSettings} busyKey={busyKey} />}
       </div>
     </div>
