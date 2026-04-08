@@ -5,6 +5,8 @@ import { usePathname } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
 import { LayoutBreadcrumb } from "@/components/layout-breadcrumb";
 import { SearchTrigger } from "@/components/system/search-trigger";
+import { LiveClock } from "@/components/system/live-clock";
+import { StatusDots } from "@/components/system/status-dots";
 import { HotkeyProvider } from "@/components/system/hotkey-provider";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 
@@ -29,16 +31,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <SidebarProvider>
       <AppSidebar />
       <main className="min-h-screen w-full flex-1 bg-background">
-        <div className="sticky top-0 z-40 border-b border-white/[0.05] bg-background/90 backdrop-blur-xl">
-          <div className="flex h-14 items-center gap-3 px-4 md:px-6">
-            <SidebarTrigger className="text-muted-foreground transition-colors hover:text-white" />
+        {/* ── command strip header ── */}
+        <div className="command-strip sticky top-0 z-40 border-b border-white/[0.04] bg-background/80 backdrop-blur-md">
+          <div className="flex h-12 items-center gap-3 px-4 md:px-5">
+            {/* left: toggle + breadcrumb */}
+            <SidebarTrigger className="text-zinc-600 transition-colors hover:text-white" />
+            <div className="h-4 w-px bg-white/[0.06]" />
             <LayoutBreadcrumb />
-            <div className="ml-auto">
+
+            {/* right cluster */}
+            <div className="ml-auto flex items-center gap-4">
+              <StatusDots />
+              <div className="h-3 w-px bg-white/[0.06] hidden md:block" />
+              <LiveClock />
+              <div className="h-3 w-px bg-white/[0.06] hidden md:block" />
               <SearchTrigger />
             </div>
           </div>
         </div>
-        <div className="px-4 py-6 md:px-6">
+
+        <div className="px-6 py-5">
           <HotkeyProvider>{children}</HotkeyProvider>
         </div>
       </main>
