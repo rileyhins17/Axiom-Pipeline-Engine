@@ -170,6 +170,7 @@ export type OutreachAutomationSettingRecord = {
   id: string;
   enabled: boolean;
   globalPaused: boolean;
+  emailSystemPrompt: string | null;
   sendWindowStartHour: number;
   sendWindowStartMinute: number;
   sendWindowEndHour: number;
@@ -622,6 +623,7 @@ const outreachAutomationSettingTable: TableSpec<OutreachAutomationSettingRecord>
     "id",
     "enabled",
     "globalPaused",
+    "emailSystemPrompt",
     "sendWindowStartHour",
     "sendWindowStartMinute",
     "sendWindowEndHour",
@@ -650,7 +652,7 @@ const outreachAutomationSettingTable: TableSpec<OutreachAutomationSettingRecord>
     "schedulerClaimBatch",
     "replySyncStaleMinutes",
   ]),
-  stringFields: new Set(),
+  stringFields: new Set(["emailSystemPrompt"]),
   tableName: "OutreachAutomationSetting",
   updatedAtField: "updatedAt",
 };

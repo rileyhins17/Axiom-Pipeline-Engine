@@ -213,14 +213,49 @@ function scoreServiceFit(text: string) {
   return 4;
 }
 
-function scoreBusinessValue(input: {
+type ScoreBusinessValueInput = {
   niche: string;
   category: string;
   rating: number;
   reviewCount: number;
   websiteStatus: string;
   websiteContent: string;
-}) {
+  verticalConfidence?: "high" | "medium" | "low";
+  siteType?: "business" | "directory" | "placeholder" | "parked" | "social" | "unknown";
+  servicePageCount?: number;
+  aboutPageExists?: boolean;
+  evidenceQuality?: number;
+};
+
+export function scoreBusinessValue(
+  niche: string,
+  category: string,
+  rating: number,
+  reviewCount: number,
+  websiteContent: string,
+  websiteStatus?: string,
+): number;
+export function scoreBusinessValue(input: ScoreBusinessValueInput): number;
+export function scoreBusinessValue(
+  inputOrNiche: ScoreBusinessValueInput | string,
+  category?: string,
+  rating?: number,
+  reviewCount?: number,
+  websiteContent?: string,
+  websiteStatus = "ACTIVE",
+) {
+  const input: ScoreBusinessValueInput =
+    typeof inputOrNiche === "string"
+      ? {
+          niche: inputOrNiche,
+          category: category || "",
+          rating: rating || 0,
+          reviewCount: reviewCount || 0,
+          websiteStatus,
+          websiteContent: websiteContent || "",
+        }
+      : inputOrNiche;
+
   const text = normalizeText(input.niche, input.category, input.websiteContent);
   let score = 0;
 
@@ -251,19 +286,65 @@ function scoreBusinessValue(input: {
     score += 2;
   }
 
+  if (input.verticalConfidence === "high") score += 4;
+  else if (input.verticalConfidence === "medium") score += 1;
+  else if (input.verticalConfidence === "low") score -= 5;
+
+  if ((input.servicePageCount || 0) >= 2) score += 2;
+  if (input.aboutPageExists) score += 1;
+  if (input.siteType === "directory" || input.siteType === "placeholder") score -= 3;
+  if (typeof input.evidenceQuality === "number" && input.evidenceQuality < 0.45) score -= 3;
+
   return clamp(score, 0, 25);
 }
 
-function scorePainOpportunity(input: {
+type ScorePainOpportunityInput = {
   websiteStatus: string;
   assessment: WebsiteAssessment | null;
   painSignals: PainSignal[];
   reviewCount: number;
-}) {
+  siteType?: "business" | "directory" | "placeholder" | "parked" | "social" | "unknown";
+  servicePageCount?: number;
+  quoteIntentDetected?: boolean;
+  directoryShellDetected?: boolean;
+  placeholderDetected?: boolean;
+};
+
+export function scorePainOpportunity(
+  websiteStatus: string,
+  assessment: WebsiteAssessment | null,
+  painSignals: PainSignal[],
+  reviewCount: number,
+): number;
+export function scorePainOpportunity(input: ScorePainOpportunityInput): number;
+export function scorePainOpportunity(
+  inputOrWebsiteStatus: ScorePainOpportunityInput | string,
+  assessment?: WebsiteAssessment | null,
+  painSignals: PainSignal[] = [],
+  reviewCount = 0,
+) {
+  const input: ScorePainOpportunityInput =
+    typeof inputOrWebsiteStatus === "string"
+      ? {
+          websiteStatus: inputOrWebsiteStatus,
+          assessment: assessment || null,
+          painSignals,
+          reviewCount,
+        }
+      : inputOrWebsiteStatus;
+
   let score = 0;
 
   if (input.websiteStatus === "MISSING") {
     score += input.reviewCount >= 5 ? 22 : 15;
+  }
+
+  if (input.siteType === "directory" || input.directoryShellDetected) {
+    score += input.reviewCount >= 8 ? 14 : 8;
+  }
+
+  if (input.siteType === "placeholder" || input.placeholderDetected) {
+    score += input.reviewCount >= 8 ? 12 : 7;
   }
 
   if (input.assessment && input.websiteStatus === "ACTIVE") {
@@ -277,6 +358,13 @@ function scorePainOpportunity(input: {
   const moderatePainSignals = input.painSignals.filter((signal) => signal.severity === 2).length;
   score += clamp(severePainSignals * 2 + moderatePainSignals, 0, 8);
 
+  if ((input.servicePageCount || 0) === 0 && input.websiteStatus === "ACTIVE") {
+    score += 2;
+  }
+  if (!input.quoteIntentDetected && input.websiteStatus === "ACTIVE") {
+    score += 2;
+  }
+
   if (input.websiteStatus === "ACTIVE" && severePainSignals === 0 && moderatePainSignals === 0) {
     score = Math.min(score, 10);
   }
@@ -284,11 +372,35 @@ function scorePainOpportunity(input: {
   return clamp(score, 0, 35);
 }
 
-function scoreReachability(input: {
+type ScoreReachabilityInput = {
   contact: ContactQuality;
   hasContactForm: boolean;
   hasSocialMessaging: boolean;
-}) {
+  contactChannelCount?: number;
+  actionability?: "high" | "medium" | "low";
+  siteType?: "business" | "directory" | "placeholder" | "parked" | "social" | "unknown";
+};
+
+export function scoreReachability(
+  contact: ContactQuality,
+  hasContactForm: boolean,
+  hasSocialMessaging: boolean,
+): number;
+export function scoreReachability(input: ScoreReachabilityInput): number;
+export function scoreReachability(
+  inputOrContact: ScoreReachabilityInput | ContactQuality,
+  hasContactForm = false,
+  hasSocialMessaging = false,
+) {
+  const input: ScoreReachabilityInput =
+    "contact" in inputOrContact
+      ? inputOrContact
+      : {
+          contact: inputOrContact,
+          hasContactForm,
+          hasSocialMessaging,
+        };
+
   let score = 0;
 
   const email = {
@@ -307,11 +419,17 @@ function scoreReachability(input: {
   score += Math.round(clamp(input.contact.phoneConfidence, 0, 1) * 6);
   if (input.hasContactForm) score += 2;
   if (input.hasSocialMessaging) score += 2;
+  if ((input.contactChannelCount || 0) >= 2) score += 2;
+  if (input.actionability === "high") score += 2;
+  else if (input.actionability === "low") score -= 3;
+  if (input.siteType === "directory" && !input.hasContactForm) score -= 2;
+  if (input.siteType === "placeholder") score -= 2;
 
   return clamp(score, 0, 25);
 }
 
-function scoreLocalFit(city: string, reviewContent: string, nicheText: string) {
+export function scoreLocalFit(city: string, reviewContent: string, nicheText?: string, geoConfidence?: "high" | "medium" | "low"): number;
+export function scoreLocalFit(city: string, reviewContent: string, nicheText = "", geoConfidence: "high" | "medium" | "low" = "medium") {
   const cityLower = city.toLowerCase().trim();
   const text = normalizeText(reviewContent, nicheText);
   let score = 0;
@@ -324,12 +442,28 @@ function scoreLocalFit(city: string, reviewContent: string, nicheText: string) {
   const growthSignals = ["new location", "expanding", "hiring", "book now", "book online", "quote"];
   score += clamp(growthSignals.filter((signal) => text.includes(signal)).length * 2, 0, 7);
 
+  if (geoConfidence === "high") score += 3;
+  else if (geoConfidence === "low") score -= 5;
+
   return clamp(score, 0, 15);
 }
 
-function computeTier(score: number) {
-  if (score >= 85) return "S";
-  if (score >= 70) return "A";
+function countQualifyingPainSignals(painSignals: PainSignal[]) {
+  return painSignals.filter((signal) => signal.severity >= 2).length;
+}
+
+export function computeTier(score: number, painSignals?: PainSignal[]) {
+  if (!painSignals) {
+    if (score >= 85) return "S";
+    if (score >= 70) return "A";
+    if (score >= 50) return "B";
+    if (score >= AXIOM_OUTREACH_MIN_SCORE) return "C";
+    return "D";
+  }
+
+  const qualifyingPainSignals = countQualifyingPainSignals(painSignals);
+  if (score >= 90) return qualifyingPainSignals >= 2 ? "S" : "B";
+  if (score >= 80) return qualifyingPainSignals >= 2 ? "A" : "B";
   if (score >= 50) return "B";
   if (score >= AXIOM_OUTREACH_MIN_SCORE) return "C";
   return "D";
@@ -346,6 +480,10 @@ function buildReasonSummary(input: {
   localFit: number;
   assessment: WebsiteAssessment | null;
   reviewCount: number;
+  geoConfidence?: "high" | "medium" | "low";
+  verticalConfidence?: "high" | "medium" | "low";
+  siteType?: "business" | "directory" | "placeholder" | "parked" | "social" | "unknown";
+  evidenceQuality?: number;
 }) {
   const reasons: string[] = [];
   const codes: string[] = [];
@@ -385,6 +523,21 @@ function buildReasonSummary(input: {
     codes.push("priority_market");
   }
 
+  if (input.geoConfidence === "low") {
+    reasons.push("The geography match is weak, so the lead is discounted even if other signals look interesting.");
+    codes.push("geo_penalty");
+  }
+
+  if (input.verticalConfidence === "low") {
+    reasons.push("The business category drifts away from Axiom's strongest service-business profile.");
+    codes.push("vertical_penalty");
+  }
+
+  if (input.siteType === "directory" || input.siteType === "placeholder") {
+    reasons.push("The discovered web presence looks thin or indirect, which increases qualification risk.");
+    codes.push("weak_web_presence");
+  }
+
   if (input.assessment && (input.assessment.conversionRisk >= 3 || input.assessment.trustRisk >= 3)) {
     reasons.push("The site likely needs conversion and trust improvements, not just cosmetic polish.");
     codes.push("conversion_pain");
@@ -393,6 +546,11 @@ function buildReasonSummary(input: {
   if (input.reviewCount >= 15) {
     reasons.push("The business shows enough market activity to justify a serious web infrastructure upgrade.");
     codes.push("legitimate_business");
+  }
+
+  if (typeof input.evidenceQuality === "number" && input.evidenceQuality < 0.5) {
+    reasons.push("Evidence quality is weaker than ideal, so this lead stays conservative.");
+    codes.push("evidence_penalty");
   }
 
   return {
@@ -415,13 +573,24 @@ export function computeAxiomScore(input: {
   hasContactForm: boolean;
   hasSocialMessaging: boolean;
   reviewContent: string;
+  geoConfidence?: "high" | "medium" | "low";
+  verticalConfidence?: "high" | "medium" | "low";
+  actionability?: "high" | "medium" | "low";
+  siteType?: "business" | "directory" | "placeholder" | "parked" | "social" | "unknown";
+  directoryShellDetected?: boolean;
+  placeholderDetected?: boolean;
+  contactChannelCount?: number;
+  servicePageCount?: number;
+  aboutPageExists?: boolean;
+  quoteIntentDetected?: boolean;
+  evidenceQuality?: number;
 }): AxiomScoreResult {
   const websiteQuality = classifyWebsiteQuality(input.websiteStatus, input.assessment, input.painSignals);
   const serviceFitScore = scoreServiceFit(normalizeText(input.niche, input.category));
   const businessValue = scoreBusinessValue(input);
   const painOpportunity = scorePainOpportunity(input);
   const reachability = scoreReachability(input);
-  const localFit = scoreLocalFit(input.city, input.reviewContent, normalizeText(input.niche, input.category));
+  const localFit = scoreLocalFit(input.city, input.reviewContent, normalizeText(input.niche, input.category), input.geoConfidence);
   const rawScore = clamp(businessValue + painOpportunity + reachability + localFit, 0, 100);
 
   const hasValidEmail = hasValidPipelineEmail({
@@ -439,10 +608,14 @@ export function computeAxiomScore(input: {
   const websiteRiskScore = getWebsiteRiskScore(input.assessment);
   const { reasonCodes, reasonSummary } = buildReasonSummary({
     assessment: input.assessment,
+    evidenceQuality: input.evidenceQuality,
+    geoConfidence: input.geoConfidence,
     hasValidEmail,
     localFit,
     reviewCount: input.reviewCount,
     serviceFitScore,
+    siteType: input.siteType,
+    verticalConfidence: input.verticalConfidence,
     websiteQuality,
   });
 

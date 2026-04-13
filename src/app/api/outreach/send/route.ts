@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
 
-import { generateEmail } from "@/lib/outreach-email-generator";
 import { getServerEnv } from "@/lib/env";
 import { getValidAccessToken, sendGmailEmail } from "@/lib/gmail";
+import { prepareLeadOutreachPackage } from "@/lib/lead-pipeline/orchestrator";
 import { getMailboxForManualSend } from "@/lib/outreach-automation";
-import type { EnrichmentResult } from "@/lib/outreach-enrichment";
 import { getPrisma } from "@/lib/prisma";
 import type { LeadRecord } from "@/lib/prisma";
 import { requireAdminApiSession } from "@/lib/session";
@@ -69,14 +68,14 @@ export async function POST(request: Request) {
     const leads: LeadRecord[] = [];
     for (const id of leadIds) {
       const lead = await prisma.lead.findUnique({ where: { id } });
-      if (lead && lead.email && lead.enrichmentData) {
+      if (lead) {
         leads.push(lead);
       }
     }
 
     if (leads.length === 0) {
       return NextResponse.json(
-        { error: "No eligible leads found (must have email and enrichment data)" },
+        { error: "No valid leads found" },
         { status: 400 },
       );
     }
@@ -130,20 +129,73 @@ export async function POST(request: Request) {
 
     for (let i = 0; i < eligibleLeads.length; i++) {
       const lead = eligibleLeads[i];
+      let recipientEmail = lead.email || "";
 
       try {
-        // Parse enrichment data
-        const enrichment = JSON.parse(lead.enrichmentData!) as EnrichmentResult;
+        const prepared = await prepareLeadOutreachPackage({
+          lead,
+          senderName,
+          forceRefresh: true,
+        });
 
-        // Generate personalized email via DeepSeek
-        const email = await generateEmail(lead, enrichment, senderName);
+        if (prepared.decisionRecord?.decision.decision === "blocked") {
+          throw new Error(prepared.decisionRecord.decision.reasons.join(" | "));
+        }
+
+        recipientEmail = prepared.bestEmail.email || lead.email || "";
+        if (!recipientEmail) {
+          throw new Error("No validated recipient email was available.");
+        }
+
+        const recentSend = await prisma.outreachEmail.findFirst({
+          where: {
+            recipientEmail,
+            sentAt: { gte: thirtyDaysAgo },
+            status: "sent",
+          },
+          select: { id: true },
+        });
+        if (recentSend) {
+          throw new Error("Recipient was already emailed within the last 30 days.");
+        }
+
+        if (!prepared.draftRecord) {
+          throw new Error("No controlled email draft was available.");
+        }
+
+        const email = {
+          subject: prepared.draftRecord.subject,
+          bodyHtml: prepared.draftRecord.bodyHtml,
+          bodyPlain: prepared.draftRecord.bodyPlain,
+        };
+
+        await prisma.lead.update({
+          where: { id: lead.id },
+          data: {
+            email: recipientEmail,
+            emailConfidence: prepared.bestEmail.confidence || lead.emailConfidence,
+            emailType: prepared.bestEmail.emailType || lead.emailType,
+            emailFlags: JSON.stringify(prepared.bestEmail.flags),
+            tacticalNote: prepared.legacyCompatibility.tacticalNote,
+            painSignals: JSON.stringify(prepared.legacyCompatibility.painSignals),
+            axiomWebsiteAssessment: JSON.stringify(prepared.legacyCompatibility.websiteAssessment),
+            enrichmentData: JSON.stringify(prepared.legacyCompatibility.enrichment),
+            enrichedAt: new Date(),
+            websiteStatus: prepared.legacyCompatibility.websiteStatus,
+            websiteUrl: prepared.legacyCompatibility.websiteUrl,
+            websiteDomain: prepared.legacyCompatibility.websiteDomain,
+            phone: prepared.legacyCompatibility.phone || lead.phone,
+            socialLink: prepared.legacyCompatibility.socialLink || lead.socialLink,
+            followUpQuestion: prepared.legacyCompatibility.followUpQuestion,
+          },
+        });
 
         // Send via Gmail
         const sendResult = await sendGmailEmail({
           accessToken: tokenResult.accessToken,
           from: connection.gmailAddress,
           fromName: senderName,
-          to: lead.email!,
+          to: recipientEmail,
           subject: email.subject,
           bodyHtml: email.bodyHtml,
           bodyPlain: email.bodyPlain,
@@ -154,13 +206,13 @@ export async function POST(request: Request) {
           data: {
             id: crypto.randomUUID(),
             leadId: lead.id,
-            senderUserId: authResult.session.user.id,
-            senderEmail: connection.gmailAddress,
-            mailboxId: mailbox.id,
-            recipientEmail: lead.email!,
-            subject: email.subject,
-            bodyHtml: email.bodyHtml,
-            bodyPlain: email.bodyPlain,
+              senderUserId: authResult.session.user.id,
+              senderEmail: connection.gmailAddress,
+              mailboxId: mailbox.id,
+              recipientEmail,
+              subject: email.subject,
+              bodyHtml: email.bodyHtml,
+              bodyPlain: email.bodyPlain,
             gmailMessageId: sendResult.messageId,
             gmailThreadId: sendResult.threadId,
             status: "sent",
@@ -184,7 +236,7 @@ export async function POST(request: Request) {
         });
 
         results.push({ leadId: lead.id, businessName: lead.businessName, status: "sent" });
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error(`[outreach-send] Failed for lead ${lead.id}:`, error);
 
         // Log failed attempt
@@ -196,12 +248,12 @@ export async function POST(request: Request) {
               senderUserId: authResult.session.user.id,
               senderEmail: connection.gmailAddress,
               mailboxId: mailbox.id,
-              recipientEmail: lead.email!,
+              recipientEmail,
               subject: "(generation failed)",
               bodyHtml: "",
               bodyPlain: "",
               status: "failed",
-              errorMessage: error.message || "Unknown error",
+              errorMessage: error instanceof Error ? error.message : "Unknown error",
               sentAt: new Date(),
             },
           });
@@ -211,7 +263,7 @@ export async function POST(request: Request) {
           leadId: lead.id,
           businessName: lead.businessName,
           status: "failed",
-          error: error.message || "Unknown error",
+          error: error instanceof Error ? error.message : "Unknown error",
         });
       }
 
@@ -232,10 +284,10 @@ export async function POST(request: Request) {
       total: leads.length,
       results,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Outreach send error:", error);
     return NextResponse.json(
-      { error: error.message || "Failed to send outreach emails" },
+      { error: error instanceof Error ? error.message : "Failed to send outreach emails" },
       { status: 500 },
     );
   }

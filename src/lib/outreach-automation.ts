@@ -172,6 +172,13 @@ export type AutomationOverview = {
   };
 };
 
+export type AutomationRuntimeStatus = {
+  enabled: boolean;
+  globalPaused: boolean;
+  engineMode: AutomationOverview["engine"]["mode"];
+  masterEnabled: boolean;
+};
+
 type AutomationCanonicalState = "QUEUED" | "SENDING" | "WAITING" | "BLOCKED" | "STOPPED" | "COMPLETED";
 
 type AutomationBlockerReason =
@@ -1179,6 +1186,18 @@ export async function updateMailbox(mailboxId: string, data: Partial<OutreachMai
     where: { id: mailboxId },
     data,
   });
+}
+
+export async function getAutomationRuntimeStatus(): Promise<AutomationRuntimeStatus> {
+  const settings = await getSettings(getPrisma());
+  const engineMode = !settings.enabled ? "DISABLED" : settings.globalPaused ? "PAUSED" : "ACTIVE";
+
+  return {
+    enabled: settings.enabled,
+    globalPaused: settings.globalPaused,
+    engineMode,
+    masterEnabled: settings.enabled && !settings.globalPaused,
+  };
 }
 
 async function stopSequenceInternal(

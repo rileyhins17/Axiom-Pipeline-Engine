@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ComponentType } from "react";
 import { ChevronDown, ChevronRight, Loader2, Play, Square } from "lucide-react";
 import type { AutomationSequence } from "./types";
 import { fmtDt, stageLabel } from "./helpers";
@@ -63,7 +63,8 @@ export function IssuesTab({
   const toggle = (label: string) => {
     setExpanded((prev) => {
       const next = new Set(prev);
-      next.has(label) ? next.delete(label) : next.add(label);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
       return next;
     });
   };
@@ -175,7 +176,7 @@ export function IssuesTab({
   );
 }
 
-function ActionBtn({ icon: Icon, busy, onClick, title, danger }: { icon: any; busy: boolean; onClick: () => void; title: string; danger?: boolean }) {
+function ActionBtn({ icon: Icon, busy, onClick, title, danger }: { icon: ComponentType<{ className?: string }>; busy: boolean; onClick: () => void; title: string; danger?: boolean }) {
   return (
     <button onClick={onClick} disabled={busy} title={title}
       className={`rounded p-1 text-zinc-500 transition-colors ${danger ? "hover:bg-red-500/20 hover:text-red-300" : "hover:bg-white/5 hover:text-zinc-300"}`}>

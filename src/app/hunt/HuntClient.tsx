@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import type { Route } from "next";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
@@ -25,6 +26,7 @@ import { IssuesPanel } from "@/components/hunt/issues-panel";
 import { RemoteJobsCard } from "@/components/hunt/remote-jobs-card";
 import { TerminalPanel } from "@/components/hunt/terminal-panel";
 import { WorkerHealthCard, type WorkerHealth } from "@/components/hunt/worker-health-card";
+import { resolveLeadWebsiteUrl } from "@/lib/lead-website";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,6 +34,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ToastProvider, useToast } from "@/components/ui/toast-provider";
 import { useHuntStore } from "@/lib/hunt/hunt-store";
+import { buildAutomationHref } from "@/lib/outbound-navigation";
 import { cn } from "@/lib/utils";
 
 const NICHE_PRESETS = [
@@ -76,6 +79,14 @@ type IntakeLead = {
 function HuntInner({ initialIntakeLeads }: { initialIntakeLeads: IntakeLead[] }) {
   const { toast } = useToast();
   const store = useHuntStore();
+  const scorePulseAt = store.scorePulseAt;
+  const latestScore = store.latestScore;
+  const loading = store.loading;
+  const isPaused = store.isPaused;
+  const handlePause = store.handlePause;
+  const handleResume = store.handleResume;
+  const handleCancel = store.handleCancel;
+  const hydrateActiveRun = store.hydrateActiveRun;
 
   const [niche, setNiche] = useState("");
   const [city, setCity] = useState("");
@@ -96,14 +107,14 @@ function HuntInner({ initialIntakeLeads }: { initialIntakeLeads: IntakeLead[] })
   const [intakeLeads, setIntakeLeads] = useState(initialIntakeLeads);
 
   useEffect(() => {
-    if (!store.scorePulseAt) return;
+    if (!scorePulseAt) return;
     setScorePulse(true);
     const timeout = setTimeout(() => setScorePulse(false), 1100);
     return () => clearTimeout(timeout);
-  }, [store.scorePulseAt]);
+  }, [scorePulseAt]);
 
   useEffect(() => {
-    const targetScore = store.latestScore?.axiomScore ?? 0;
+    const targetScore = latestScore?.axiomScore ?? 0;
     let timeout: ReturnType<typeof setTimeout> | null = null;
 
     const step = () => {
@@ -122,31 +133,31 @@ function HuntInner({ initialIntakeLeads }: { initialIntakeLeads: IntakeLead[] })
     return () => {
       if (timeout) clearTimeout(timeout);
     };
-  }, [store.latestScore?.axiomScore]);
+  }, [latestScore?.axiomScore]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement;
       const isInput = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable;
       if (isInput) return;
-      if (event.key === " " && store.loading) {
+      if (event.key === " " && loading) {
         event.preventDefault();
-        if (store.isPaused) store.handleResume();
-        else store.handlePause();
+        if (isPaused) handleResume();
+        else handlePause();
       }
-      if (event.key === "Escape" && store.loading) {
+      if (event.key === "Escape" && loading) {
         event.preventDefault();
-        void store.handleCancel();
+        void handleCancel();
       }
     };
 
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [store.handleCancel, store.handlePause, store.handleResume, store.isPaused, store.loading]);
+  }, [handleCancel, handlePause, handleResume, isPaused, loading]);
 
   useEffect(() => {
-    void store.hydrateActiveRun();
-  }, [store.hydrateActiveRun]);
+    void hydrateActiveRun();
+  }, [hydrateActiveRun]);
 
   useEffect(() => {
     setIntakeLeads(initialIntakeLeads);
@@ -268,16 +279,16 @@ function HuntInner({ initialIntakeLeads }: { initialIntakeLeads: IntakeLead[] })
           <div className="rounded-[22px] border border-cyan-500/10 bg-cyan-500/[0.04] px-4 py-4">
             <div className="text-[11px] uppercase tracking-[0.22em] text-cyan-300/80">Next handoff</div>
             <div className="mt-2 text-lg font-semibold text-white">
-              {intakeLeads.length > 0 ? `${intakeLeads.length} sourced leads waiting for Outreach` : "No intake backlog right now"}
+              {intakeLeads.length > 0 ? `${intakeLeads.length} sourced leads waiting for outbound prep` : "No intake backlog right now"}
             </div>
             <div className="mt-2 text-sm text-zinc-400">
-              Lead Generator owns sourcing. Outreach takes over once these records need prep and qualification.
+              Lead Generator owns sourcing. Outbound takes over once these records need prep and qualification.
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3 rounded-[22px] border border-white/[0.06] bg-black/20 px-4 py-4">
             <Button asChild className="rounded-full bg-white px-4 text-sm text-black hover:bg-zinc-200">
-              <Link href="/outreach?stage=enrichment">
-                Open Outreach Intake
+              <Link href={buildAutomationHref({ tab: "overview" }) as Route}>
+                Open Outbound Prep
                 <ArrowRight className="h-4 w-4" />
               </Link>
             </Button>
@@ -509,7 +520,7 @@ function HuntInner({ initialIntakeLeads }: { initialIntakeLeads: IntakeLead[] })
                     : store.session.status === "interrupted"
                       ? "The previous run was interrupted and the partial discoveries were preserved. You can move directly into Vault or launch a new target."
                       : store.session.status === "completed"
-                        ? "The last run is complete. The strongest scored records are already downstream for review in Vault and Outreach."
+                        ? "The last run is complete. The strongest scored records are already downstream for review in Vault and Outbound."
                         : "Nothing is running yet. Pick a target, launch it, and the live score dial will become the main signal."}
                 </div>
               </div>
@@ -519,7 +530,7 @@ function HuntInner({ initialIntakeLeads }: { initialIntakeLeads: IntakeLead[] })
                   <Link href="/vault"><Database className="mr-2 h-4 w-4" /> Open Vault</Link>
                 </Button>
                 <Button asChild variant="ghost" className="h-11 rounded-full border border-white/10 text-white hover:bg-white/[0.04]">
-                  <Link href="/outreach"><Mail className="mr-2 h-4 w-4" /> Open Outreach</Link>
+                  <Link href={buildAutomationHref({ tab: "queue", filter: "initial" }) as Route}><Mail className="mr-2 h-4 w-4" /> Open Outbound</Link>
                 </Button>
               </div>
             </CardContent>
@@ -604,14 +615,14 @@ function HuntInner({ initialIntakeLeads }: { initialIntakeLeads: IntakeLead[] })
         <div className="flex flex-col gap-4 border-b border-white/[0.06] pb-4 md:flex-row md:items-end md:justify-between">
           <div>
             <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Intake handoff</div>
-            <h2 className="mt-2 text-2xl font-semibold text-white">Batch output waiting for Outreach</h2>
+            <h2 className="mt-2 text-2xl font-semibold text-white">Batch output waiting for Outbound</h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">
-              Lead Generator owns sourcing and batch creation. Outreach owns the preparation pipeline once these records need enrichment.
+              Lead Generator owns sourcing and batch creation. Outbound owns the preparation pipeline once these records need enrichment.
             </p>
           </div>
           <Button asChild className="rounded-full bg-white px-4 text-sm text-black hover:bg-zinc-200">
-            <Link href="/outreach?stage=enrichment">
-              Send intake batch to Outreach
+            <Link href={buildAutomationHref({ tab: "overview" }) as Route}>
+              Send intake batch to Outbound
               <ArrowRight className="h-4 w-4" />
             </Link>
           </Button>
@@ -625,7 +636,22 @@ function HuntInner({ initialIntakeLeads }: { initialIntakeLeads: IntakeLead[] })
           ) : (
             intakeLeads.map((lead) => (
               <div key={lead.id} className="rounded-[22px] border border-white/[0.06] bg-black/20 px-4 py-4">
-                <div className="text-sm font-semibold text-white">{lead.businessName}</div>
+                {(() => {
+                  const websiteUrl = resolveLeadWebsiteUrl(lead);
+                  return websiteUrl ? (
+                    <a
+                      href={websiteUrl}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      className="text-sm font-semibold text-white transition-colors hover:text-cyan-300"
+                      title={websiteUrl}
+                    >
+                      {lead.businessName}
+                    </a>
+                  ) : (
+                    <div className="text-sm font-semibold text-white">{lead.businessName}</div>
+                  );
+                })()}
                 <div className="mt-1 text-xs text-zinc-500">
                   {lead.city} · {lead.niche}
                 </div>

@@ -9,6 +9,7 @@ import {
   fetchGoogleUserInfo,
 } from "@/lib/gmail";
 import { getServerEnv } from "@/lib/env";
+import { buildAutomationHref } from "@/lib/outbound-navigation";
 import { getPrisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/session";
 
@@ -18,7 +19,6 @@ export async function GET(request: NextRequest) {
     const env = getServerEnv();
     const url = new URL(request.url);
     const code = url.searchParams.get("code");
-    const state = url.searchParams.get("state");
     const error = url.searchParams.get("error");
 
     const baseUrl = env.APP_BASE_URL.replace(/\/$/, "");
@@ -26,13 +26,13 @@ export async function GET(request: NextRequest) {
     if (error) {
       console.error("Gmail OAuth error:", error);
       return NextResponse.redirect(
-        `${baseUrl}/outreach?gmail_error=${encodeURIComponent(error)}`,
+        `${baseUrl}${buildAutomationHref({ tab: "mailboxes", gmailError: error })}`,
       );
     }
 
     if (!code) {
       return NextResponse.redirect(
-        `${baseUrl}/outreach?gmail_error=missing_code`,
+        `${baseUrl}${buildAutomationHref({ tab: "mailboxes", gmailError: "missing_code" })}`,
       );
     }
 
@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
 
     if (!tokens.refresh_token) {
       return NextResponse.redirect(
-        `${baseUrl}/outreach?gmail_error=no_refresh_token`,
+        `${baseUrl}${buildAutomationHref({ tab: "mailboxes", gmailError: "no_refresh_token" })}`,
       );
     }
 
@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
 
     if (!userInfo.email) {
       return NextResponse.redirect(
-        `${baseUrl}/outreach?gmail_error=no_email`,
+        `${baseUrl}${buildAutomationHref({ tab: "mailboxes", gmailError: "no_email" })}`,
       );
     }
 
@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    let connectionId = existing?.id || crypto.randomUUID();
+    const connectionId = existing?.id || crypto.randomUUID();
     if (existing) {
       await prisma.gmailConnection.update({
         where: { id: existing.id },
@@ -106,13 +106,20 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    return NextResponse.redirect(`${baseUrl}/outreach?gmail_connected=true`);
-  } catch (error: any) {
+    return NextResponse.redirect(
+      `${baseUrl}${buildAutomationHref({ tab: "mailboxes", gmailConnected: true })}`,
+    );
+  } catch (error) {
     console.error("Gmail callback error:", error);
     const env = getServerEnv();
     const baseUrl = env.APP_BASE_URL.replace(/\/$/, "");
+    const errorMessage =
+      error instanceof Error && error.message ? error.message : "callback_failed";
     return NextResponse.redirect(
-      `${baseUrl}/outreach?gmail_error=${encodeURIComponent(error.message || "callback_failed")}`,
+      `${baseUrl}${buildAutomationHref({
+        tab: "mailboxes",
+        gmailError: errorMessage,
+      })}`,
     );
   }
 }

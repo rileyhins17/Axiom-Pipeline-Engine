@@ -5,7 +5,7 @@ import { ArrowRight, Loader2, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { APP_TIME_ZONE_LABEL } from "@/lib/time";
-import type { AutomationSettings, AutomationOverview } from "./types";
+import type { AutomationSettings } from "./types";
 
 type Props = {
   settings: AutomationSettings;

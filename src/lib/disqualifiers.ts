@@ -38,6 +38,14 @@ export function checkDisqualifiers(input: {
     painSignals: PainSignal[];
     axiomScore: number;
     tier: string;
+    businessStatus?: string | null;
+    geoConfidence?: "high" | "medium" | "low";
+    verticalConfidence?: "high" | "medium" | "low";
+    siteType?: "business" | "directory" | "placeholder" | "parked" | "social" | "unknown";
+    directoryShellDetected?: boolean;
+    placeholderDetected?: boolean;
+    contactChannelCount?: number;
+    extractionConfidence?: number;
 }): DisqualifyResult {
     const reasons: string[] = [];
     const lower = `${input.niche} ${input.category} ${input.businessName}`.toLowerCase();
@@ -46,10 +54,22 @@ export function checkDisqualifiers(input: {
         reasons.push("Business appears inactive - zero reviews and no web presence");
     }
 
+    if (input.businessStatus && /closed/i.test(input.businessStatus)) {
+        reasons.push(`Provider marked the business as ${input.businessStatus}`);
+    }
+
     // 2. Industry low ROI.
     const isLowROI = LOW_ROI_INDUSTRIES.some((ind) => lower.includes(ind));
     if (isLowROI) {
         reasons.push(`Industry low ROI for Axiom at current price point (${input.niche})`);
+    }
+
+    if (input.verticalConfidence === "low") {
+        reasons.push("Discovery category drifted too far from Axiom's target service profile");
+    }
+
+    if (input.geoConfidence === "low") {
+        reasons.push("Discovery geography did not confidently match the requested target city");
     }
 
     // 3. Website already modern/high-performing.
@@ -64,9 +84,21 @@ export function checkDisqualifiers(input: {
         }
     }
 
+    if ((input.siteType === "directory" || input.directoryShellDetected) && (input.contactChannelCount || 0) === 0) {
+        reasons.push("Web presence is a directory shell without a usable direct contact path");
+    }
+
+    if ((input.siteType === "placeholder" || input.placeholderDetected) && (input.reviewCount || 0) < 5) {
+        reasons.push("Website is placeholder-grade and the business does not show enough traction yet");
+    }
+
     // 4. Very low rating - business has bigger problems than a website.
     if (input.rating > 0 && input.rating < 2.0 && input.reviewCount >= 10) {
         reasons.push(`Very low rating (${input.rating}/5 from ${input.reviewCount} reviews) - business has fundamental service issues`);
+    }
+
+    if (typeof input.extractionConfidence === "number" && input.extractionConfidence < 0.3) {
+        reasons.push("Deterministic evidence quality is too weak to treat this as a safe lead");
     }
 
     // 5. Tier D auto-archive.
@@ -111,5 +143,13 @@ export function checkDisqualifiersFromDb(lead: {
         painSignals: [],
         axiomScore: lead.axiomScore,
         tier: lead.tier,
+        businessStatus: null,
+        geoConfidence: "medium",
+        verticalConfidence: "medium",
+        siteType: lead.websiteStatus === "ACTIVE" ? "business" : "unknown",
+        directoryShellDetected: false,
+        placeholderDetected: false,
+        contactChannelCount: 0,
+        extractionConfidence: 0.5,
     });
 }

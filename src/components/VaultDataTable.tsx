@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { OutreachEditorSheet } from "@/components/outreach/outreach-editor-sheet"
 import { OutreachStatusBadge } from "@/components/outreach/outreach-status-badge"
+import { resolveLeadWebsiteUrl } from "@/lib/lead-website"
 import { formatOutreachDate, getOutreachChannelLabel, isContactedOutreachStatus } from "@/lib/outreach"
 import { formatAppDate } from "@/lib/time"
 import {
@@ -26,6 +27,8 @@ type Lead = {
     phone: string | null
     email: string | null
     socialLink: string | null
+    websiteUrl?: string | null
+    websiteDomain?: string | null
     rating: number | null
     reviewCount: number | null
     websiteStatus: string | null
@@ -463,7 +466,7 @@ export default function VaultDataTable({ initialLeads }: { initialLeads: Lead[] 
 
             {/* Advanced Filter Panel */}
             {showFilters && (
-                <div className="glass-strong rounded-xl p-5 space-y-5 animate-slide-up">
+                <div className="glass-strong rounded-lg p-5 space-y-5">
                     <div className="flex items-center justify-between mb-1">
                         <h3 className="text-xs font-bold text-white flex items-center gap-2">
                             <Filter className="w-4 h-4 text-emerald-400" />
@@ -615,7 +618,7 @@ export default function VaultDataTable({ initialLeads }: { initialLeads: Lead[] 
 
             {/* Export Panel */}
             {showExport && (
-                <div className="glass-strong rounded-xl p-5 space-y-5 animate-slide-up">
+                <div className="glass-strong rounded-lg p-5 space-y-5">
                     <div className="flex items-center justify-between mb-1">
                         <h3 className="text-xs font-bold text-white flex items-center gap-2">
                             <FileSpreadsheet className="w-4 h-4 text-cyan-400" />
@@ -639,7 +642,7 @@ export default function VaultDataTable({ initialLeads }: { initialLeads: Lead[] 
                                     key={s.key}
                                     onClick={() => setExportScope(s.key)}
                                     className={`p-3 rounded-lg border text-left transition-all duration-200 ${exportScope === s.key
-                                        ? "bg-cyan-500/10 border-cyan-500/30 glow-cyan"
+                                        ? "bg-cyan-500/10 border-cyan-500/30"
                                         : "border-white/8 hover:border-white/15"
                                         }`}
                                 >
@@ -724,7 +727,7 @@ export default function VaultDataTable({ initialLeads }: { initialLeads: Lead[] 
 
             {/* Active Filters Tags */}
             {activeFilterCount > 0 && !showFilters && (
-                <div className="flex flex-wrap gap-1.5 animate-slide-up">
+                <div className="flex flex-wrap gap-1.5">
                     {statusFilter !== "ALL" && (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                             Status: {statusFilter === "MISSING" ? "No Website" : "Has Website"}
@@ -1060,7 +1063,25 @@ export default function VaultDataTable({ initialLeads }: { initialLeads: Lead[] 
                                     >
                                         <TableCell className="font-medium text-white">
                                             <div className="min-w-0 space-y-1">
-                                                <span className="block text-sm">{lead.businessName}</span>
+                                                {(() => {
+                                                    const websiteUrl = resolveLeadWebsiteUrl(lead);
+                                                    const leadName = lead.businessName;
+                                                    return websiteUrl ? (
+                                                        <a
+                                                            href={websiteUrl}
+                                                            target="_blank"
+                                                            rel="noreferrer noopener"
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            className="inline-flex max-w-full items-center gap-1 text-sm text-white transition-colors hover:text-cyan-300"
+                                                            title={websiteUrl}
+                                                        >
+                                                            <span className="truncate">{leadName}</span>
+                                                            <ExternalLink className="h-3 w-3 shrink-0 opacity-70" />
+                                                        </a>
+                                                    ) : (
+                                                        <span className="block text-sm">{leadName}</span>
+                                                    );
+                                                })()}
                                                 <span className="block text-[11px] text-zinc-500 md:hidden">
                                                     {lead.city} • {lead.niche}
                                                 </span>
