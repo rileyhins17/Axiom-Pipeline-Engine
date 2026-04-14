@@ -17,6 +17,7 @@ if (
 }
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   typedRoutes: true,
 
   // Keep native / heavy server-only packages out of the webpack bundle.
