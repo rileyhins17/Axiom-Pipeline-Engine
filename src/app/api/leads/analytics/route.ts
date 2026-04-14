@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { hasValidPipelineEmail, isLeadOutreachEligible } from "@/lib/lead-qualification";
+import { countPipelineArtifacts, getTopAssessmentDimensions } from "@/lib/lead-pipeline/repository";
 import { getPrisma } from "@/lib/prisma";
 import { requireApiSession } from "@/lib/session";
 
@@ -191,6 +192,8 @@ export async function GET(request: Request) {
     };
 
     const totalArchived = await prisma.lead.count({ where: { isArchived: true } });
+    const pipelineArtifacts = await countPipelineArtifacts();
+    const assessmentDimensions = await getTopAssessmentDimensions();
 
     return NextResponse.json({
       total,
@@ -219,9 +222,11 @@ export async function GET(request: Request) {
       topPainSignals,
       callableLeads,
       totalArchived,
+      pipelineArtifacts,
+      assessmentDimensions,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Analytics API error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Analytics API error" }, { status: 500 });
   }
 }

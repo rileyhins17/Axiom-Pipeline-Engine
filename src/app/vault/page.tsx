@@ -2,7 +2,6 @@ import { Database, Layers, Mail } from "lucide-react";
 
 import VaultDataTable from "@/components/VaultDataTable";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat-card";
 import { ToastProvider } from "@/components/ui/toast-provider";
 import { hasValidPipelineEmail, isLeadOutreachEligible } from "@/lib/lead-qualification";
@@ -72,72 +71,49 @@ export default async function VaultPage() {
   const outreachReady = leads.filter((lead) => isLeadOutreachEligible(lead)).length;
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6">
-      <section className="rounded-[28px] border border-white/[0.06] bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] px-6 py-6">
-        <div className="max-w-3xl">
-          <p className="text-[11px] uppercase tracking-[0.32em] text-emerald-400/80">
-            Axiom Pipeline Engine
-          </p>
-          <h1 className="mt-3 text-3xl font-semibold tracking-tight text-white md:text-4xl">
-            Vault
-          </h1>
-          <p className="mt-2 text-sm leading-6 text-zinc-400">
-            Browse the lead database, verify records, and export filtered slices without the extra
-            dashboard noise.
-          </p>
+    <div className="mx-auto max-w-[1400px] space-y-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-lg font-semibold text-white">Records</h1>
+          <p className="mt-0.5 text-sm text-zinc-500">Browse, filter, and export the lead database</p>
         </div>
-      </section>
+        <Badge
+          className="self-start border-white/10 bg-white/[0.03] px-3 py-1 font-mono text-zinc-400"
+          variant="outline"
+        >
+          {leads.length} records
+        </Badge>
+      </div>
 
-      <section className="grid gap-4 md:grid-cols-3">
+      <section className="grid gap-3 md:grid-cols-3">
         <StatCard
           label="Total Leads"
           value={totalLeads}
-          subtitle="records across the full lifecycle"
+          subtitle="full lifecycle"
           icon={<Database />}
-          iconColor="text-emerald-400"
+          iconColor="text-zinc-400"
         />
         <StatCard
           label="Intake + Pre-Send"
           value={preSendLeads}
           subtitle={`${intakeLeads} still in intake`}
           icon={<Layers />}
-          iconColor="text-cyan-400"
+          iconColor="text-zinc-400"
         />
         <StatCard
           label="Follow-Up + Contactable"
           value={followUpLeads}
           subtitle={`${withEmail} valid email · ${outreachReady} outreach-ready`}
           icon={<Mail />}
-          iconColor="text-purple-400"
+          iconColor="text-zinc-400"
         />
       </section>
 
-      <Card className="overflow-hidden rounded-[28px] border-white/[0.06] bg-white/[0.02]">
-        <CardHeader className="pb-3">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0">
-              <CardTitle className="flex items-center gap-2 text-lg font-semibold text-white sm:text-xl">
-                <Database className="h-5 w-5 text-emerald-400" />
-                Lead database
-              </CardTitle>
-              <CardDescription className="mt-1 text-sm text-zinc-400">
-                Filter, sort, review, and export records without turning Vault into the main operations surface.
-              </CardDescription>
-            </div>
-            <Badge
-              className="self-start border-white/10 bg-black/20 px-3 py-1 font-mono text-zinc-300"
-              variant="outline"
-            >
-              {leads.length} records
-            </Badge>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <ToastProvider>
-            <VaultDataTable initialLeads={JSON.parse(JSON.stringify(leads))} />
-          </ToastProvider>
-        </CardContent>
-      </Card>
+      <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-4">
+        <ToastProvider>
+          <VaultDataTable initialLeads={JSON.parse(JSON.stringify(leads))} />
+        </ToastProvider>
+      </div>
     </div>
   );
 }

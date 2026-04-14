@@ -10,6 +10,8 @@ export type ReadyLead = {
   axiomScore?: number | null;
   axiomTier?: string | null;
   websiteStatus?: string | null;
+  websiteUrl?: string | null;
+  websiteDomain?: string | null;
 };
 
 export type AutomationMailbox = {
@@ -23,10 +25,10 @@ export type AutomationMailbox = {
   minDelaySeconds: number;
   maxDelaySeconds: number;
   warmupLevel: number;
-  sentToday: number;
-  sentThisHour: number;
-  lastSentAt?: string | null;
-  nextAvailableAt?: string | null;
+  sentToday?: number;
+  sentThisHour?: number;
+  lastSentAt?: Date | string | null;
+  nextAvailableAt?: Date | string | null;
 };
 
 export type AutomationSequence = {
@@ -34,9 +36,9 @@ export type AutomationSequence = {
   status: string;
   state: "QUEUED" | "SENDING" | "WAITING" | "BLOCKED" | "STOPPED" | "COMPLETED";
   currentStep: string;
-  nextScheduledAt: string | null;
-  nextSendAt: string | null;
-  lastSentAt: string | null;
+  nextScheduledAt: Date | string | null;
+  nextSendAt: Date | string | null;
+  lastSentAt: Date | string | null;
   stopReason: string | null;
   blockerReason: string | null;
   blockerLabel: string | null;
@@ -45,14 +47,14 @@ export type AutomationSequence = {
   secondaryBlockers: string[];
   lead?: ReadyLead | null;
   mailbox?: AutomationMailbox | null;
-  nextStep?: { stepType: string; scheduledFor: string } | null;
+  nextStep?: { stepType: string; scheduledFor: Date | string } | null;
 };
 
 export type AutomationRun = {
   id: string;
   status: string;
-  startedAt: string;
-  finishedAt?: string | null;
+  startedAt: Date | string;
+  finishedAt?: Date | string | null;
   sentCount: number;
   failedCount: number;
   claimedCount: number;
@@ -62,7 +64,7 @@ export type AutomationRun = {
 
 export type RecentSend = {
   id: string;
-  sentAt: string;
+  sentAt: Date | string;
   subject: string;
   senderEmail: string;
   recipientEmail: string;
@@ -73,6 +75,7 @@ export type RecentSend = {
 export type AutomationSettings = {
   enabled: boolean;
   globalPaused: boolean;
+  emailSystemPrompt: string | null;
   sendWindowStartHour: number;
   sendWindowStartMinute: number;
   sendWindowEndHour: number;
@@ -84,6 +87,8 @@ export type AutomationSettings = {
   schedulerClaimBatch: number;
   replySyncStaleMinutes: number;
 };
+
+export type QueueFilter = "all" | "initial" | "followup" | "blocked" | "paused";
 
 export type AutomationOverview = {
   settings: AutomationSettings;
@@ -97,7 +102,7 @@ export type AutomationOverview = {
   recentRuns: AutomationRun[];
   engine: {
     mode: "ACTIVE" | "PAUSED" | "DISABLED";
-    nextSendAt: string | null;
+    nextSendAt: Date | string | null;
     scheduledToday: number;
     blockedCount: number;
     replyStoppedCount: number;
@@ -128,3 +133,10 @@ export type AutomationOverview = {
 };
 
 export type TabId = "overview" | "queue" | "mailboxes" | "blocked" | "rules";
+
+export type AutomationConsoleRouteState = {
+  tab: TabId;
+  filter: QueueFilter;
+  gmailConnected: boolean;
+  gmailError: string | null;
+};

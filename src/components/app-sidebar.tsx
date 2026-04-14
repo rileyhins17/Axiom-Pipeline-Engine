@@ -85,20 +85,52 @@ export function AppSidebar() {
   const [automationActive, setAutomationActive] = React.useState(false);
 
   React.useEffect(() => {
-    fetch("/api/leads/stats")
-      .then((response) => response.json())
-      .then((data) =>
-        setStats({
-          total: data.total ?? 0,
-          todayLeads: data.todayLeads ?? 0,
-        }),
-      )
-      .catch(() => setStats({ total: 0, todayLeads: 0 }));
+    const controller = new AbortController();
+    let alive = true;
 
-    fetch("/api/outreach/automation/status")
-      .then((r) => r.json())
-      .then((d) => setAutomationActive(d?.masterEnabled === true))
-      .catch(() => {});
+    async function loadSidebarState() {
+      try {
+        const [statsResponse, automationResponse] = await Promise.all([
+          fetch("/api/leads/stats", { signal: controller.signal }),
+          fetch("/api/outreach/automation/status", { signal: controller.signal }),
+        ]);
+
+        const statsPayload = statsResponse.ok
+          ? ((await statsResponse.json()) as { total?: number; todayLeads?: number })
+          : null;
+        const automationPayload = automationResponse.ok
+          ? ((await automationResponse.json()) as { masterEnabled?: boolean })
+          : null;
+
+        if (!alive) {
+          return;
+        }
+
+        setStats({
+          total: statsPayload?.total ?? 0,
+          todayLeads: statsPayload?.todayLeads ?? 0,
+        });
+        setAutomationActive(automationPayload?.masterEnabled === true);
+      } catch (error) {
+        if ((error as Error).name === "AbortError") {
+          return;
+        }
+
+        if (!alive) {
+          return;
+        }
+
+        setStats({ total: 0, todayLeads: 0 });
+        setAutomationActive(false);
+      }
+    }
+
+    void loadSidebarState();
+
+    return () => {
+      alive = false;
+      controller.abort();
+    };
   }, [pathname]);
 
   return (

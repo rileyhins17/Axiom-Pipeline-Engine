@@ -1,20 +1,23 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ComponentType } from "react";
 import { Loader2, Pause, Play, Square } from "lucide-react";
-import type { AutomationOverview, AutomationSequence } from "./types";
-import { fmtCountdown, fmtDt, stageLabel, stateColor, stateLabel } from "./helpers";
-
-type Filter = "all" | "initial" | "followup" | "blocked" | "paused";
+import type { AutomationOverview, AutomationSequence, QueueFilter } from "./types";
+import { fmtCountdown, stageLabel, stateColor, stateLabel } from "./helpers";
 
 export function QueueTab({
-  overview, busyKey, onUpdateSeq,
+  overview, busyKey, onUpdateSeq, initialFilter,
 }: {
   overview: AutomationOverview;
   busyKey: string | null;
   onUpdateSeq: (id: string, action: string) => Promise<void>;
+  initialFilter: QueueFilter;
 }) {
-  const [filter, setFilter] = useState<Filter>("all");
+  const [filter, setFilter] = useState<QueueFilter>(initialFilter);
+
+  useEffect(() => {
+    setFilter(initialFilter);
+  }, [initialFilter]);
 
   const allActive = useMemo(() => {
     return overview.sequences.filter(
@@ -32,7 +35,7 @@ export function QueueTab({
     }
   }, [allActive, filter]);
 
-  const now = Date.now();
+  const [now] = useState(() => Date.now());
   const sorted = useMemo(() => {
     return [...filtered].sort((a, b) => {
       const ta = a.nextSendAt ? new Date(a.nextSendAt).getTime() : Infinity;
@@ -54,7 +57,7 @@ export function QueueTab({
     return new Date(s.nextSendAt).getTime() > eod.getTime();
   });
 
-  const filters: { id: Filter; label: string; count: number }[] = [
+  const filters: { id: QueueFilter; label: string; count: number }[] = [
     { id: "all", label: "All", count: allActive.length },
     { id: "initial", label: "Initial outreach", count: allActive.filter((s) => !s.hasSentAnyStep).length },
     { id: "followup", label: "Follow-ups", count: allActive.filter((s) => s.hasSentAnyStep).length },
@@ -163,7 +166,7 @@ function QueueSection({
   );
 }
 
-function Btn({ icon: Icon, busy, onClick, title, danger }: { icon: any; busy: boolean; onClick: () => void; title: string; danger?: boolean }) {
+function Btn({ icon: Icon, busy, onClick, title, danger }: { icon: ComponentType<{ className?: string }>; busy: boolean; onClick: () => void; title: string; danger?: boolean }) {
   return (
     <button onClick={onClick} disabled={busy} title={title}
       className={`rounded p-1 text-zinc-500 transition-colors ${danger ? "hover:bg-red-500/20 hover:text-red-300" : "hover:bg-white/5 hover:text-zinc-300"}`}>

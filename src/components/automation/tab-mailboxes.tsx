@@ -14,7 +14,7 @@ export function MailboxesTab({
 }) {
   const activeCount = mailboxes.filter((m) => m.status === "ACTIVE").length;
   const pausedCount = mailboxes.filter((m) => m.status === "PAUSED").length;
-  const atCapCount = mailboxes.filter((m) => m.sentToday >= m.dailyLimit).length;
+  const atCapCount = mailboxes.filter((m) => (m.sentToday ?? 0) >= m.dailyLimit).length;
 
   if (mailboxes.length === 0) {
     return (
@@ -69,12 +69,12 @@ export function MailboxesTab({
                   <span className={`inline-flex rounded border px-1.5 py-0.5 text-[10px] font-medium ${mbStatusColor(mb.status)}`}>{mb.status}</span>
                 </td>
                 <td className="px-3 py-3">
-                  <span className="tabular-nums text-zinc-200">{mb.sentToday}</span>
+                  <span className="tabular-nums text-zinc-200">{mb.sentToday ?? 0}</span>
                   <span className="text-zinc-600">/{mb.dailyLimit}</span>
-                  {mb.sentToday >= mb.dailyLimit && <span className="ml-1 text-[10px] text-amber-400">cap</span>}
+                  {(mb.sentToday ?? 0) >= mb.dailyLimit && <span className="ml-1 text-[10px] text-amber-400">cap</span>}
                 </td>
                 <td className="px-3 py-3">
-                  <span className="tabular-nums text-zinc-200">{mb.sentThisHour}</span>
+                  <span className="tabular-nums text-zinc-200">{mb.sentThisHour ?? 0}</span>
                   <span className="text-zinc-600">/{mb.hourlyLimit}</span>
                 </td>
                 <td className="px-3 py-3 text-xs text-zinc-400">{fmtDt(mb.nextAvailableAt, "Ready")}</td>

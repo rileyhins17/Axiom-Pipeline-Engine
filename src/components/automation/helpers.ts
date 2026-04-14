@@ -5,7 +5,7 @@ export function fmtDt(v: string | Date | null | undefined, fb = "—") {
   return formatAppDateTime(v, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }, fb);
 }
 
-export function fmtCountdown(v: string | null | undefined) {
+export function fmtCountdown(v: string | Date | null | undefined) {
   if (!v) return "—";
   const t = new Date(v);
   if (Number.isNaN(t.getTime())) return "—";

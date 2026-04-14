@@ -1,8 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import Link from "next/link";
-import { AlertTriangle, ArrowRight, Clock, Mail, Zap } from "lucide-react";
+import { useMemo } from "react";
+import { AlertTriangle, Clock, Mail, Zap } from "lucide-react";
 import type { AutomationOverview, AutomationSequence } from "./types";
 import { fmtCountdown, fmtDt, fmtWindow, stageLabel, stateColor, stateLabel } from "./helpers";
 
@@ -35,7 +34,7 @@ export function OverviewTab({ overview }: { overview: AutomationOverview }) {
     return active.slice(0, 8);
   }, [queued, sending, waiting]);
 
-  const atCapMailboxes = overview.mailboxes.filter((m) => m.sentToday >= m.dailyLimit);
+  const atCapMailboxes = overview.mailboxes.filter((m) => (m.sentToday ?? 0) >= m.dailyLimit);
   const pausedMailboxes = overview.mailboxes.filter((m) => m.status === "PAUSED");
   const hasAttention = issues.length > 0 || atCapMailboxes.length > 0 || pausedMailboxes.length > 0 || overview.settings.globalPaused;
 
@@ -133,7 +132,7 @@ export function OverviewTab({ overview }: { overview: AutomationOverview }) {
                       <div className="truncate text-zinc-200">{mb.label || mb.gmailAddress.split("@")[0]}</div>
                     </div>
                     <div className="flex items-center gap-3 shrink-0 text-xs">
-                      <span className="tabular-nums text-zinc-400">{mb.sentToday}/{mb.dailyLimit}</span>
+                      <span className="tabular-nums text-zinc-400">{mb.sentToday ?? 0}/{mb.dailyLimit}</span>
                       <span className={`rounded border px-1.5 py-0.5 text-[10px] font-medium ${
                         mb.status === "ACTIVE" ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
                         : mb.status === "PAUSED" ? "border-amber-500/20 bg-amber-500/10 text-amber-300"
@@ -148,24 +147,19 @@ export function OverviewTab({ overview }: { overview: AutomationOverview }) {
             )}
           </div>
 
-          {/* Pipeline stages */}
+          {/* Summary */}
           <div className="rounded-lg border border-white/[0.06] bg-white/[0.015] p-4">
-            <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-zinc-500">Pipeline</h3>
-            <div className="space-y-1.5">
-              <PipelineRow label="Needs enrichment" value={overview.pipeline?.needsEnrichment ?? 0} />
-              <PipelineRow label="Enriching" value={overview.pipeline?.enriching ?? 0} active />
-              <PipelineRow label="Qualified" value={overview.pipeline?.enriched ?? 0} />
-              <PipelineRow label="Ready to send" value={overview.pipeline?.readyForTouch ?? 0} />
-              <div className="border-t border-white/[0.04] pt-1.5 mt-1.5" />
-              <PipelineRow label="Queued (initial)" value={overview.stats.queued} />
-              <PipelineRow label="Follow-ups active" value={overview.stats.waiting + overview.stats.sending} />
-              <PipelineRow label="Waiting for window" value={waitingForWindow.length} />
-              <PipelineRow label="Issues" value={issues.length} warn={issues.length > 0} />
-              <div className="border-t border-white/[0.04] pt-1.5 mt-1.5" />
-              <PipelineRow label="Completed" value={overview.stats.completed} />
-              <PipelineRow label="Replied" value={overview.stats.replied} />
-            </div>
-            <p className="mt-3 text-[10px] text-zinc-600">Business hours: {fmtWindow(overview.settings)}</p>
+            <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-zinc-500">Summary</h3>
+            <dl className="space-y-2 text-sm">
+              <Row label="Business hours" value={fmtWindow(overview.settings)} />
+              <Row label="Ready leads" value={String(overview.stats.ready)} />
+              <Row label="Queued (initial)" value={String(overview.stats.queued)} />
+              <Row label="Follow-ups" value={String(overview.stats.waiting + overview.stats.sending)} />
+              <Row label="Waiting for window" value={String(waitingForWindow.length)} />
+              <Row label="Issues" value={String(issues.length)} warn={issues.length > 0} />
+              <Row label="Completed" value={String(overview.stats.completed)} />
+              <Row label="Replied" value={String(overview.stats.replied)} />
+            </dl>
           </div>
 
           {/* Needs attention */}
@@ -230,15 +224,3 @@ function Row({ label, value, warn }: { label: string; value: string; warn?: bool
     </div>
   );
 }
-
-function PipelineRow({ label, value, warn, active }: { label: string; value: number; warn?: boolean; active?: boolean }) {
-  return (
-    <div className="flex items-center justify-between text-sm">
-      <span className="text-zinc-500">{label}</span>
-      <span className={`tabular-nums font-medium ${warn ? "text-amber-300" : active && value > 0 ? "text-cyan-300" : value > 0 ? "text-zinc-200" : "text-zinc-600"}`}>
-        {value}
-      </span>
-    </div>
-  );
-}
-

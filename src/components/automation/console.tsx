@@ -1,12 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Loader2, Pause, Play, RefreshCw, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast-provider";
 import { ToastProvider } from "@/components/ui/toast-provider";
-import type { AutomationOverview, AutomationSettings, TabId } from "./types";
+import type { AutomationConsoleRouteState, AutomationOverview, TabId } from "./types";
 import { fmtCountdown } from "./helpers";
 import { OverviewTab } from "./tab-overview";
 import { QueueTab } from "./tab-queue";
@@ -14,20 +14,44 @@ import { MailboxesTab } from "./tab-mailboxes";
 import { IssuesTab } from "./tab-blocked";
 import { RulesTab } from "./tab-rules";
 
-export function AutomationConsole({ initialOverview }: { initialOverview: AutomationOverview }) {
+type AutomationRunResponse = {
+  sent?: number;
+};
+
+type AutomationSyncResponse = {
+  stopped?: number;
+};
+
+export function AutomationConsole({
+  initialOverview,
+  initialRouteState,
+}: {
+  initialOverview: AutomationOverview;
+  initialRouteState: AutomationConsoleRouteState;
+}) {
   return (
     <ToastProvider>
-      <ConsoleInner initialOverview={initialOverview} />
+      <ConsoleInner
+        initialOverview={initialOverview}
+        initialRouteState={initialRouteState}
+      />
     </ToastProvider>
   );
 }
 
-function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview }) {
+function ConsoleInner({
+  initialOverview,
+  initialRouteState,
+}: {
+  initialOverview: AutomationOverview;
+  initialRouteState: AutomationConsoleRouteState;
+}) {
   const { toast } = useToast();
   const [overview, setOverview] = useState(initialOverview);
-  const [tab, setTab] = useState<TabId>("overview");
+  const [tab, setTab] = useState<TabId>(initialRouteState.tab);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [settingsDraft, setSettingsDraft] = useState(initialOverview.settings);
+  const lastRouteToastKey = useRef<string | null>(null);
 
   const refresh = useCallback(async () => {
     const r = await fetch("/api/outreach/automation/overview");
@@ -35,7 +59,28 @@ function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview
   }, []);
 
   useEffect(() => { setSettingsDraft(overview.settings); }, [overview.settings]);
+  useEffect(() => { setTab(initialRouteState.tab); }, [initialRouteState.tab]);
   useEffect(() => { const t = setInterval(() => { void refresh().catch(() => {}); }, 45_000); return () => clearInterval(t); }, [refresh]);
+  useEffect(() => {
+    const routeToastKey = initialRouteState.gmailConnected
+      ? "gmail:connected"
+      : initialRouteState.gmailError
+        ? `gmail:error:${initialRouteState.gmailError}`
+        : null;
+
+    if (!routeToastKey || lastRouteToastKey.current === routeToastKey) {
+      return;
+    }
+
+    lastRouteToastKey.current = routeToastKey;
+
+    if (initialRouteState.gmailConnected) {
+      toast("Gmail mailbox connected", { type: "success", icon: "note" });
+      return;
+    }
+
+    toast(`Gmail connection failed: ${initialRouteState.gmailError}`, { type: "error", icon: "note" });
+  }, [initialRouteState.gmailConnected, initialRouteState.gmailError, toast]);
 
   const exec = async <T,>(key: string, fn: () => Promise<Response>) => {
     setBusyKey(key);
@@ -49,21 +94,18 @@ function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview
   };
 
   const handleRun = async () => {
-    const d = await exec<any>("run", () => fetch("/api/outreach/automation/run", { method: "POST" }));
+    const d = await exec<AutomationRunResponse>("run", () => fetch("/api/outreach/automation/run", { method: "POST" }));
     if (!d) return;
-    const parts: string[] = [];
-    if (d.pipeline?.enriched > 0) parts.push(`${d.pipeline.enriched} enriched`);
-    if (d.pipeline?.qualified > 0) parts.push(`${d.pipeline.qualified} qualified`);
-    if (d.pipeline?.queued > 0) parts.push(`${d.pipeline.queued} queued`);
-    if (d.sent > 0) parts.push(`${d.sent} sent`);
-    toast(parts.length > 0 ? parts.join(", ") : "Check complete — nothing to do", { type: "success", icon: "note" });
+    const sent = d.sent ?? 0;
+    toast(sent > 0 ? `Sent ${sent} email${sent === 1 ? "" : "s"}` : "Check complete — no sends", { type: "success", icon: "note" });
     await refresh();
   };
 
   const handleSync = async () => {
-    const d = await exec<any>("sync", () => fetch("/api/outreach/automation/replies/sync", { method: "POST" }));
+    const d = await exec<AutomationSyncResponse>("sync", () => fetch("/api/outreach/automation/replies/sync", { method: "POST" }));
     if (!d) return;
-    toast(d.stopped > 0 ? `Stopped ${d.stopped} sequence${d.stopped === 1 ? "" : "s"}` : "Reply sync done", { type: "success", icon: "note" });
+    const stopped = d.stopped ?? 0;
+    toast(stopped > 0 ? `Stopped ${stopped} sequence${stopped === 1 ? "" : "s"}` : "Reply sync done", { type: "success", icon: "note" });
     await refresh();
   };
 
@@ -161,7 +203,14 @@ function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview
       {/* ━━━ Tab content ━━━ */}
       <div className="pt-5">
         {tab === "overview" && <OverviewTab overview={overview} />}
-        {tab === "queue" && <QueueTab overview={overview} busyKey={busyKey} onUpdateSeq={updateSeq} />}
+        {tab === "queue" && (
+          <QueueTab
+            overview={overview}
+            busyKey={busyKey}
+            onUpdateSeq={updateSeq}
+            initialFilter={initialRouteState.filter}
+          />
+        )}
         {tab === "mailboxes" && <MailboxesTab mailboxes={overview.mailboxes} busyKey={busyKey} onUpdateMailbox={updateMailbox} />}
         {tab === "blocked" && <IssuesTab sequences={overview.sequences} busyKey={busyKey} onUpdateSeq={updateSeq} />}
         {tab === "rules" && <RulesTab settings={settingsDraft} onChange={setSettingsDraft} onSave={saveSettings} busyKey={busyKey} />}
