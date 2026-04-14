@@ -1,5 +1,5 @@
 import os from "node:os";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,6 +28,7 @@ let childStderr = "";
 let nextLogId = 1;
 let shuttingDown = false;
 let startupPromise: Promise<void> | null = null;
+const expectedStopPids = new Set<number>();
 
 let state = {
   config: {
@@ -231,6 +232,68 @@ function buildWorkerEnv() {
   };
 }
 
+function collectKnownWorkerPids(includeDiscovered = false) {
+  const pids = new Set<number>();
+
+  for (const value of [child?.pid ?? null, state.worker.pid, readPidFile()]) {
+    if (typeof value === "number" && Number.isFinite(value) && value > 0 && value !== process.pid) {
+      pids.add(value);
+    }
+  }
+
+  if (includeDiscovered && process.platform === "win32") {
+    for (const pid of discoverWindowsWorkerPids()) {
+      if (pid > 0 && pid !== process.pid) {
+        pids.add(pid);
+      }
+    }
+  }
+
+  return Array.from(pids);
+}
+
+function discoverWindowsWorkerPids() {
+  if (process.platform !== "win32") {
+    return [];
+  }
+
+  const query = [
+    "$ErrorActionPreference = 'SilentlyContinue'",
+    "$patterns = @(",
+    "  'local-scrape-worker\\.ts',",
+    "  'npm(\\.cmd)?\\s+run\\s+worker(:local)?',",
+    "  'tsx(\\.cmd)?\\s+scripts[\\\\/]local-scrape-worker\\.ts',",
+    "  'start-worker\\.ps1'",
+    ")",
+    "Get-CimInstance Win32_Process | Where-Object {",
+    "  $line = $_.CommandLine",
+    "  if (-not $line) { return $false }",
+    "  foreach ($pattern in $patterns) {",
+    "    if ($line -match $pattern) { return $true }",
+    "  }",
+    "  return $false",
+    "} | Select-Object -ExpandProperty ProcessId",
+  ].join("; ");
+
+  const result = spawnSync(
+    "powershell.exe",
+    ["-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", query],
+    { encoding: "utf8", windowsHide: true },
+  );
+
+  if (result.error) {
+    return [];
+  }
+
+  const raw = String(result.stdout || "");
+  const discovered = raw
+    .split(/\r?\n/)
+    .map((line) => Number.parseInt(line.trim(), 10))
+    .filter((pid) => Number.isFinite(pid) && pid > 0 && pid !== process.pid);
+
+  return Array.from(new Set(discovered));
+}
+
 function isProcessAlive(pid: number | null) {
   if (!pid) return false;
   try {
@@ -265,10 +328,24 @@ function writePidFile(pid: number | null) {
 }
 
 function refreshExternalWorkerState() {
-  const pid = state.worker.pid || readPidFile();
-  if (pid && isProcessAlive(pid)) {
+  const pids = collectKnownWorkerPids(false);
+  const pid = pids.find((candidate) => isProcessAlive(candidate)) || null;
+
+  if (pid) {
+    if (state.worker.pid !== pid) {
+      writePidFile(pid);
+    }
     setWorkerState({ pid, status: state.worker.status === "stopping" ? "stopping" : "running" });
     return;
+  }
+
+  if (process.platform === "win32") {
+    const discoveredPid = discoverWindowsWorkerPids().find((candidate) => isProcessAlive(candidate)) ?? null;
+    if (discoveredPid) {
+      writePidFile(discoveredPid);
+      setWorkerState({ pid: discoveredPid, status: state.worker.status === "stopping" ? "stopping" : "running" });
+      return;
+    }
   }
 
   if (state.worker.status !== "starting" && state.worker.status !== "stopping") {
@@ -362,9 +439,11 @@ async function startWorker() {
       return;
     }
 
-    writePidFile(child.pid);
-    setWorkerState({ pid: child.pid, status: "running" });
-    addLog("system", `Worker started with PID ${child.pid}.`);
+    const spawnedPid = child.pid;
+    expectedStopPids.delete(spawnedPid);
+    writePidFile(spawnedPid);
+    setWorkerState({ pid: spawnedPid, status: "running" });
+    addLog("system", `Worker started with PID ${spawnedPid}.`);
 
     child.stdout?.on("data", (chunk: Buffer) => flushLines("stdout", chunk.toString("utf8")));
     child.stderr?.on("data", (chunk: Buffer) => flushLines("stderr", chunk.toString("utf8")));
@@ -375,7 +454,8 @@ async function startWorker() {
     });
 
     child.on("exit", (code, signal) => {
-      const intentional = shuttingDown || state.worker.status === "stopping";
+      const intentional = shuttingDown || state.worker.status === "stopping" || expectedStopPids.has(spawnedPid);
+      expectedStopPids.delete(spawnedPid);
       setWorkerState({
         activeJob: null,
         currentJobLabel: null,
@@ -387,6 +467,7 @@ async function startWorker() {
       writePidFile(null);
       addLog("system", intentional ? "Worker stopped cleanly." : `Worker exited${typeof code === "number" ? ` with code ${code}` : ""}${signal ? ` (${signal})` : ""}.`);
       child = null;
+      refreshExternalWorkerState();
     });
   })();
 
@@ -413,43 +494,98 @@ function killProcessTree(pid: number) {
   } catch {}
 }
 
+async function waitForPidsToExit(pids: number[], timeoutMs: number) {
+  const deadline = Date.now() + timeoutMs;
+  let alive = pids.filter((pid) => isProcessAlive(pid));
+
+  while (alive.length > 0 && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    alive = alive.filter((pid) => isProcessAlive(pid));
+  }
+
+  return alive;
+}
+
 async function stopWorker() {
   refreshExternalWorkerState();
-  const pid = child?.pid || readPidFile();
-  if (!pid) {
+  const pids = collectKnownWorkerPids(true).filter((candidate) => isProcessAlive(candidate));
+  if (pids.length === 0) {
     addLog("system", "No worker is currently running.");
     setWorkerState({ pid: null, status: "idle" });
+    writePidFile(null);
     return;
   }
 
   setWorkerState({ status: "stopping" });
-  addLog("system", `Stopping worker PID ${pid}...`);
+  addLog("system", `Stopping worker process chain(s): ${pids.join(", ")}.`);
   shuttingDown = true;
+  for (const pid of pids) {
+    expectedStopPids.add(pid);
+  }
 
-  try {
-    if (child && child.pid === pid) {
+  if (child?.pid && pids.includes(child.pid)) {
+    try {
       child.kill("SIGINT");
-    } else {
-      try { process.kill(pid, "SIGINT"); } catch {}
-    }
-  } catch {}
-
-  const deadline = Date.now() + 6000;
-  while (isProcessAlive(pid) && Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    } catch {}
   }
 
-  if (isProcessAlive(pid)) {
+  for (const pid of pids) {
+    try {
+      process.kill(pid, "SIGINT");
+    } catch {}
+  }
+
+  let alive = await waitForPidsToExit(pids, 3000);
+
+  for (const pid of alive) {
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch {}
+  }
+
+  alive = await waitForPidsToExit(alive, 2000);
+  for (const pid of alive) {
     killProcessTree(pid);
-    const hardDeadline = Date.now() + 4000;
-    while (isProcessAlive(pid) && Date.now() < hardDeadline) {
-      await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+
+  alive = await waitForPidsToExit(alive, 4000);
+  if (process.platform === "win32") {
+    for (const discovered of discoverWindowsWorkerPids()) {
+      if (isProcessAlive(discovered) && !alive.includes(discovered)) {
+        alive.push(discovered);
+      }
     }
   }
 
+  alive = Array.from(new Set(alive.filter((pid) => isProcessAlive(pid))));
   shuttingDown = false;
+  child = null;
+
+  if (alive.length > 0) {
+    const message = `Some worker processes are still alive after stop: ${alive.join(", ")}.`;
+    writePidFile(alive[0]);
+    setWorkerState({
+      activeJob: null,
+      currentJobLabel: null,
+      pid: alive[0],
+      status: "error",
+      lastError: message,
+    });
+    addLog("error", message);
+    return;
+  }
+
+  for (const pid of pids) {
+    expectedStopPids.delete(pid);
+  }
   writePidFile(null);
-  setWorkerState({ activeJob: null, currentJobLabel: null, pid: null, status: "idle" });
+  setWorkerState({
+    activeJob: null,
+    currentJobLabel: null,
+    pid: null,
+    status: "idle",
+    lastError: null,
+  });
   addLog("system", "Worker stopped.");
 }
 

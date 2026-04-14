@@ -30,6 +30,43 @@ npm run dev
 
 ## Worker Studio
 
+### Windows Worker Suite (Recommended)
+
+For a professional, repeatable Windows setup, use the bootstrap installer.
+
+If the repo is not on the machine yet:
+
+```powershell
+git clone --branch codex/restore-cf0c19f https://github.com/rileyhins17/the-omniscient.git "$env:USERPROFILE\Axiom\the-omniscient-axiom-launcher"
+cd "$env:USERPROFILE\Axiom\the-omniscient-axiom-launcher"
+.\worker-bootstrap.cmd
+```
+
+If the repo is already present:
+
+```powershell
+cd <your-repo-path>
+.\worker-bootstrap.cmd
+```
+
+What this does:
+
+- clones or updates the repo to `codex/restore-cf0c19f`
+- installs dependencies (`npm ci`)
+- creates or updates `.env.worker`
+- preserves the existing shared secret (no rotation needed)
+- writes machine-local launcher config in `%APPDATA%\AxiomWorker\studio.json`
+- creates or refreshes Desktop shortcut `Axiom Worker.lnk`
+- launches the desktop launcher (unless `-NoLaunch` is passed)
+
+### Packaging Decision
+
+Current best path is an installer/bootstrap script, not a pre-baked ZIP.
+
+- Bootstrap script is preferred because this project depends on Node modules and active branch updates.
+- ZIP-only bundles are heavier, age quickly, and are brittle across device differences.
+- First-run relink is still supported for moved repos via launcher **Change repo** and bootstrap `-RelinkOnly`.
+
 Use the native desktop launcher when you want the local worker to control the live site:
 
 ```powershell
@@ -53,6 +90,15 @@ That opens the local Axiom Worker Studio, which can:
 The Desktop shortcut is the no-console launcher. Use that instead of the older `start-worker.cmd` file if you want the clean native app feel.
 
 The studio defaults to the live control plane, not localhost, so the worker pushes results to the web app instead of a dev server.
+
+If the repo moves to a new folder later, either:
+
+```powershell
+cd <new-repo-path>
+.\scripts\windows-worker-bootstrap.ps1 -RelinkOnly -RepoRoot "<new-repo-path>" -NoLaunch
+```
+
+or use **Change repo** in the launcher UI.
 
 Notes:
 

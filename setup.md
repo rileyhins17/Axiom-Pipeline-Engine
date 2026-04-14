@@ -1,5 +1,50 @@
 # Local Setup
 
+## Windows Worker Suite Setup (new device)
+
+### Preferred flow: bootstrap installer
+
+If the repo is not on the machine:
+
+```powershell
+git clone --branch codex/restore-cf0c19f https://github.com/rileyhins17/the-omniscient.git "$env:USERPROFILE\Axiom\the-omniscient-axiom-launcher"
+cd "$env:USERPROFILE\Axiom\the-omniscient-axiom-launcher"
+.\worker-bootstrap.cmd
+```
+
+If the repo already exists:
+
+```powershell
+cd <repo-path>
+.\worker-bootstrap.cmd
+```
+
+What the installer handles:
+
+- repo clone/update on the correct branch
+- `npm ci` dependency install
+- `.env.worker` creation/update
+- worker identity persistence (`WORKER_NAME` and `AGENT_NAME`)
+- machine-local launcher config and Desktop shortcut refresh
+- initial launcher start
+
+### Moved repo relink
+
+If the project folder changes later:
+
+```powershell
+cd <new-repo-path>
+.\scripts\windows-worker-bootstrap.ps1 -RelinkOnly -RepoRoot "<new-repo-path>" -NoLaunch
+```
+
+You can also relink from the launcher with **Change repo**.
+
+### Why this over ZIP packaging
+
+- The bootstrap path stays current with Git and branch updates.
+- ZIP snapshots drift fast and are less reliable across machine differences.
+- Relink mode gives you the "wizard" behavior without re-installing everything.
+
 ## 1. Create local env files
 
 - Copy [`.env.example`](./.env.example) to `.env`
