@@ -1,6 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "axiom-ops-omniscient",
+  "account_id": "fe468a56a5b8c7f8fc5d39e265c2f791",
   "main": "worker.mjs",
   "compatibility_date": "2026-03-15",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
