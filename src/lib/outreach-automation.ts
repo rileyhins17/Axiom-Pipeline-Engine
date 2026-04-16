@@ -822,10 +822,25 @@ async function getSequenceRuntimeBlockers(
       blockers.push("mailbox_cooldown");
     }
 
-    const config = sequence.sequenceConfigSnapshot
-      ? (JSON.parse(sequence.sequenceConfigSnapshot) as OutreachSequenceConfig)
-      : null;
-    if (config && !isWithinSendWindow(now, config)) {
+    // Use CURRENT global settings for send window, not the frozen snapshot,
+    // so window changes take effect immediately for all sequences.
+    const liveConfig: OutreachSequenceConfig = {
+      timezone: mailbox.timezone,
+      weekdaysOnly: settings.weekdaysOnly,
+      sendWindowStartHour: settings.sendWindowStartHour,
+      sendWindowStartMinute: settings.sendWindowStartMinute,
+      sendWindowEndHour: settings.sendWindowEndHour,
+      sendWindowEndMinute: settings.sendWindowEndMinute,
+      initialDelayMinMinutes: settings.initialDelayMinMinutes,
+      initialDelayMaxMinutes: settings.initialDelayMaxMinutes,
+      followUp1BusinessDays: settings.followUp1BusinessDays,
+      followUp2BusinessDays: settings.followUp2BusinessDays,
+      schedulerClaimBatch: settings.schedulerClaimBatch,
+      replySyncStaleMinutes: settings.replySyncStaleMinutes,
+      leadSnapshot: { id: 0, businessName: "", city: "", niche: "", email: "", contactName: null, websiteStatus: null, axiomScore: null, axiomTier: null },
+      enrichmentSnapshot: null,
+    };
+    if (!isWithinSendWindow(now, liveConfig)) {
       blockers.push("outside_send_window");
     }
   }
@@ -1255,12 +1270,21 @@ export async function mutateSequence(
   return prisma.outreachSequence.findUnique({ where: { id: sequence.id } });
 }
 
-async function canMailboxSend(prisma: PrismaLike, mailbox: OutreachMailboxRecord, now: Date, config: OutreachSequenceConfig) {
+async function canMailboxSend(prisma: PrismaLike, mailbox: OutreachMailboxRecord, now: Date, _config: OutreachSequenceConfig, liveSettings?: OutreachAutomationSettingRecord) {
   if (!MAILBOX_SENDABLE_STATUSES.includes(mailbox.status as (typeof MAILBOX_SENDABLE_STATUSES)[number])) {
     return { allowed: false, reason: "mailbox_disabled" as AutomationBlockerReason };
   }
 
-  if (!isWithinSendWindow(now, config)) {
+  // Use live settings for send window check if available, so window changes take effect immediately
+  const windowConfig: OutreachSequenceConfig = liveSettings ? {
+    ..._config,
+    weekdaysOnly: liveSettings.weekdaysOnly,
+    sendWindowStartHour: liveSettings.sendWindowStartHour,
+    sendWindowStartMinute: liveSettings.sendWindowStartMinute,
+    sendWindowEndHour: liveSettings.sendWindowEndHour,
+    sendWindowEndMinute: liveSettings.sendWindowEndMinute,
+  } : _config;
+  if (!isWithinSendWindow(now, windowConfig)) {
     return { allowed: false, reason: "outside_send_window" as AutomationBlockerReason };
   }
 
@@ -1594,7 +1618,8 @@ async function sendScheduledStep(
     throw new AutomationStoppedError("suppressed");
   }
 
-  const mailboxGate = await canMailboxSend(prisma, claim.mailbox, new Date(), config);
+  const liveSettings = await getSettings(prisma);
+  const mailboxGate = await canMailboxSend(prisma, claim.mailbox, new Date(), config, liveSettings);
   if (!mailboxGate.allowed) {
     const now = new Date();
     const baseRescheduleAt =
@@ -1605,13 +1630,22 @@ async function sendScheduledStep(
           : mailboxGate.reason === "mailbox_cooldown"
             ? addSeconds(now, claim.mailbox.minDelaySeconds)
             : now;
+    // Use live settings for rescheduling so we don't get stuck in old windows
+    const windowConfig: OutreachSequenceConfig = {
+      ...config,
+      weekdaysOnly: liveSettings.weekdaysOnly,
+      sendWindowStartHour: liveSettings.sendWindowStartHour,
+      sendWindowStartMinute: liveSettings.sendWindowStartMinute,
+      sendWindowEndHour: liveSettings.sendWindowEndHour,
+      sendWindowEndMinute: liveSettings.sendWindowEndMinute,
+    };
     await prisma.outreachSequenceStep.update({
       where: { id: claim.step.id },
       data: {
         status: "SCHEDULED",
         claimedAt: null,
         claimedByRunId: null,
-        scheduledFor: adjustToAllowedSendWindow(baseRescheduleAt, config),
+        scheduledFor: adjustToAllowedSendWindow(baseRescheduleAt, windowConfig),
       },
     });
     throw new AutomationSkipError(mailboxGate.reason);
@@ -1791,7 +1825,8 @@ async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: numbe
   }) as OutreachSequenceStepRecord[];
 
   const claims: SchedulerClaim[] = [];
-  const seenMailboxes = new Set<string>();
+  // Track per-mailbox claims to ensure equal distribution
+  const mailboxClaimCounts = new Map<string, number>();
 
   for (const step of dueSteps) {
     const sequence = await prisma.outreachSequence.findUnique({
@@ -1807,7 +1842,14 @@ async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: numbe
     const mailbox = await prisma.outreachMailbox.findUnique({
       where: { id: sequence.assignedMailboxId },
     }) as OutreachMailboxRecord | null;
-    if (!mailbox || seenMailboxes.has(mailbox.id)) {
+    if (!mailbox) {
+      continue;
+    }
+
+    // Fair distribution: don't let one mailbox hog all claims in a single batch
+    const currentMailboxClaims = mailboxClaimCounts.get(mailbox.id) || 0;
+    const maxPerMailbox = Math.max(2, Math.ceil(batchSize / 2));
+    if (currentMailboxClaims >= maxPerMailbox) {
       continue;
     }
 
@@ -1828,7 +1870,7 @@ async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: numbe
     }
 
     claims.push({ sequence, step: updated, mailbox });
-    seenMailboxes.add(mailbox.id);
+    mailboxClaimCounts.set(mailbox.id, currentMailboxClaims + 1);
 
     if (claims.length >= batchSize) {
       break;
@@ -1845,7 +1887,16 @@ async function rescheduleClaimStep(
   reason: AutomationBlockerReason,
 ) {
   const config = JSON.parse(claim.sequence.sequenceConfigSnapshot) as OutreachSequenceConfig;
-  const nextAttempt = adjustToAllowedSendWindow(addMinutes(new Date(), minutes), config);
+  const liveSettings = await getSettings(prisma);
+  const windowConfig: OutreachSequenceConfig = {
+    ...config,
+    weekdaysOnly: liveSettings.weekdaysOnly,
+    sendWindowStartHour: liveSettings.sendWindowStartHour,
+    sendWindowStartMinute: liveSettings.sendWindowStartMinute,
+    sendWindowEndHour: liveSettings.sendWindowEndHour,
+    sendWindowEndMinute: liveSettings.sendWindowEndMinute,
+  };
+  const nextAttempt = adjustToAllowedSendWindow(addMinutes(new Date(), minutes), windowConfig);
   await prisma.outreachSequenceStep.update({
     where: { id: claim.step.id },
     data: {

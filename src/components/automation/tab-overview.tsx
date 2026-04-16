@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo } from "react";
-import { AlertTriangle, ArrowRight, Clock, Gauge, Mail, TrendingUp, Zap } from "lucide-react";
+import { AlertTriangle, ArrowRight, Clock, Gauge, Mail, TrendingUp, Zap, Play, Pause, Loader2, Power } from "lucide-react";
 import Link from "next/link";
+import { Button } from "@/components/ui/button";
 import type { AutomationOverview, AutomationSequence } from "./types";
 import { DAILY_TARGET } from "./types";
 import { fmtCountdown, fmtDt, fmtWindow, stageLabel, stateColor, stateLabel } from "./helpers";
@@ -20,7 +21,17 @@ function isRealIssue(seq: AutomationSequence) {
   return seq.state === "BLOCKED" && !TRANSIENT_BLOCKERS.has(seq.blockerReason || "");
 }
 
-export function OverviewTab({ overview }: { overview: AutomationOverview }) {
+export function OverviewTab({ 
+  overview, 
+  onRun, 
+  onPause, 
+  busyKey 
+}: { 
+  overview: AutomationOverview;
+  onRun: () => void;
+  onPause: () => void;
+  busyKey: string | null;
+}) {
   const allSeqs = overview.sequences;
   const queued = useMemo(() => allSeqs.filter((s) => s.state === "QUEUED"), [allSeqs]);
   const sending = useMemo(() => allSeqs.filter((s) => s.state === "SENDING"), [allSeqs]);
@@ -86,6 +97,52 @@ export function OverviewTab({ overview }: { overview: AutomationOverview }) {
       <div className="grid gap-5 xl:grid-cols-[1fr_320px]">
         {/* Left column */}
         <div className="space-y-5">
+          {/* Main Engine Controls - MASSIVE UI UPDATE */}
+          <section className="rounded-lg border border-emerald-500/20 bg-emerald-500/[0.02] p-5 shadow-[0_0_40px_-15px_rgba(16,185,129,0.1)]">
+            <h3 className="flex items-center gap-2 text-sm font-semibold tracking-wide text-emerald-400 mb-4 uppercase">
+              <Power className="h-4 w-4" /> Main Engine Controls
+            </h3>
+            <div className="grid grid-cols-2 gap-4">
+              <Button 
+                onClick={onRun} 
+                disabled={busyKey === "run" || overview.settings.globalPaused}
+                className="h-16 w-full rounded-xl bg-emerald-600 text-white font-bold text-lg hover:bg-emerald-500 hover:scale-[1.02] transition-all disabled:opacity-50 disabled:hover:scale-100 shadow-lg shadow-emerald-900/50"
+              >
+                {busyKey === "run" ? <Loader2 className="mr-2 h-6 w-6 animate-spin" /> : <Zap className="mr-2 h-6 w-6" />}
+                PROCESS QUEUE NOW
+              </Button>
+              <Button 
+                onClick={onPause} 
+                disabled={busyKey === "pause"}
+                variant={overview.settings.globalPaused ? "default" : "destructive"}
+                className={`h-16 w-full rounded-xl font-bold text-lg hover:scale-[1.02] transition-all disabled:opacity-50 disabled:hover:scale-100 shadow-lg ${
+                  overview.settings.globalPaused 
+                    ? "bg-cyan-600 hover:bg-cyan-500 text-white shadow-cyan-900/50" 
+                    : "bg-red-900/80 hover:bg-red-700 text-white shadow-red-900/50"
+                }`}
+              >
+                {busyKey === "pause" ? (
+                  <Loader2 className="mr-2 h-6 w-6 animate-spin" />
+                ) : overview.settings.globalPaused ? (
+                  <Play className="mr-2 h-6 w-6" />
+                ) : (
+                  <Pause className="mr-2 h-6 w-6" />
+                )}
+                {overview.settings.globalPaused ? "RESUME ENGINE" : "PAUSE ENGINE"}
+              </Button>
+            </div>
+            {overview.settings.globalPaused && (
+              <p className="mt-3 text-center text-sm font-medium text-amber-500 bg-amber-500/10 py-1.5 rounded-md border border-amber-500/20">
+                Engine is currently paused. No emails will be sent until you resume.
+              </p>
+            )}
+            {!overview.settings.globalPaused && (
+              <p className="mt-3 text-center text-xs text-zinc-500">
+                The engine runs automatically every few minutes. You can force an immediate cycle above.
+              </p>
+            )}
+          </section>
+
           {/* Daily progress bar */}
           <section className="rounded-lg border border-white/[0.06] bg-white/[0.015] p-4">
             <div className="flex items-center justify-between mb-3">

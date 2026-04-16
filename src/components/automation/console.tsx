@@ -224,13 +224,6 @@ function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview
           <Button size="sm" variant="ghost" onClick={() => void handleSync()} disabled={busyKey === "sync"} className="h-8 rounded-lg border border-white/8 px-3 text-xs text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200">
             {busyKey === "sync" ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <RefreshCw className="mr-1 h-3 w-3" />} Sync
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => void handleTogglePause()} disabled={busyKey === "pause"} className="h-8 rounded-lg border border-white/8 px-3 text-xs text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200">
-            {busyKey === "pause" ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : overview.settings.globalPaused ? <Play className="mr-1 h-3 w-3" /> : <Pause className="mr-1 h-3 w-3" />}
-            {overview.settings.globalPaused ? "Resume" : "Pause"}
-          </Button>
-          <Button size="sm" onClick={() => void handleRun()} disabled={busyKey === "run"} className="h-8 rounded-lg bg-white px-3 text-xs font-medium text-black hover:bg-zinc-200">
-            {busyKey === "run" ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Zap className="mr-1 h-3 w-3" />} Run now
-          </Button>
         </div>
       </div>
 
@@ -257,7 +250,7 @@ function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview
 
       {/* ━━━ Tab content ━━━ */}
       <div className="pt-5">
-        {tab === "overview" && <OverviewTab overview={overview} />}
+        {tab === "overview" && <OverviewTab overview={overview} onRun={handleRun} onPause={handleTogglePause} busyKey={busyKey} />}
         {tab === "queue" && <QueueTab overview={overview} busyKey={busyKey} onUpdateSeq={updateSeq} />}
         {tab === "mailboxes" && <MailboxesTab mailboxes={overview.mailboxes} busyKey={busyKey} onUpdateMailbox={updateMailbox} />}
         {tab === "blocked" && <IssuesTab sequences={overview.sequences} busyKey={busyKey} onUpdateSeq={updateSeq} />}
