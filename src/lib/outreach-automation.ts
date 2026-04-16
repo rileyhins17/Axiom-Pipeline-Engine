@@ -1863,9 +1863,9 @@ async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: numbe
         claimedAt: now,
         claimedByRunId: runId,
       },
-    });
+    }).catch(() => null) as OutreachSequenceStepRecord | null;
 
-    if (updated.status !== "CLAIMED") {
+    if (!updated || updated.status !== "CLAIMED") {
       continue;
     }
 
