@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Loader2, Settings2 } from "lucide-react";
+import { ArrowRight, Loader2, Rocket, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { APP_TIME_ZONE_LABEL } from "@/lib/time";
-import type { AutomationSettings, AutomationOverview } from "./types";
+import { DAILY_TARGET } from "./types";
+import type { AutomationSettings } from "./types";
 
 type Props = {
   settings: AutomationSettings;
@@ -19,6 +20,23 @@ export function RulesTab({ settings, onChange, onSave, busyKey }: Props) {
 
   return (
     <div className="max-w-2xl space-y-5">
+      {/* Daily target info */}
+      <div className="rounded-lg border border-emerald-500/15 bg-emerald-500/[0.04] p-4">
+        <div className="flex items-center gap-2 mb-2">
+          <Rocket className="h-4 w-4 text-emerald-400" />
+          <h3 className="text-sm font-semibold text-emerald-300">Daily Send Target: {DAILY_TARGET} emails</h3>
+        </div>
+        <p className="text-xs text-zinc-400 leading-5">
+          The engine targets {DAILY_TARGET} outreach emails per day. To achieve this, make sure:
+        </p>
+        <ul className="mt-2 space-y-1 text-xs text-zinc-400">
+          <li>• At least {Math.ceil(DAILY_TARGET / 20)} mailboxes are connected with 20+ daily limits each</li>
+          <li>• Claim batch is set to {Math.max(8, Math.ceil(DAILY_TARGET / 5))}+ so enough leads enter the queue per run</li>
+          <li>• Initial delay is kept short (3-12 min) for fast queue throughput</li>
+          <li>• Business hours window is at least 7 hours to spread sends naturally</li>
+        </ul>
+      </div>
+
       {/* Engine control */}
       <Group title="Engine control">
         <div className="flex items-center justify-between">
@@ -39,16 +57,24 @@ export function RulesTab({ settings, onChange, onSave, busyKey }: Props) {
           <Field label="End hour" value={settings.sendWindowEndHour} onChange={(v) => up({ sendWindowEndHour: v })} />
           <Field label="End minute" value={settings.sendWindowEndMinute} onChange={(v) => up({ sendWindowEndMinute: v })} />
         </div>
+        <p className="mt-2 text-[10px] text-zinc-600">
+          For {DAILY_TARGET}/day: window needs ~{Math.ceil(DAILY_TARGET / 6)} hrs minimum. Current: {
+            ((settings.sendWindowEndHour + settings.sendWindowEndMinute / 60) - (settings.sendWindowStartHour + settings.sendWindowStartMinute / 60)).toFixed(1)
+          } hrs.
+        </p>
       </Group>
 
       {/* Initial outreach rules */}
-      <Group title="Initial outreach">
-        <p className="mb-3 text-xs text-zinc-500">Controls for the first cold email sent to each lead.</p>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Min delay before send (min)" value={settings.initialDelayMinMinutes} onChange={(v) => up({ initialDelayMinMinutes: v })} />
-          <Field label="Max delay before send (min)" value={settings.initialDelayMaxMinutes} onChange={(v) => up({ initialDelayMaxMinutes: v })} />
+      <Group title="Initial outreach throughput">
+        <p className="mb-3 text-xs text-zinc-500">Controls for the first cold email sent to each lead. Lower delays and higher batch sizes mean faster throughput.</p>
+        <div className="grid grid-cols-3 gap-3">
+          <Field label="Min delay (min)" value={settings.initialDelayMinMinutes} onChange={(v) => up({ initialDelayMinMinutes: v })} />
+          <Field label="Max delay (min)" value={settings.initialDelayMaxMinutes} onChange={(v) => up({ initialDelayMaxMinutes: v })} />
           <Field label="Claim batch size" value={settings.schedulerClaimBatch} onChange={(v) => up({ schedulerClaimBatch: v })} />
         </div>
+        <p className="mt-2 text-[10px] text-zinc-600">
+          Recommended for {DAILY_TARGET}/day: min delay 3, max delay 12, batch 10+.
+        </p>
       </Group>
 
       {/* Follow-up timing */}

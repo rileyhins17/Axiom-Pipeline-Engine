@@ -127,4 +127,7 @@ export type AutomationOverview = {
   };
 };
 
+/** The daily send target — 40 emails/day */
+export const DAILY_TARGET = 40;
+
 export type TabId = "overview" | "queue" | "mailboxes" | "blocked" | "rules";
