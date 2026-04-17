@@ -1407,11 +1407,6 @@ async function detectReplyForSequence(
     } satisfies ReplyDetectionResult;
   }
 
-  await prisma.outreachMailbox.update({
-    where: { id: mailbox.id },
-    data: { lastReplyCheckAt: new Date() },
-  });
-
   return { detected: false } satisfies ReplyDetectionResult;
 }
 
@@ -1419,33 +1414,55 @@ export async function syncAutomationReplies() {
   const prisma = getPrisma();
   const settings = await getSettings(prisma);
   const staleBefore = addMinutes(new Date(), -settings.replySyncStaleMinutes);
-  const sequences = await prisma.outreachSequence.findMany({
+
+  const mailboxes = await prisma.outreachMailbox.findMany({
     where: {
-      status: { in: ["QUEUED", "ACTIVE", "SENDING"] },
-      lastSentAt: { not: null },
+      OR: [
+        { lastReplyCheckAt: null },
+        { lastReplyCheckAt: { lte: staleBefore } },
+      ],
+      gmailConnectionId: { not: null },
     },
-    orderBy: { lastSentAt: "asc" },
-    take: 10,
-  }) as OutreachSequenceRecord[];
+  }) as OutreachMailboxRecord[];
 
   let checked = 0;
   let stopped = 0;
 
-  for (const sequence of sequences) {
-    const mailbox = sequence.assignedMailboxId
-      ? (await prisma.outreachMailbox.findUnique({ where: { id: sequence.assignedMailboxId } }) as OutreachMailboxRecord | null)
-      : null;
-    const lastCheck = coerceDate(mailbox?.lastReplyCheckAt);
-    if (lastCheck && lastCheck.getTime() > staleBefore.getTime()) {
+  for (const mailbox of mailboxes) {
+    const sequences = await prisma.outreachSequence.findMany({
+      where: {
+        assignedMailboxId: mailbox.id,
+        status: { in: ["QUEUED", "ACTIVE", "SENDING"] },
+        lastSentAt: { not: null },
+      },
+    }) as OutreachSequenceRecord[];
+
+    if (sequences.length === 0) {
+      await prisma.outreachMailbox.update({
+        where: { id: mailbox.id },
+        data: { lastReplyCheckAt: new Date() },
+      });
       continue;
     }
 
-    checked += 1;
-    const reply = await detectReplyForSequence(prisma, sequence);
-    if (reply.detected) {
-      await markReplyStop(prisma, sequence, reply);
-      stopped += 1;
+    for (let i = 0; i < sequences.length; i += 5) {
+      const batch = sequences.slice(i, i + 5);
+      await Promise.all(
+        batch.map(async (sequence) => {
+          checked += 1;
+          const reply = await detectReplyForSequence(prisma, sequence);
+          if (reply.detected) {
+            await markReplyStop(prisma, sequence, reply);
+            stopped += 1;
+          }
+        }),
+      );
     }
+
+    await prisma.outreachMailbox.update({
+      where: { id: mailbox.id },
+      data: { lastReplyCheckAt: new Date() },
+    });
   }
 
   return { checked, stopped };
@@ -2039,66 +2056,68 @@ export async function runAutomationScheduler() {
 
     console.log(`[scheduler] Pipeline: ${JSON.stringify(pipeline)} | Replies: checked=${replySync.checked} stopped=${replySync.stopped} | Claims: ${claims.length}`);
 
-    for (const claim of claims) {
-      try {
-        await sendScheduledStep(prisma, claim, run.id);
-        sentCount += 1;
-        console.log(`[scheduler] SENT step ${claim.step.stepNumber} for sequence ${claim.sequence.id} (lead ${claim.sequence.leadId})`);
-      } catch (error) {
-        if (error instanceof AutomationSkipError) {
-          skippedCount += 1;
-          await setSequenceBlocked(prisma, claim, error.reason);
-          continue;
-        }
-
-        if (error instanceof AutomationStoppedError) {
-          skippedCount += 1;
-          continue;
-        }
-
-        if (error instanceof AutomationRetryableSendError) {
-          failedCount += 1;
-          const latestStep = await prisma.outreachSequenceStep.findUnique({
-            where: { id: claim.step.id },
-          }) as OutreachSequenceStepRecord | null;
-          const attemptCount = latestStep?.attemptCount || claim.step.attemptCount || 0;
-          if (attemptCount <= 1) {
-            await rescheduleClaimStep(prisma, claim, 15, error.reason);
-          } else if (attemptCount <= 2) {
-            await rescheduleClaimStep(prisma, claim, 60, error.reason);
-          } else {
+    await Promise.allSettled(
+      claims.map(async (claim) => {
+        try {
+          await sendScheduledStep(prisma, claim, run.id);
+          sentCount += 1;
+          console.log(`[scheduler] SENT step ${claim.step.stepNumber} for sequence ${claim.sequence.id} (lead ${claim.sequence.leadId})`);
+        } catch (error) {
+          if (error instanceof AutomationSkipError) {
+            skippedCount += 1;
             await setSequenceBlocked(prisma, claim, error.reason);
+            return;
           }
-          continue;
-        }
 
-        const classification = classifySendFailure(error);
-        if (classification.kind === "retryable") {
-          failedCount += 1;
-          const latestStep = await prisma.outreachSequenceStep.findUnique({
-            where: { id: claim.step.id },
-          }) as OutreachSequenceStepRecord | null;
-          const attemptCount = latestStep?.attemptCount || claim.step.attemptCount || 0;
-          if (attemptCount <= 1) {
-            await rescheduleClaimStep(prisma, claim, 15, classification.reason);
-          } else if (attemptCount <= 2) {
-            await rescheduleClaimStep(prisma, claim, 60, classification.reason);
-          } else {
+          if (error instanceof AutomationStoppedError) {
+            skippedCount += 1;
+            return;
+          }
+
+          if (error instanceof AutomationRetryableSendError) {
+            failedCount += 1;
+            const latestStep = await prisma.outreachSequenceStep.findUnique({
+              where: { id: claim.step.id },
+            }) as OutreachSequenceStepRecord | null;
+            const attemptCount = latestStep?.attemptCount || claim.step.attemptCount || 0;
+            if (attemptCount <= 1) {
+              await rescheduleClaimStep(prisma, claim, 15, error.reason);
+            } else if (attemptCount <= 2) {
+              await rescheduleClaimStep(prisma, claim, 60, error.reason);
+            } else {
+              await setSequenceBlocked(prisma, claim, error.reason);
+            }
+            return;
+          }
+
+          const classification = classifySendFailure(error);
+          if (classification.kind === "retryable") {
+            failedCount += 1;
+            const latestStep = await prisma.outreachSequenceStep.findUnique({
+              where: { id: claim.step.id },
+            }) as OutreachSequenceStepRecord | null;
+            const attemptCount = latestStep?.attemptCount || claim.step.attemptCount || 0;
+            if (attemptCount <= 1) {
+              await rescheduleClaimStep(prisma, claim, 15, classification.reason);
+            } else if (attemptCount <= 2) {
+              await rescheduleClaimStep(prisma, claim, 60, classification.reason);
+            } else {
+              await setSequenceBlocked(prisma, claim, classification.reason);
+            }
+            return;
+          }
+
+          if (classification.kind === "blocked") {
+            failedCount += 1;
             await setSequenceBlocked(prisma, claim, classification.reason);
+            return;
           }
-          continue;
-        }
 
-        if (classification.kind === "blocked") {
           failedCount += 1;
-          await setSequenceBlocked(prisma, claim, classification.reason);
-          continue;
+          await stopSequenceInternal(prisma, claim.sequence, classification.reason.toUpperCase());
         }
-
-        failedCount += 1;
-        await stopSequenceInternal(prisma, claim.sequence, classification.reason.toUpperCase());
-      }
-    }
+      })
+    );
 
     await prisma.outreachRun.update({
       where: { id: run.id },
