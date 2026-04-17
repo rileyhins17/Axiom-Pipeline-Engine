@@ -1418,6 +1418,7 @@ export async function syncAutomationReplies() {
       lastSentAt: { not: null },
     },
     orderBy: { lastSentAt: "asc" },
+    take: 10,
   }) as OutreachSequenceRecord[];
 
   let checked = 0;
