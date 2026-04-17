@@ -1854,7 +1854,7 @@ async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: numbe
       continue;
     }
 
-    const updated = await prisma.outreachSequenceStep.update({
+    const updateResult = await prisma.outreachSequenceStep.updateMany({
       where: {
         id: step.id,
         status: "SCHEDULED",
@@ -1864,12 +1864,13 @@ async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: numbe
         claimedAt: now,
         claimedByRunId: runId,
       },
-    }).catch(() => null) as OutreachSequenceStepRecord | null;
+    }).catch(() => ({ count: 0 }));
 
-    if (!updated || updated.status !== "CLAIMED") {
+    if (updateResult.count === 0) {
       continue;
     }
 
+    const updated = { ...step, status: "CLAIMED" as const, claimedAt: now, claimedByRunId: runId };
     claims.push({ sequence, step: updated, mailbox });
     mailboxClaimCounts.set(mailbox.id, currentMailboxClaims + 1);
 
