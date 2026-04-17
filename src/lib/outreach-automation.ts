@@ -232,8 +232,15 @@ function isWeekendInTimezone(date: Date, timeZone: string) {
 
 function setMinutesInTimezone(base: Date, timeZone: string, targetHour: number, targetMinute: number) {
   const local = getLocalDateParts(base, timeZone);
+  // Create a naive UTC guess using the target hour/minute
   const utcGuess = Date.UTC(local.year, local.month - 1, local.day, targetHour, targetMinute, 0);
-  return new Date(utcGuess);
+  const guessDate = new Date(utcGuess);
+  // Check what local time this UTC value actually maps to in the target timezone
+  const guessLocal = getLocalDateParts(guessDate, timeZone);
+  // Compute the minute-level offset between desired and actual local time
+  const offsetMs =
+    ((targetHour - guessLocal.hour) * 60 + (targetMinute - guessLocal.minute)) * 60 * 1000;
+  return new Date(utcGuess + offsetMs);
 }
 
 function getRandomInt(min: number, max: number) {
@@ -1814,7 +1821,38 @@ async function sendScheduledStep(
   }
 }
 
+async function recoverStaleClaims(prisma: PrismaLike) {
+  const staleThreshold = addMinutes(new Date(), -10);
+  const staleClaims = await prisma.outreachSequenceStep.findMany({
+    where: {
+      status: "CLAIMED",
+      claimedAt: { lte: staleThreshold },
+    },
+    take: 20,
+  }) as OutreachSequenceStepRecord[];
+
+  for (const step of staleClaims) {
+    await prisma.outreachSequenceStep.update({
+      where: { id: step.id },
+      data: {
+        status: "SCHEDULED",
+        claimedAt: null,
+        claimedByRunId: null,
+        errorMessage: "stale_claim_recovered",
+      },
+    }).catch(() => null);
+  }
+
+  return staleClaims.length;
+}
+
 async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: number) {
+  // First recover any stale claims from crashed runs
+  const recovered = await recoverStaleClaims(prisma);
+  if (recovered > 0) {
+    console.log(`[scheduler] Recovered ${recovered} stale claimed steps`);
+  }
+
   const now = new Date();
   const dueSteps = await prisma.outreachSequenceStep.findMany({
     where: {
@@ -1822,7 +1860,7 @@ async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: numbe
       scheduledFor: { lte: now },
     },
     orderBy: { scheduledFor: "asc" },
-    take: batchSize * 3,
+    take: batchSize * 4,
   }) as OutreachSequenceStepRecord[];
 
   const claims: SchedulerClaim[] = [];
@@ -1947,10 +1985,14 @@ export async function runAutomationScheduler() {
   const { runAutoPipeline } = await import("@/lib/auto-pipeline");
   const prisma = getPrisma();
   const settings = await getSettings(prisma);
+  const now = new Date();
+
+  console.log(`[scheduler] Run starting at ${now.toISOString()} | enabled=${settings.enabled} paused=${settings.globalPaused}`);
+
   const run = await prisma.outreachRun.create({
     data: {
       id: crypto.randomUUID(),
-      startedAt: new Date(),
+      startedAt: now,
       status: "RUNNING",
       metadata: JSON.stringify({ source: "scheduler" }),
     },
@@ -1995,10 +2037,13 @@ export async function runAutomationScheduler() {
     const replySync = await syncAutomationReplies();
     const claims = await claimDueSteps(prisma, run.id, settings.schedulerClaimBatch);
 
+    console.log(`[scheduler] Pipeline: ${JSON.stringify(pipeline)} | Replies: checked=${replySync.checked} stopped=${replySync.stopped} | Claims: ${claims.length}`);
+
     for (const claim of claims) {
       try {
         await sendScheduledStep(prisma, claim, run.id);
         sentCount += 1;
+        console.log(`[scheduler] SENT step ${claim.step.stepNumber} for sequence ${claim.sequence.id} (lead ${claim.sequence.leadId})`);
       } catch (error) {
         if (error instanceof AutomationSkipError) {
           skippedCount += 1;
