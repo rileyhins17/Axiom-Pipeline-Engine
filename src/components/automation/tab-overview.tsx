@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { AlertTriangle, ArrowRight, Clock, Gauge, Mail, TrendingUp, Zap, Play, Pause, Loader2, Power } from "lucide-react";
+import { AlertTriangle, Clock, Gauge, Mail, TrendingUp, Zap, Play, Pause, Loader2, Power } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import type { AutomationOverview, AutomationSequence } from "./types";
@@ -20,6 +20,13 @@ const TRANSIENT_BLOCKERS = new Set([
 function isRealIssue(seq: AutomationSequence) {
   return seq.state === "BLOCKED" && !TRANSIENT_BLOCKERS.has(seq.blockerReason || "");
 }
+
+type SummaryItem = {
+  label: string;
+  value: string | number;
+  warn: boolean;
+  highlight?: boolean;
+};
 
 export function OverviewTab({ 
   overview, 
@@ -69,26 +76,27 @@ export function OverviewTab({
   const elapsed = Math.max(0, Math.min(h - ws, windowHrs));
   const hoursRemaining = Math.max(0, we - h);
   const emailsPerHour = elapsed > 0 ? (sentToday / elapsed).toFixed(1) : "0";
-  const neededPerHour = hoursRemaining > 0 ? ((DAILY_TARGET - sentToday) / hoursRemaining).toFixed(1) : "—";
+  const neededPerHour = hoursRemaining > 0 ? ((DAILY_TARGET - sentToday) / hoursRemaining).toFixed(1) : "-";
   const expectedByNow = windowHrs > 0 ? Math.round((elapsed / windowHrs) * DAILY_TARGET) : 0;
+  const summaryItems: SummaryItem[] = [
+    { label: "Engine", value: overview.settings.globalPaused ? "Paused" : overview.engine.mode, warn: overview.settings.globalPaused },
+    { label: "Sent today", value: `${sentToday} / ${DAILY_TARGET}`, warn: false, highlight: sentToday >= DAILY_TARGET },
+    { label: "Emails/hour", value: emailsPerHour, warn: false },
+    { label: "Needed/hour", value: neededPerHour, warn: Number(neededPerHour) > 8 },
+    { label: "Queue depth", value: `${queued.length + sending.length}`, warn: queued.length + sending.length === 0 && sentToday < DAILY_TARGET },
+    { label: "Capacity left", value: `${remainingCapacity}`, warn: remainingCapacity < DAILY_TARGET - sentToday },
+    { label: "Issues", value: String(issues.length), warn: issues.length > 0 },
+  ];
 
   return (
     <div className="space-y-5">
       {/* Throughput dashboard */}
       <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-white/[0.06] bg-white/[0.03] sm:grid-cols-3 lg:grid-cols-7">
-        {[
-          { label: "Engine", value: overview.settings.globalPaused ? "Paused" : overview.engine.mode, warn: overview.settings.globalPaused },
-          { label: "Sent today", value: `${sentToday} / ${DAILY_TARGET}`, warn: false, highlight: sentToday >= DAILY_TARGET },
-          { label: "Emails/hour", value: emailsPerHour, warn: false },
-          { label: "Needed/hour", value: neededPerHour, warn: Number(neededPerHour) > 8 },
-          { label: "Queue depth", value: `${queued.length + sending.length}`, warn: queued.length + sending.length === 0 && sentToday < DAILY_TARGET },
-          { label: "Capacity left", value: `${remainingCapacity}`, warn: remainingCapacity < DAILY_TARGET - sentToday },
-          { label: "Issues", value: String(issues.length), warn: issues.length > 0 },
-        ].map((item) => (
+        {summaryItems.map((item) => (
           <div key={item.label} className="border-r border-b border-white/[0.04] px-4 py-3 last:border-r-0">
             <div className="text-[11px] text-zinc-500">{item.label}</div>
             <div className={`mt-0.5 text-sm font-medium tabular-nums ${
-              (item as any).highlight ? "text-emerald-300" : item.warn ? "text-amber-300" : "text-zinc-100"
+              item.highlight ? "text-emerald-300" : item.warn ? "text-amber-300" : "text-zinc-100"
             }`}>{item.value}</div>
           </div>
         ))}
@@ -97,10 +105,10 @@ export function OverviewTab({
       <div className="grid gap-5 xl:grid-cols-[1fr_320px]">
         {/* Left column */}
         <div className="space-y-5">
-          {/* Main Engine Controls - MASSIVE UI UPDATE */}
+          {/* Scheduler controls */}
           <section className="rounded-lg border border-emerald-500/20 bg-emerald-500/[0.02] p-5 shadow-[0_0_40px_-15px_rgba(16,185,129,0.1)]">
             <h3 className="flex items-center gap-2 text-sm font-semibold tracking-wide text-emerald-400 mb-4 uppercase">
-              <Power className="h-4 w-4" /> Main Engine Controls
+              <Power className="h-4 w-4" /> Scheduler Controls
             </h3>
             <div className="grid grid-cols-2 gap-4">
               <Button 
@@ -138,7 +146,7 @@ export function OverviewTab({
             )}
             {!overview.settings.globalPaused && (
               <p className="mt-3 text-center text-xs text-zinc-500">
-                The engine runs automatically every few minutes. You can force an immediate cycle above.
+                Cloudflare runs the scheduler every 5 minutes. Use PROCESS QUEUE NOW only when you need an immediate cycle.
               </p>
             )}
           </section>
@@ -203,8 +211,8 @@ export function OverviewTab({
             ) : (
               <div className="rounded-lg border border-amber-500/15 bg-amber-500/[0.04] px-4 py-4 text-sm text-amber-300/80">
                 <AlertTriangle className="inline h-3.5 w-3.5 mr-1.5 -mt-0.5" />
-                No outreach queued — queue more leads to hit the {DAILY_TARGET}/day target.
-                <Link href="/outreach" className="ml-1 underline underline-offset-2 hover:text-amber-200">Open Outreach →</Link>
+                 No outreach queued - queue more leads to hit the {DAILY_TARGET}/day target.
+                  <Link href="/outreach" className="ml-1 underline underline-offset-2 hover:text-amber-200">Open Outreach</Link>
               </div>
             )}
           </section>
@@ -266,7 +274,7 @@ export function OverviewTab({
                   );
                 })}
                 <div className="pt-1 text-[10px] text-zinc-600">
-                  Combined capacity: {totalMailboxCapacity}/day · {remainingCapacity} remaining
+                  Combined capacity: {totalMailboxCapacity}/day | {remainingCapacity} remaining
                 </div>
               </div>
             ) : (
@@ -286,7 +294,7 @@ export function OverviewTab({
               <PipelineRow label="Ready to send" value={overview.pipeline?.readyForTouch ?? 0} />
               <div className="border-t border-white/[0.04] pt-1.5 mt-1.5" />
               <PipelineRow label="Queued (initial)" value={overview.stats.queued} />
-              <PipelineRow label="Follow-ups active" value={overview.stats.waiting + overview.stats.sending} />
+              <PipelineRow label="Active sequences" value={overview.stats.waiting + overview.stats.sending} />
               <PipelineRow label="Waiting for window" value={waitingForWindow.length} />
               <PipelineRow label="Issues" value={issues.length} warn={issues.length > 0} />
               <div className="border-t border-white/[0.04] pt-1.5 mt-1.5" />
@@ -303,12 +311,12 @@ export function OverviewTab({
                 <AlertTriangle className="h-3 w-3" /> Needs attention
               </h3>
               <ul className="space-y-1.5 text-sm text-zinc-300">
-                {overview.settings.globalPaused && <li>• Engine is globally paused</li>}
-                {issues.length > 0 && <li>• {issues.length} sequence{issues.length !== 1 && "s"} need review</li>}
-                {atCapMailboxes.length > 0 && <li>• {atCapMailboxes.length} mailbox{atCapMailboxes.length !== 1 && "es"} at daily cap</li>}
-                {pausedMailboxes.length > 0 && <li>• {pausedMailboxes.length} mailbox{pausedMailboxes.length !== 1 && "es"} paused</li>}
+                {overview.settings.globalPaused && <li>- Engine is globally paused</li>}
+                {issues.length > 0 && <li>- {issues.length} sequence{issues.length !== 1 && "s"} need review</li>}
+                {atCapMailboxes.length > 0 && <li>- {atCapMailboxes.length} mailbox{atCapMailboxes.length !== 1 && "es"} at daily cap</li>}
+                {pausedMailboxes.length > 0 && <li>- {pausedMailboxes.length} mailbox{pausedMailboxes.length !== 1 && "es"} paused</li>}
                 {sentToday < expectedByNow && sentToday < DAILY_TARGET && (
-                  <li className="text-amber-300">• Behind pace by {expectedByNow - sentToday} emails — need {neededPerHour}/hr to catch up</li>
+                  <li className="text-amber-300">- Behind pace by {expectedByNow - sentToday} emails - need {neededPerHour}/hr to catch up</li>
                 )}
               </ul>
             </div>
@@ -343,7 +351,7 @@ function SeqRow({ seq }: { seq: AutomationSequence }) {
       </td>
       <td className="px-3 py-2 text-xs text-zinc-400">{stageLabel(seq)}</td>
       <td className="px-3 py-2 text-xs text-zinc-300">{fmtCountdown(seq.nextSendAt)}</td>
-      <td className="px-3 py-2 text-xs font-mono text-zinc-500">{seq.mailbox?.gmailAddress?.split("@")[0] || "—"}</td>
+                <td className="px-3 py-2 text-xs font-mono text-zinc-500">{seq.mailbox?.gmailAddress?.split("@")[0] || "-"}</td>
       <td className="px-3 py-2">
         <span className={`inline-flex rounded border px-1.5 py-0.5 text-[10px] font-medium ${stateColor(seq.state)}`}>
           {stateLabel(seq.state)}

@@ -1,12 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Loader2, Pause, Play, RefreshCw, Rocket, Zap } from "lucide-react";
+import { ArrowRight, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast-provider";
 import { ToastProvider } from "@/components/ui/toast-provider";
-import type { AutomationOverview, AutomationSettings, TabId } from "./types";
+import type { AutomationOverview, TabId } from "./types";
 import { DAILY_TARGET } from "./types";
 import { fmtCountdown } from "./helpers";
 import { OverviewTab } from "./tab-overview";
@@ -23,9 +23,7 @@ export function AutomationConsole({ initialOverview }: { initialOverview: Automa
   );
 }
 
-/** Auto-run interval when engine is active — 90 seconds */
-const AUTO_RUN_INTERVAL_MS = 90_000;
-/** Data refresh interval — 30 seconds */
+/** Data refresh interval - 30 seconds */
 const REFRESH_INTERVAL_MS = 30_000;
 
 function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview }) {
@@ -34,10 +32,15 @@ function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview
   const [tab, setTab] = useState<TabId>("overview");
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [settingsDraft, setSettingsDraft] = useState(initialOverview.settings);
-  const [autoRun, setAutoRun] = useState(true);
-  const [lastRunAt, setLastRunAt] = useState<number | null>(null);
-  const autoRunRef = useRef(autoRun);
-  autoRunRef.current = autoRun;
+
+  type RunResponse = {
+    pipeline?: {
+      enriched?: number;
+      qualified?: number;
+      queued?: number;
+    };
+    sent?: number;
+  };
 
   const refresh = useCallback(async () => {
     try {
@@ -54,25 +57,6 @@ function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview
     return () => clearInterval(t);
   }, [refresh]);
 
-  // Auto-run the scheduler every 90s when engine is active and autoRun is on
-  useEffect(() => {
-    const isEngineActive = !overview.settings.globalPaused && overview.engine.mode === "ACTIVE";
-    if (!isEngineActive) return;
-
-    const t = setInterval(async () => {
-      if (!autoRunRef.current) return;
-      try {
-        const res = await fetch("/api/outreach/automation/run", { method: "POST" });
-        if (res.ok) {
-          setLastRunAt(Date.now());
-          await refresh();
-        }
-      } catch {}
-    }, AUTO_RUN_INTERVAL_MS);
-
-    return () => clearInterval(t);
-  }, [overview.settings.globalPaused, overview.engine.mode, refresh]);
-
   const exec = async <T,>(key: string, fn: () => Promise<Response>) => {
     setBusyKey(key);
     try {
@@ -85,22 +69,18 @@ function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview
   };
 
   const handleRun = async () => {
-    const d = await exec<any>("run", () => fetch("/api/outreach/automation/run", { method: "POST" }));
+    const d = await exec<RunResponse>("run", () => fetch("/api/outreach/automation/run", { method: "POST" }));
     if (!d) return;
-    setLastRunAt(Date.now());
     const parts: string[] = [];
-    if (d.pipeline?.enriched > 0) parts.push(`${d.pipeline.enriched} enriched`);
-    if (d.pipeline?.qualified > 0) parts.push(`${d.pipeline.qualified} qualified`);
-    if (d.pipeline?.queued > 0) parts.push(`${d.pipeline.queued} queued`);
-    if (d.sent > 0) parts.push(`${d.sent} sent`);
-    toast(parts.length > 0 ? parts.join(", ") : "Check complete — nothing to do", { type: "success", icon: "note" });
-    await refresh();
-  };
-
-  const handleSync = async () => {
-    const d = await exec<any>("sync", () => fetch("/api/outreach/automation/replies/sync", { method: "POST" }));
-    if (!d) return;
-    toast(d.stopped > 0 ? `Stopped ${d.stopped} sequence${d.stopped === 1 ? "" : "s"}` : "Reply sync done", { type: "success", icon: "note" });
+    const enriched = d.pipeline?.enriched ?? 0;
+    const qualified = d.pipeline?.qualified ?? 0;
+    const queued = d.pipeline?.queued ?? 0;
+    const sent = d.sent ?? 0;
+    if (enriched > 0) parts.push(`${enriched} enriched`);
+    if (qualified > 0) parts.push(`${qualified} qualified`);
+    if (queued > 0) parts.push(`${queued} queued`);
+    if (sent > 0) parts.push(`${sent} sent`);
+    toast(parts.length > 0 ? parts.join(", ") : "Check complete. Nothing to do", { type: "success", icon: "note" });
     await refresh();
   };
 
@@ -125,7 +105,6 @@ function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview
     if (d) { toast("Settings saved", { type: "success", icon: "note" }); await refresh(); }
   };
 
-  const isActive = overview.engine.mode === "ACTIVE" && !overview.settings.globalPaused;
   const engineLabel = overview.settings.globalPaused ? "Paused" : overview.engine.mode;
   const TRANSIENT = new Set(["outside_send_window", "awaiting_follow_up_window", "mailbox_cooldown", "hourly_cap_reached", "global_pause"]);
   const issuesCount = overview.sequences.filter((s) => s.state === "BLOCKED" && !TRANSIENT.has(s.blockerReason || "")).length;
@@ -133,7 +112,7 @@ function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview
 
   const sentToday = overview.stats.scheduledToday;
   const progress = Math.min(sentToday / DAILY_TARGET, 1);
-  const progressPct = Math.round(progress * 100);
+  const isActive = overview.engine.mode === "ACTIVE" && !overview.settings.globalPaused;
 
   // Pacing calculation: are we on track?
   const now = new Date();
@@ -181,7 +160,7 @@ function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview
 
           <div>
             <h1 className="text-2xl font-semibold tracking-tight text-white">Automation</h1>
-            <p className="mt-0.5 text-sm text-zinc-500">Outreach engine · {DAILY_TARGET} emails/day target</p>
+            <p className="mt-0.5 text-sm text-zinc-500">Outreach engine - {DAILY_TARGET} emails/day target</p>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <span className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs font-medium ${isActive ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-300" : "border-amber-500/25 bg-amber-500/10 text-amber-300"}`}>
                 <span className={`h-1.5 w-1.5 rounded-full ${isActive ? "bg-emerald-400 animate-pulse" : "bg-amber-400"}`} />
@@ -192,37 +171,25 @@ function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview
                 : paceStatus === "on-track" ? "border-cyan-500/25 bg-cyan-500/10 text-cyan-300"
                 : "border-amber-500/25 bg-amber-500/10 text-amber-300"
               }`}>
-                {paceStatus === "complete" ? "✓ Target hit" : paceStatus === "on-track" ? "On pace" : `Behind (${expectedByNow - sentToday} gap)`}
+                {paceStatus === "complete" ? "Target hit" : paceStatus === "on-track" ? "On pace" : `Behind (${expectedByNow - sentToday} gap)`}
               </span>
-              {autoRun && isActive && (
-                <span className="inline-flex items-center gap-1 rounded-md border border-emerald-500/15 bg-emerald-500/5 px-2 py-0.5 text-[10px] font-medium text-emerald-300/70">
-                  <Rocket className="h-2.5 w-2.5" /> Auto-run on
-                </span>
-              )}
               <span className="text-xs text-zinc-500">Next: <span className="text-zinc-300">{fmtCountdown(overview.engine.nextSendAt)}</span></span>
-              {issuesCount > 0 && <><span className="text-zinc-700">·</span><span className="text-xs text-amber-400/80">{issuesCount} issue{issuesCount !== 1 && "s"}</span></>}
+              <span className="text-zinc-700">|</span>
+              <span className="text-xs text-zinc-500">Cloudflare cron every 5 min</span>
+              <span className="text-zinc-700">|</span>
+              <span className="text-xs text-zinc-500">reply detection is automatic</span>
+              {issuesCount > 0 && <><span className="text-zinc-700">|</span><span className="text-xs text-amber-400/80">{issuesCount} issue{issuesCount !== 1 && "s"}</span></>}
             </div>
           </div>
         </div>
 
         {/* Action buttons */}
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setAutoRun(!autoRun)}
-            className={`h-8 rounded-lg border px-3 text-xs font-medium transition-colors ${
-              autoRun
-                ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20"
-                : "border-white/8 text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200"
-            }`}
-          >
-            <Rocket className="mr-1 inline h-3 w-3" />
-            {autoRun ? "Auto" : "Manual"}
-          </button>
           <Button asChild size="sm" variant="ghost" className="h-8 rounded-lg border border-white/8 px-3 text-xs text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200">
             <Link href="/outreach">Outreach <ArrowRight className="ml-1 h-3 w-3" /></Link>
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => void handleSync()} disabled={busyKey === "sync"} className="h-8 rounded-lg border border-white/8 px-3 text-xs text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200">
-            {busyKey === "sync" ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <RefreshCw className="mr-1 h-3 w-3" />} Sync
+          <Button size="sm" variant="ghost" onClick={() => void refresh()} className="h-8 rounded-lg border border-white/8 px-3 text-xs text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200">
+            <RefreshCw className="mr-1 h-3 w-3" /> Refresh
           </Button>
         </div>
       </div>

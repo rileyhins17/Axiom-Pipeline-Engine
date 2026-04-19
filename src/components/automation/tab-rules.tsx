@@ -20,37 +20,34 @@ export function RulesTab({ settings, onChange, onSave, busyKey }: Props) {
 
   return (
     <div className="max-w-2xl space-y-5">
-      {/* Daily target info */}
       <div className="rounded-lg border border-emerald-500/15 bg-emerald-500/[0.04] p-4">
-        <div className="flex items-center gap-2 mb-2">
+        <div className="mb-2 flex items-center gap-2">
           <Rocket className="h-4 w-4 text-emerald-400" />
           <h3 className="text-sm font-semibold text-emerald-300">Daily Send Target: {DAILY_TARGET} emails</h3>
         </div>
-        <p className="text-xs text-zinc-400 leading-5">
-          The engine targets {DAILY_TARGET} outreach emails per day. To achieve this, make sure:
+        <p className="text-xs leading-5 text-zinc-400">
+          The engine targets {DAILY_TARGET} outreach emails per day across the connected inboxes. To achieve this, make sure:
         </p>
         <ul className="mt-2 space-y-1 text-xs text-zinc-400">
-          <li>• At least {Math.ceil(DAILY_TARGET / 20)} mailboxes are connected with 20+ daily limits each</li>
-          <li>• Claim batch is set to {Math.max(8, Math.ceil(DAILY_TARGET / 5))}+ so enough leads enter the queue per run</li>
-          <li>• Initial delay is kept short (3-12 min) for fast queue throughput</li>
-          <li>• Business hours window is at least 7 hours to spread sends naturally</li>
+          <li>- At least 2 mailboxes are connected with 20/day caps each</li>
+          <li>- Claim batch is set to 10+ so enough leads enter the queue per run</li>
+          <li>- Initial delay is kept short (3-12 min) for fast queue throughput</li>
+          <li>- Business hours window is at least 7 hours to spread sends naturally</li>
         </ul>
       </div>
 
-      {/* Engine control */}
       <Group title="Engine control">
         <div className="flex items-center justify-between">
           <div>
             <div className="text-sm text-zinc-200">Global automation</div>
-            <div className="text-xs text-zinc-500">When paused, no sends fire (initial or follow-up).</div>
+            <div className="text-xs text-zinc-500">When paused, no sends fire.</div>
           </div>
           <Toggle active={!settings.globalPaused} onClick={() => up({ globalPaused: !settings.globalPaused })} />
         </div>
       </Group>
 
-      {/* Business hours */}
       <Group title="Business hours">
-        <p className="mb-3 text-xs text-zinc-500">Sends only fire inside this window ({APP_TIME_ZONE_LABEL}, weekdays).</p>
+        <p className="mb-3 text-xs text-zinc-500">Sends only fire inside this window ({APP_TIME_ZONE_LABEL}).</p>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Start hour" value={settings.sendWindowStartHour} onChange={(v) => up({ sendWindowStartHour: v })} />
           <Field label="Start minute" value={settings.sendWindowStartMinute} onChange={(v) => up({ sendWindowStartMinute: v })} />
@@ -58,59 +55,47 @@ export function RulesTab({ settings, onChange, onSave, busyKey }: Props) {
           <Field label="End minute" value={settings.sendWindowEndMinute} onChange={(v) => up({ sendWindowEndMinute: v })} />
         </div>
         <p className="mt-2 text-[10px] text-zinc-600">
-          For {DAILY_TARGET}/day: window needs ~{Math.ceil(DAILY_TARGET / 6)} hrs minimum. Current: {
-            ((settings.sendWindowEndHour + settings.sendWindowEndMinute / 60) - (settings.sendWindowStartHour + settings.sendWindowStartMinute / 60)).toFixed(1)
-          } hrs.
+          For {DAILY_TARGET}/day: window needs ~{Math.ceil(DAILY_TARGET / 6)} hrs minimum. Current:{" "}
+          {((settings.sendWindowEndHour + settings.sendWindowEndMinute / 60) - (settings.sendWindowStartHour + settings.sendWindowStartMinute / 60)).toFixed(1)} hrs.
         </p>
       </Group>
 
-      {/* Initial outreach rules */}
       <Group title="Initial outreach throughput">
-        <p className="mb-3 text-xs text-zinc-500">Controls for the first cold email sent to each lead. Lower delays and higher batch sizes mean faster throughput.</p>
+        <p className="mb-3 text-xs text-zinc-500">
+          Controls for the first cold email sent to each lead. Lower delays and higher batch sizes mean faster throughput.
+        </p>
         <div className="grid grid-cols-3 gap-3">
           <Field label="Min delay (min)" value={settings.initialDelayMinMinutes} onChange={(v) => up({ initialDelayMinMinutes: v })} />
           <Field label="Max delay (min)" value={settings.initialDelayMaxMinutes} onChange={(v) => up({ initialDelayMaxMinutes: v })} />
           <Field label="Claim batch size" value={settings.schedulerClaimBatch} onChange={(v) => up({ schedulerClaimBatch: v })} />
         </div>
-        <p className="mt-2 text-[10px] text-zinc-600">
-          Recommended for {DAILY_TARGET}/day: min delay 3, max delay 12, batch 10+.
+        <p className="mt-2 text-[10px] text-zinc-600">Recommended for {DAILY_TARGET}/day: min delay 3, max delay 12, batch 10+.</p>
+      </Group>
+
+      <Group title="Sequence policy">
+        <p className="text-xs leading-5 text-zinc-500">
+          This sender currently runs initial outreach only. Reply detection is automatic, and any reply stops the sequence without manual sync.
         </p>
       </Group>
 
-      {/* Follow-up timing */}
-      <Group title="Follow-up timing">
-        <p className="mb-3 text-xs text-zinc-500">Business days between sequence steps.</p>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Follow-up 1 (business days)" value={settings.followUp1BusinessDays} onChange={(v) => up({ followUp1BusinessDays: v })} />
-          <Field label="Follow-up 2 (business days)" value={settings.followUp2BusinessDays} onChange={(v) => up({ followUp2BusinessDays: v })} />
-        </div>
-      </Group>
-
-      {/* Reply detection */}
-      <Group title="Reply detection">
+      <Group title="Automatic reply detection">
         <div className="grid grid-cols-2 gap-3">
           <Field label="Stale check interval (min)" value={settings.replySyncStaleMinutes} onChange={(v) => up({ replySyncStaleMinutes: v })} />
         </div>
-        <p className="mt-2 text-xs text-zinc-500 leading-5">
-          Active sequences are checked for replies every {settings.replySyncStaleMinutes} minutes.
-          When a reply is found, the sequence stops automatically.
+        <p className="mt-2 text-xs leading-5 text-zinc-500">
+          Active sequences are checked for replies every {settings.replySyncStaleMinutes} minutes. When a reply is found, the sequence stops automatically.
         </p>
       </Group>
 
-      {/* Mailbox rotation */}
       <Group title="Mailbox rotation">
-        <p className="text-xs text-zinc-500 leading-5">
-          New sequences round-robin across active mailboxes. Once a lead is assigned a mailbox,
-          all follow-ups use the same sender to preserve thread continuity.
-          Paused or at-cap mailboxes are skipped during rotation.
+        <p className="text-xs leading-5 text-zinc-500">
+          New sequences round-robin across active mailboxes. Once a lead is assigned a mailbox, that sender is retained for any future thread steps to preserve continuity. Paused or at-cap mailboxes are skipped during rotation.
         </p>
       </Group>
 
-      {/* Stop conditions */}
       <Group title="Stop conditions">
-        <p className="text-xs text-zinc-500 leading-5">
-          Sequences auto-stop when: a reply is received, the lead is suppressed, outreach status
-          becomes incompatible, or all scheduled steps are complete. Manual stop/pause is always available.
+        <p className="text-xs leading-5 text-zinc-500">
+          Sequences auto-stop when: a reply is received, the lead is suppressed, outreach status becomes incompatible, or all scheduled steps are complete. Manual stop/pause is always available.
         </p>
       </Group>
 

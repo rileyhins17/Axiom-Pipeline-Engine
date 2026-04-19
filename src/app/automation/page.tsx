@@ -1,22 +1,12 @@
 import { AutomationPageClient } from "@/app/automation/AutomationPageClient";
+import { AUTOMATION_SETTINGS_DEFAULTS } from "@/lib/automation-policy";
 import { listAutomationOverview } from "@/lib/outreach-automation";
 import { requireSession } from "@/lib/session";
 
 function emptyAutomationOverview() {
   return {
     settings: {
-      enabled: true,
-      globalPaused: false,
-      sendWindowStartHour: 9,
-      sendWindowStartMinute: 0,
-      sendWindowEndHour: 16,
-      sendWindowEndMinute: 30,
-      initialDelayMinMinutes: 3,
-      initialDelayMaxMinutes: 12,
-      followUp1BusinessDays: 2,
-      followUp2BusinessDays: 3,
-      schedulerClaimBatch: 10,
-      replySyncStaleMinutes: 15,
+      ...AUTOMATION_SETTINGS_DEFAULTS,
     },
     ready: [],
     mailboxes: [],

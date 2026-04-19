@@ -3,6 +3,13 @@ import {
   type OutreachSequenceStepType,
 } from "@/lib/outreach-email-generator";
 import { getValidAccessToken, getGmailThreadMetadata, sendGmailEmail } from "@/lib/gmail";
+import {
+  AUTOMATION_SETTINGS_DEFAULTS,
+  MAILBOX_DAILY_SEND_TARGET,
+  MAILBOX_HOURLY_SEND_TARGET,
+  MAILBOX_MAX_DELAY_SECONDS,
+  MAILBOX_MIN_DELAY_SECONDS,
+} from "@/lib/automation-policy";
 import { hasValidPipelineEmail, isLeadOutreachEligible } from "@/lib/lead-qualification";
 import { getPrisma } from "@/lib/prisma";
 import { READY_FOR_FIRST_TOUCH_STATUS } from "@/lib/outreach";
@@ -225,11 +232,6 @@ function getLocalDateParts(date: Date, timeZone: string) {
   };
 }
 
-function isWeekendInTimezone(date: Date, timeZone: string) {
-  const weekday = getLocalDateParts(date, timeZone).weekday;
-  return weekday === "Sat" || weekday === "Sun";
-}
-
 function setMinutesInTimezone(base: Date, timeZone: string, targetHour: number, targetMinute: number) {
   const local = getLocalDateParts(base, timeZone);
   // Create a naive UTC guess using the target hour/minute
@@ -417,7 +419,6 @@ function isWithinSendWindow(date: Date, config: OutreachSequenceConfig) {
   const startMinutes = config.sendWindowStartHour * 60 + config.sendWindowStartMinute;
   const endMinutes = config.sendWindowEndHour * 60 + config.sendWindowEndMinute;
 
-  // REQS: emails need to send 7 days a week
   return localMinutes >= startMinutes && localMinutes <= endMinutes;
 }
 
@@ -451,21 +452,37 @@ function getStepType(stepNumber: number): OutreachSequenceStepType {
   return "FOLLOW_UP_2";
 }
 
+function normalizeAutomationSettings(settings: OutreachAutomationSettingRecord) {
+  return {
+    ...settings,
+    weekdaysOnly: AUTOMATION_SETTINGS_DEFAULTS.weekdaysOnly,
+    initialDelayMinMinutes: AUTOMATION_SETTINGS_DEFAULTS.initialDelayMinMinutes,
+    initialDelayMaxMinutes: AUTOMATION_SETTINGS_DEFAULTS.initialDelayMaxMinutes,
+    followUp1BusinessDays: AUTOMATION_SETTINGS_DEFAULTS.followUp1BusinessDays,
+    followUp2BusinessDays: AUTOMATION_SETTINGS_DEFAULTS.followUp2BusinessDays,
+    schedulerClaimBatch: AUTOMATION_SETTINGS_DEFAULTS.schedulerClaimBatch,
+    replySyncStaleMinutes: AUTOMATION_SETTINGS_DEFAULTS.replySyncStaleMinutes,
+  };
+}
+
 async function getSettings(prisma: PrismaLike) {
   const existing = await prisma.outreachAutomationSetting.findUnique({
     where: { id: "global" },
   });
 
   if (existing) {
-    return existing;
+    return normalizeAutomationSettings(existing);
   }
 
-  return prisma.outreachAutomationSetting.create({
+  const created = await prisma.outreachAutomationSetting.create({
     data: {
       id: "global",
+      ...AUTOMATION_SETTINGS_DEFAULTS,
       updatedAt: new Date(),
     },
   });
+
+  return normalizeAutomationSettings(created);
 }
 
 export async function ensureMailboxForConnection(
@@ -481,9 +498,15 @@ export async function ensureMailboxForConnection(
     userId: connection.userId,
     gmailConnectionId: connection.id,
     gmailAddress: connection.gmailAddress,
-    label: options?.label ?? connection.gmailAddress.split("@")[0],
-    timezone: options?.timezone ?? "America/Toronto",
-    status: options?.status ?? "WARMING",
+    label: options?.label ?? existing?.label ?? connection.gmailAddress.split("@")[0],
+    timezone: options?.timezone ?? existing?.timezone ?? "America/Toronto",
+    status: options?.status ?? existing?.status ?? "WARMING",
+    dailyLimit: MAILBOX_DAILY_SEND_TARGET,
+    hourlyLimit: MAILBOX_HOURLY_SEND_TARGET,
+    minDelaySeconds: MAILBOX_MIN_DELAY_SECONDS,
+    maxDelaySeconds: MAILBOX_MAX_DELAY_SECONDS,
+    warmupLevel: existing?.warmupLevel ?? 0,
+    updatedAt: new Date(),
   };
 
   if (existing) {
@@ -575,7 +598,6 @@ function buildScheduledTimeline(now: Date, config: OutreachSequenceConfig) {
   const initialDelay = getRandomInt(config.initialDelayMinMinutes, config.initialDelayMaxMinutes);
   const initial = adjustToAllowedSendWindow(addMinutes(now, initialDelay), config);
 
-  // REQS: The whole sequence thing needs to stop, just automated email sender
   return [initial];
 }
 
