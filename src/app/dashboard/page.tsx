@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import {
   AlertTriangle,
   ArrowRight,
@@ -12,6 +13,7 @@ import {
 import { BrandMark } from "@/components/brand-mark";
 import { Button } from "@/components/ui/button";
 import { StatCard } from "@/components/ui/stat-card";
+import { AUTOMATION_SETTINGS_DEFAULTS } from "@/lib/automation-policy";
 import { partitionPreSendLeads } from "@/lib/pipeline-lifecycle";
 import { listAutomationOverview } from "@/lib/outreach-automation";
 import { getPrisma } from "@/lib/prisma";
@@ -23,18 +25,7 @@ import { formatAppDateTime } from "@/lib/time";
 function emptyAutomationOverview() {
   return {
     settings: {
-      enabled: true,
-      globalPaused: false,
-      sendWindowStartHour: 9,
-      sendWindowStartMinute: 0,
-      sendWindowEndHour: 16,
-      sendWindowEndMinute: 30,
-      initialDelayMinMinutes: 10,
-      initialDelayMaxMinutes: 45,
-      followUp1BusinessDays: 2,
-      followUp2BusinessDays: 4,
-      schedulerClaimBatch: 4,
-      replySyncStaleMinutes: 15,
+      ...AUTOMATION_SETTINGS_DEFAULTS,
     },
     mailboxes: [],
     ready: [],
@@ -86,6 +77,15 @@ function formatRunTime(value: Date | string | null | undefined, fallback = "Noth
 
 export const dynamic = 'force-dynamic';
 
+type AttentionBoardItem = {
+  label: string;
+  value: number;
+  href: Parameters<typeof Link>[0]["href"];
+  detail: string;
+  action: string;
+  icon: ReactNode;
+};
+
 export default async function DashboardPage() {
   await requireSession();
 
@@ -122,13 +122,13 @@ export default async function DashboardPage() {
   const intakeBacklog = preSendStages.intake.length;
   const enrichmentBacklog = preSendStages.enrichment.length;
   const firstTouchQueued = automationOverview.sequences.filter(
-    (sequence: any) => !sequence.hasSentAnyStep && (sequence.state === "QUEUED" || sequence.state === "SENDING"),
+    (sequence) => !sequence.hasSentAnyStep && (sequence.state === "QUEUED" || sequence.state === "SENDING"),
   ).length;
   const activeFollowUps = automationOverview.sequences.filter(
-    (sequence: any) => sequence.hasSentAnyStep && (sequence.state === "WAITING" || sequence.state === "SENDING"),
+    (sequence) => sequence.hasSentAnyStep && (sequence.state === "WAITING" || sequence.state === "SENDING"),
   ).length;
   const blockedFollowUps = automationOverview.sequences.filter(
-    (sequence: any) => sequence.hasSentAnyStep && sequence.state === "BLOCKED",
+    (sequence) => sequence.hasSentAnyStep && sequence.state === "BLOCKED",
   ).length;
 
   const activeRun = scrapeJobs.find((job) => job.status === "running" || job.status === "claimed") ?? null;
@@ -137,7 +137,7 @@ export default async function DashboardPage() {
     .slice(0, 4);
   const recentSendEvents = automationOverview.recentSent.slice(0, 4);
 
-  const attentionBoard = [
+  const attentionBoard: AttentionBoardItem[] = [
     {
       label: "Intake backlog",
       value: intakeBacklog,
@@ -149,7 +149,7 @@ export default async function DashboardPage() {
     {
       label: "Enrichment backlog",
       value: enrichmentBacklog,
-      href: "/outreach?stage=enrichment",
+      href: { pathname: "/outreach", query: { stage: "enrichment" } },
       detail: "Records still missing prep before approval",
       action: "Open Enrichment",
       icon: <Brain className="h-4 w-4 text-purple-400" />,
@@ -157,7 +157,7 @@ export default async function DashboardPage() {
     {
       label: "Ready for first touch",
       value: automationOverview.stats.ready,
-      href: "/outreach?stage=initial",
+      href: { pathname: "/outreach", query: { stage: "initial" } },
       detail: "Approved leads waiting on first-touch action",
       action: "Open Initial Outreach",
       icon: <MailCheck className="h-4 w-4 text-emerald-400" />,
@@ -262,7 +262,7 @@ export default async function DashboardPage() {
             {attentionBoard.map((item) => (
               <Link
                 key={item.label}
-                href={item.href as any}
+                href={item.href}
                 className="rounded-[22px] border border-white/[0.06] bg-black/20 p-4 transition-all hover:border-white/[0.12] hover:bg-white/[0.03]"
               >
                 <div className="flex items-center justify-between gap-3">
@@ -307,7 +307,7 @@ export default async function DashboardPage() {
                     </div>
                   </div>
                 ))}
-                {recentSendEvents.map((event: any) => (
+                {recentSendEvents.map((event) => (
                   <div key={`send:${event.id}`} className="rounded-[20px] border border-white/[0.06] bg-black/20 px-4 py-4">
                     <div className="flex items-center gap-2 text-sm font-medium text-white">
                       <MailCheck className="h-4 w-4 text-emerald-400" />

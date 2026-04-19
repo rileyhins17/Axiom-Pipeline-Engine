@@ -11,6 +11,10 @@
 import { enrichLead } from "@/lib/outreach-enrichment";
 import { isLeadOutreachEligible, hasValidPipelineEmail } from "@/lib/lead-qualification";
 import { READY_FOR_FIRST_TOUCH_STATUS } from "@/lib/outreach";
+import {
+  AUTONOMOUS_QUEUE_BATCH_SIZE,
+  shouldAutonomouslyQueueLead,
+} from "@/lib/automation-policy";
 import { queueLeadsForAutomation } from "@/lib/outreach-automation";
 import { getPrisma } from "@/lib/prisma";
 import type { LeadRecord } from "@/lib/prisma";
@@ -134,7 +138,7 @@ async function autoQueue(systemUserId: string): Promise<{ queued: number; skippe
       enrichmentData: { not: null },
     },
     orderBy: { axiomScore: "desc" },
-    take: 10,
+    take: AUTONOMOUS_QUEUE_BATCH_SIZE,
   })) as LeadRecord[];
 
   if (readyLeads.length === 0) return { queued: 0, skipped: 0 };
@@ -149,8 +153,8 @@ async function autoQueue(systemUserId: string): Promise<{ queued: number; skippe
   const activeLeadIds = new Set(existing.map((s) => s.leadId));
 
   const eligibleIds = readyLeads
-    .filter((l) => !activeLeadIds.has(l.id) && isLeadOutreachEligible(l))
-    .map((l) => l.id);
+    .filter((lead) => !activeLeadIds.has(lead.id) && shouldAutonomouslyQueueLead(lead))
+    .map((lead) => lead.id);
 
   if (eligibleIds.length === 0) return { queued: 0, skipped: 0 };
 

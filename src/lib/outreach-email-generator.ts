@@ -112,6 +112,8 @@ function buildGenerationContext(
   if (lead.email) lines.push(`EMAIL: ${lead.email}`);
   if (lead.emailType) lines.push(`EMAIL TYPE: ${lead.emailType}`);
   if (lead.emailConfidence != null) lines.push(`EMAIL CONFIDENCE: ${lead.emailConfidence}`);
+  if (lead.callOpener) lines.push(`CALL OPENER CANDIDATE: ${lead.callOpener}`);
+  if (lead.followUpQuestion) lines.push(`FOLLOW-UP QUESTION CANDIDATE: ${lead.followUpQuestion}`);
   lines.push(`WEBSITE STATUS: ${lead.websiteStatus || "UNKNOWN"}`);
   if (lead.websiteUrl) lines.push(`WEBSITE URL: ${lead.websiteUrl}`);
   if (lead.websiteGrade) lines.push(`WEBSITE GRADE: ${lead.websiteGrade}`);
@@ -165,10 +167,25 @@ function buildFollowUpContext(
   lines.push(`RECIPIENT EMAIL: ${lead.email}`);
   lines.push(`RECIPIENT CITY: ${lead.city}`);
   lines.push(`RECIPIENT NICHE: ${lead.niche}`);
+  if (lead.emailType) lines.push(`RECIPIENT EMAIL TYPE: ${lead.emailType}`);
+  if (lead.emailConfidence != null) lines.push(`RECIPIENT EMAIL CONFIDENCE: ${lead.emailConfidence}`);
+  if (lead.websiteGrade) lines.push(`WEBSITE GRADE: ${lead.websiteGrade}`);
   lines.push(`WEBSITE STATUS: ${lead.websiteStatus || "UNKNOWN"}`);
+  if (lead.rating != null) lines.push(`GOOGLE RATING: ${lead.rating}`);
+  if (lead.reviewCount != null) lines.push(`REVIEW COUNT: ${lead.reviewCount}`);
+  if (lead.axiomScore != null) lines.push(`AXIOM SCORE: ${lead.axiomScore}`);
+  if (lead.axiomTier) lines.push(`AXIOM TIER: ${lead.axiomTier}`);
+  if (lead.callOpener) lines.push(`CALL OPENER CANDIDATE: ${lead.callOpener}`);
+  if (lead.followUpQuestion) lines.push(`FOLLOW-UP QUESTION CANDIDATE: ${lead.followUpQuestion}`);
+  if (lead.tacticalNote) lines.push(`TACTICAL NOTE: ${lead.tacticalNote}`);
+  lines.push("");
+  lines.push(buildWebsiteAssessmentContext(lead));
+  lines.push("");
+  lines.push(buildPainSignalContext(lead));
+  lines.push("");
   lines.push(`PREVIOUS EMAIL SUBJECT: ${previousEmail.subject}`);
   lines.push(`PREVIOUS EMAIL SENT AT: ${new Date(previousEmail.sentAt).toISOString()}`);
-  lines.push(`PREVIOUS EMAIL BODY: ${previousEmail.bodyPlain}`);
+  lines.push(`PREVIOUS EMAIL BODY: ${truncateContextText(previousEmail.bodyPlain)}`);
   lines.push(`FOLLOW-UP STEP: ${stepType}`);
   lines.push(``);
   lines.push(`=== ENRICHMENT INTELLIGENCE ===`);
@@ -234,6 +251,7 @@ STRICT RULES:
 10. Do NOT use placeholders.
 11. The plain text version should be a clean version without any HTML.
 12. The HTML version should use simple inline styles and remain lightweight.
+13. Use one fresh detail from the lead context, website assessment, or pain signals instead of recycling the same hook.
 
 Respond with a JSON object:
 {
@@ -250,10 +268,27 @@ function sanitizeSubject(subject: string, businessName: string) {
     .trim();
 
   if (trimmed.length > 0) {
-    return trimmed.slice(0, 78);
+    const shortSubject = trimmed.split(/\s+/).filter(Boolean).slice(0, 5).join(" ");
+    return shortSubject.slice(0, 78);
   }
 
   return `Quick thought on ${businessName}`;
+}
+
+function stripHtmlTags(value: string) {
+  return value
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function truncateContextText(value: string, maxLength = 800) {
+  const cleaned = value.replace(/\r/g, " ").replace(/\s+/g, " ").trim();
+  if (cleaned.length <= maxLength) {
+    return cleaned;
+  }
+
+  return `${cleaned.slice(0, maxLength - 3).trimEnd()}...`;
 }
 
 function normalizeColdEmailDraft(
@@ -297,7 +332,7 @@ async function generateColdEmailAttempt(
   return chatCompletionJson<RawGeneratedColdEmail>({
     systemPrompt: COLD_EMAIL_SYSTEM_PROMPT,
     userPrompt,
-    temperature: retryInstructions ? 0.35 : 0.55,
+    temperature: retryInstructions ? 0.28 : 0.4,
     maxTokens: 1100,
   });
 }
@@ -317,6 +352,25 @@ function finalizeColdEmail(
     observed_issue: draft.observed_issue,
     CTA_type: draft.CTA_type,
     confidence_score: draft.confidence_score,
+  };
+}
+
+function finalizeGeneratedEmail(
+  draft: GeneratedEmail,
+  senderName: string,
+  businessName: string,
+): GeneratedEmail {
+  const bodySource = draft.bodyPlain || draft.bodyHtml || "";
+  const bodyPlain = buildPlainTextEmail(stripHtmlTags(bodySource), firstName(senderName));
+
+  return {
+    subject: sanitizeSubject(draft.subject || "", businessName),
+    bodyPlain,
+    bodyHtml: buildHtmlEmail(bodyPlain),
+    personalization_reason: (draft.personalization_reason || "").trim(),
+    observed_issue: (draft.observed_issue || "").trim(),
+    CTA_type: draft.CTA_type || "follow_up",
+    confidence_score: Math.max(0, Math.min(100, Math.round(Number(draft.confidence_score || 0)))),
   };
 }
 
@@ -366,9 +420,9 @@ export async function generateFollowUpEmail(
   return chatCompletionJson<GeneratedEmail>({
     systemPrompt: FOLLOW_UP_SYSTEM_PROMPT,
     userPrompt: `Generate a personalized follow-up email using this context:\n\n${context}`,
-    temperature: 0.65,
-    maxTokens: 1024,
-  });
+    temperature: 0.35,
+    maxTokens: 900,
+  }).then((draft) => finalizeGeneratedEmail(draft, senderName, lead.businessName));
 }
 
 export async function generateSequenceStepEmail(
