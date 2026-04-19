@@ -417,10 +417,7 @@ function isWithinSendWindow(date: Date, config: OutreachSequenceConfig) {
   const startMinutes = config.sendWindowStartHour * 60 + config.sendWindowStartMinute;
   const endMinutes = config.sendWindowEndHour * 60 + config.sendWindowEndMinute;
 
-  if (config.weekdaysOnly && (parts.weekday === "Sat" || parts.weekday === "Sun")) {
-    return false;
-  }
-
+  // REQS: emails need to send 7 days a week
   return localMinutes >= startMinutes && localMinutes <= endMinutes;
 }
 
@@ -433,11 +430,6 @@ function adjustToAllowedSendWindow(date: Date, config: OutreachSequenceConfig) {
     const startMinutes = config.sendWindowStartHour * 60 + config.sendWindowStartMinute;
     const endMinutes = config.sendWindowEndHour * 60 + config.sendWindowEndMinute;
 
-    if (config.weekdaysOnly && (parts.weekday === "Sat" || parts.weekday === "Sun")) {
-      candidate = setMinutesInTimezone(addMinutes(candidate, 24 * 60), config.timezone, config.sendWindowStartHour, config.sendWindowStartMinute);
-      continue;
-    }
-
     if (localMinutes < startMinutes) {
       return setMinutesInTimezone(candidate, config.timezone, config.sendWindowStartHour, config.sendWindowStartMinute);
     }
@@ -448,20 +440,6 @@ function adjustToAllowedSendWindow(date: Date, config: OutreachSequenceConfig) {
     }
 
     return candidate;
-  }
-
-  return candidate;
-}
-
-function addBusinessDays(date: Date, businessDays: number, timeZone: string) {
-  let candidate = new Date(date);
-  let remaining = businessDays;
-
-  while (remaining > 0) {
-    candidate = addMinutes(candidate, 24 * 60);
-    if (!isWeekendInTimezone(candidate, timeZone)) {
-      remaining -= 1;
-    }
   }
 
   return candidate;
@@ -596,16 +574,9 @@ async function getSequenceSnapshotConfig(
 function buildScheduledTimeline(now: Date, config: OutreachSequenceConfig) {
   const initialDelay = getRandomInt(config.initialDelayMinMinutes, config.initialDelayMaxMinutes);
   const initial = adjustToAllowedSendWindow(addMinutes(now, initialDelay), config);
-  const followUp1 = adjustToAllowedSendWindow(
-    addBusinessDays(initial, config.followUp1BusinessDays, config.timezone),
-    config,
-  );
-  const followUp2 = adjustToAllowedSendWindow(
-    addBusinessDays(followUp1, config.followUp2BusinessDays, config.timezone),
-    config,
-  );
 
-  return [initial, followUp1, followUp2];
+  // REQS: The whole sequence thing needs to stop, just automated email sender
+  return [initial];
 }
 
 async function listSendableMailboxes(prisma: PrismaLike) {
