@@ -374,6 +374,77 @@ function finalizeGeneratedEmail(
   };
 }
 
+function getRecipientName(lead: LeadRecord) {
+  return lead.contactName?.trim().split(/\s+/)[0] || lead.businessName || "there";
+}
+
+function buildFallbackInitialEmail(
+  lead: LeadRecord,
+  enrichment: EnrichmentResult,
+  senderName: string,
+): GeneratedEmail {
+  const senderFirst = firstName(senderName);
+  const recipientName = getRecipientName(lead);
+  const bodyPlain = buildPlainTextEmail(
+    [
+      `Hi ${recipientName},`,
+      "",
+      `I took a quick look at ${lead.businessName} and it looks like ${enrichment.pitchAngle.toLowerCase()}`,
+      enrichment.recommendedCTA,
+      "",
+      "Best,",
+      senderFirst,
+    ].join("\n"),
+    senderFirst,
+  );
+
+  return {
+    subject: sanitizeSubject(`Quick note on ${lead.businessName}`, lead.businessName),
+    bodyPlain,
+    bodyHtml: buildHtmlEmail(bodyPlain),
+    personalization_reason: enrichment.personalizedHook,
+    observed_issue: enrichment.keyPainPoint,
+    CTA_type: "permission_offer",
+    confidence_score: 48,
+  };
+}
+
+function buildFallbackFollowUpEmail(
+  lead: LeadRecord,
+  enrichment: EnrichmentResult,
+  senderName: string,
+  stepType: OutreachSequenceStepType,
+): GeneratedEmail {
+  const senderFirst = firstName(senderName);
+  const recipientName = getRecipientName(lead);
+  const followUpLine = stepType === "FOLLOW_UP_2"
+    ? "Just wanted to close the loop in case this got buried."
+    : "Wanted to circle back with one more quick thought.";
+  const bodyPlain = buildPlainTextEmail(
+    [
+      `Hi ${recipientName},`,
+      "",
+      followUpLine,
+      `The main thing I noticed was that ${enrichment.keyPainPoint.toLowerCase()}.`,
+      enrichment.recommendedCTA,
+      "",
+      "Best,",
+      senderFirst,
+    ].join("\n"),
+    senderFirst,
+  );
+
+  return {
+    subject: sanitizeSubject(stepType === "FOLLOW_UP_2" ? "Quick follow up" : "Circling back", lead.businessName),
+    bodyPlain,
+    bodyHtml: buildHtmlEmail(bodyPlain),
+    personalization_reason: enrichment.personalizedHook,
+    observed_issue: enrichment.keyPainPoint,
+    CTA_type: "follow_up",
+    confidence_score: 42,
+  };
+}
+
 /**
  * Generate a personalized email for a single lead.
  */
@@ -382,30 +453,35 @@ export async function generateEmail(
   enrichment: EnrichmentResult,
   senderName: string,
 ): Promise<GeneratedEmail> {
-  const plan = chooseColdEmailPlan(lead, enrichment);
-  const context = buildGenerationContext(lead, enrichment, senderName, plan);
+  try {
+    const plan = chooseColdEmailPlan(lead, enrichment);
+    const context = buildGenerationContext(lead, enrichment, senderName, plan);
 
-  const firstDraft = normalizeColdEmailDraft(
-    await generateColdEmailAttempt(context, plan),
-    plan,
-    lead.businessName,
-  );
-  const firstValidation = validateColdEmailDraft(firstDraft, lead, plan);
-  if (firstValidation.valid) {
-    return finalizeColdEmail(firstDraft, senderName);
+    const firstDraft = normalizeColdEmailDraft(
+      await generateColdEmailAttempt(context, plan),
+      plan,
+      lead.businessName,
+    );
+    const firstValidation = validateColdEmailDraft(firstDraft, lead, plan);
+    if (firstValidation.valid) {
+      return finalizeColdEmail(firstDraft, senderName);
+    }
+
+    const retryDraft = normalizeColdEmailDraft(
+      await generateColdEmailAttempt(context, plan, buildRetryInstructions(firstValidation, plan)),
+      plan,
+      lead.businessName,
+    );
+    const retryValidation = validateColdEmailDraft(retryDraft, lead, plan);
+    const finalDraft =
+      retryValidation.valid || retryValidation.score >= firstValidation.score
+        ? retryDraft
+        : firstDraft;
+    return finalizeColdEmail(finalDraft, senderName);
+  } catch (error) {
+    console.warn(`[outreach-email-generator] Falling back to template email for ${lead.id}:`, error);
+    return buildFallbackInitialEmail(lead, enrichment, senderName);
   }
-
-  const retryDraft = normalizeColdEmailDraft(
-    await generateColdEmailAttempt(context, plan, buildRetryInstructions(firstValidation, plan)),
-    plan,
-    lead.businessName,
-  );
-  const retryValidation = validateColdEmailDraft(retryDraft, lead, plan);
-  const finalDraft =
-    retryValidation.valid || retryValidation.score >= firstValidation.score
-      ? retryDraft
-      : firstDraft;
-  return finalizeColdEmail(finalDraft, senderName);
 }
 
 export async function generateFollowUpEmail(
@@ -415,14 +491,20 @@ export async function generateFollowUpEmail(
   previousEmail: FollowUpSourceEmail,
   stepType: OutreachSequenceStepType = "FOLLOW_UP_1",
 ): Promise<GeneratedEmail> {
-  const context = buildFollowUpContext(lead, enrichment, senderName, previousEmail, stepType);
+  try {
+    const context = buildFollowUpContext(lead, enrichment, senderName, previousEmail, stepType);
 
-  return chatCompletionJson<GeneratedEmail>({
-    systemPrompt: FOLLOW_UP_SYSTEM_PROMPT,
-    userPrompt: `Generate a personalized follow-up email using this context:\n\n${context}`,
-    temperature: 0.35,
-    maxTokens: 900,
-  }).then((draft) => finalizeGeneratedEmail(draft, senderName, lead.businessName));
+    const draft = await chatCompletionJson<GeneratedEmail>({
+      systemPrompt: FOLLOW_UP_SYSTEM_PROMPT,
+      userPrompt: `Generate a personalized follow-up email using this context:\n\n${context}`,
+      temperature: 0.35,
+      maxTokens: 900,
+    });
+    return finalizeGeneratedEmail(draft, senderName, lead.businessName);
+  } catch (error) {
+    console.warn(`[outreach-email-generator] Falling back to follow-up template for ${lead.id}:`, error);
+    return buildFallbackFollowUpEmail(lead, enrichment, senderName, stepType);
+  }
 }
 
 export async function generateSequenceStepEmail(

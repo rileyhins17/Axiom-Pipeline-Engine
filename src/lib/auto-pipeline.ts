@@ -38,7 +38,11 @@ async function findLeadsNeedingEnrichment(prisma: ReturnType<typeof getPrisma>, 
       email: { not: null },
       axiomScore: { not: null },
       isArchived: false,
-      outreachStatus: { in: ["NOT_CONTACTED", "ENRICHING"] },
+      OR: [
+        { outreachStatus: "NOT_CONTACTED" },
+        { outreachStatus: "ENRICHING" },
+        { outreachStatus: null },
+      ],
     },
     orderBy: { axiomScore: "desc" },
     take: limit,
@@ -54,10 +58,13 @@ async function findLeadsNeedingEnrichment(prisma: ReturnType<typeof getPrisma>, 
 async function findLeadsNeedingQualification(prisma: ReturnType<typeof getPrisma>): Promise<LeadRecord[]> {
   const leads = (await prisma.lead.findMany({
     where: {
-      enrichedAt: { not: null },
-      enrichmentData: { not: null },
       isArchived: false,
-      outreachStatus: { in: ["NOT_CONTACTED", "ENRICHING", "ENRICHED"] },
+      OR: [
+        { outreachStatus: "NOT_CONTACTED" },
+        { outreachStatus: "ENRICHING" },
+        { outreachStatus: "ENRICHED" },
+        { outreachStatus: null },
+      ],
     },
     orderBy: { axiomScore: "desc" },
     take: 20,
@@ -135,7 +142,6 @@ async function autoQueue(systemUserId: string): Promise<{ queued: number; skippe
     where: {
       outreachStatus: READY_FOR_FIRST_TOUCH_STATUS,
       isArchived: false,
-      enrichmentData: { not: null },
     },
     orderBy: { axiomScore: "desc" },
     take: AUTONOMOUS_QUEUE_BATCH_SIZE,

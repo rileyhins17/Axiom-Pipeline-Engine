@@ -6,8 +6,12 @@ import { getValidAccessToken, sendGmailEmail } from "@/lib/gmail";
 import { getMailboxForManualSend } from "@/lib/outreach-automation";
 import { getPrisma } from "@/lib/prisma";
 import type { LeadRecord, OutreachEmailRecord } from "@/lib/prisma";
-import type { EnrichmentResult } from "@/lib/outreach-enrichment";
+import { resolveLeadEnrichment } from "@/lib/outreach-enrichment";
 import { requireAdminApiSession } from "@/lib/session";
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error || "Unknown error");
+}
 
 export async function POST(
   request: NextRequest,
@@ -80,9 +84,9 @@ export async function POST(
       where: { id: priorEmail.leadId },
     }) as LeadRecord | null;
 
-    if (!lead || !lead.email || !lead.enrichmentData) {
+    if (!lead || !lead.email) {
       return NextResponse.json(
-        { error: "Lead is missing email or enrichment data required for a follow-up." },
+        { error: "Lead is missing email required for a follow-up." },
         { status: 400 },
       );
     }
@@ -99,7 +103,7 @@ export async function POST(
     }
 
     const senderName = mailbox.label || authResult.session.user.name || connection.gmailAddress.split("@")[0];
-    const enrichment = JSON.parse(lead.enrichmentData) as EnrichmentResult;
+    const enrichment = resolveLeadEnrichment(lead);
     const followUp = await generateFollowUpEmail(lead, enrichment, senderName, {
       subject: priorEmail.subject,
       bodyPlain: priorEmail.bodyPlain,
@@ -156,10 +160,10 @@ export async function POST(
         businessName: lead.businessName,
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Follow-up send error:", error);
     return NextResponse.json(
-      { error: error.message || "Failed to send follow-up" },
+      { error: getErrorMessage(error) || "Failed to send follow-up" },
       { status: 500 },
     );
   }

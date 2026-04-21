@@ -4,13 +4,17 @@ import { generateEmail } from "@/lib/outreach-email-generator";
 import { getServerEnv } from "@/lib/env";
 import { getValidAccessToken, sendGmailEmail } from "@/lib/gmail";
 import { getMailboxForManualSend } from "@/lib/outreach-automation";
-import type { EnrichmentResult } from "@/lib/outreach-enrichment";
+import { resolveLeadEnrichment } from "@/lib/outreach-enrichment";
 import { getPrisma } from "@/lib/prisma";
 import type { LeadRecord } from "@/lib/prisma";
 import { requireAdminApiSession } from "@/lib/session";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error || "Unknown error");
 }
 
 export async function POST(request: Request) {
@@ -69,7 +73,7 @@ export async function POST(request: Request) {
     const leads: LeadRecord[] = [];
     for (const id of leadIds) {
       const lead = await prisma.lead.findUnique({ where: { id } });
-      if (lead && lead.email && lead.enrichmentData) {
+      if (lead && lead.email) {
         leads.push(lead);
       }
     }
@@ -132,8 +136,7 @@ export async function POST(request: Request) {
       const lead = eligibleLeads[i];
 
       try {
-        // Parse enrichment data
-        const enrichment = JSON.parse(lead.enrichmentData!) as EnrichmentResult;
+        const enrichment = resolveLeadEnrichment(lead);
 
         // Generate personalized email via DeepSeek
         const email = await generateEmail(lead, enrichment, senderName);
@@ -184,8 +187,9 @@ export async function POST(request: Request) {
         });
 
         results.push({ leadId: lead.id, businessName: lead.businessName, status: "sent" });
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error(`[outreach-send] Failed for lead ${lead.id}:`, error);
+        const message = getErrorMessage(error);
 
         // Log failed attempt
         try {
@@ -201,7 +205,7 @@ export async function POST(request: Request) {
               bodyHtml: "",
               bodyPlain: "",
               status: "failed",
-              errorMessage: error.message || "Unknown error",
+              errorMessage: message,
               sentAt: new Date(),
             },
           });
@@ -211,7 +215,7 @@ export async function POST(request: Request) {
           leadId: lead.id,
           businessName: lead.businessName,
           status: "failed",
-          error: error.message || "Unknown error",
+          error: message,
         });
       }
 
@@ -232,10 +236,10 @@ export async function POST(request: Request) {
       total: leads.length,
       results,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Outreach send error:", error);
     return NextResponse.json(
-      { error: error.message || "Failed to send outreach emails" },
+      { error: getErrorMessage(error) || "Failed to send outreach emails" },
       { status: 500 },
     );
   }

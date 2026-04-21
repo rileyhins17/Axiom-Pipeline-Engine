@@ -20,6 +20,10 @@ export type EnrichmentResult = {
   enrichmentSummary: string;
 };
 
+function shortLeadName(lead: LeadRecord) {
+  return lead.businessName.trim() || "this business";
+}
+
 const ENRICHMENT_BANNED_PHRASES = [
   "stellar reputation",
   "glowing reviews",
@@ -119,6 +123,53 @@ function normalizeEnrichmentResult(result: EnrichmentResult): EnrichmentResult {
       220,
     ),
   };
+}
+
+function parseStoredEnrichment(value: string | null | undefined): EnrichmentResult | null {
+  if (!value) return null;
+
+  try {
+    const parsed = JSON.parse(value) as EnrichmentResult;
+    if (!parsed || typeof parsed !== "object") {
+      return null;
+    }
+
+    return normalizeEnrichmentResult(parsed);
+  } catch {
+    return null;
+  }
+}
+
+export function buildFallbackEnrichment(lead: LeadRecord): EnrichmentResult {
+  const businessName = shortLeadName(lead);
+  const websiteStatus = String(lead.websiteStatus || "").toUpperCase();
+  const hasWebsite = websiteStatus !== "MISSING";
+  const websiteLine = hasWebsite
+    ? "The current site looks like it may still be leaving some easy contact opportunities on the table."
+    : "The business looks like it may be relying on directories or social profiles instead of a proper site.";
+
+  return {
+    valueProposition: `Axiom can help ${businessName} make the next step clearer for people who are already looking.`,
+    pitchAngle: websiteLine,
+    anticipatedObjections: [
+      "Most work still comes from referrals.",
+      "The current setup may be good enough for now.",
+    ],
+    emailTone: "professional",
+    keyPainPoint: hasWebsite
+      ? "The contact path may not be obvious enough."
+      : "There may not be a clear website path for new enquiries.",
+    competitiveEdge: "Nearby competitors may be making it easier to contact them quickly.",
+    personalizedHook: `I had a quick look at ${businessName} and noticed one thing that stood out.`,
+    recommendedCTA: "Would it help if I sent over a couple of ideas?",
+    enrichmentSummary: hasWebsite
+      ? "This lead is a reasonable fit for a short, low-friction outreach note."
+      : "This lead is a reasonable fit for a short outreach note because the web presence looks light.",
+  };
+}
+
+export function resolveLeadEnrichment(lead: LeadRecord): EnrichmentResult {
+  return parseStoredEnrichment(lead.enrichmentData) || buildFallbackEnrichment(lead);
 }
 
 function buildLeadContext(lead: LeadRecord): string {

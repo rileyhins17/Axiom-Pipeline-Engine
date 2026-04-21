@@ -11,6 +11,7 @@ import {
   MAILBOX_MIN_DELAY_SECONDS,
 } from "@/lib/automation-policy";
 import { hasValidPipelineEmail, isLeadOutreachEligible } from "@/lib/lead-qualification";
+import { resolveLeadEnrichment } from "@/lib/outreach-enrichment";
 import { getPrisma } from "@/lib/prisma";
 import { READY_FOR_FIRST_TOUCH_STATUS } from "@/lib/outreach";
 import type {
@@ -562,8 +563,8 @@ async function getSequenceSnapshotConfig(
   mailbox: OutreachMailboxRecord,
   lead: LeadRecord,
 ) {
-  if (!lead.email || !lead.enrichmentData) {
-    throw new Error(`Lead ${lead.id} is missing enrichment data or email`);
+  if (!lead.email) {
+    throw new Error(`Lead ${lead.id} is missing email`);
   }
 
   return {
@@ -590,7 +591,7 @@ async function getSequenceSnapshotConfig(
       axiomScore: lead.axiomScore,
       axiomTier: lead.axiomTier,
     },
-    enrichmentSnapshot: JSON.parse(lead.enrichmentData),
+    enrichmentSnapshot: resolveLeadEnrichment(lead),
   } satisfies OutreachSequenceConfig;
 }
 
