@@ -1,4 +1,5 @@
 import {
+  Activity,
   Database,
   Download,
   FileText,
@@ -56,6 +57,16 @@ export const COMMANDS: Command[] = [
     shortcut: "Cmd+1",
     keywords: ["home", "overview", "status"],
     action: { type: "navigate", path: "/dashboard" },
+  },
+  {
+    id: "nav-ops",
+    category: "navigate",
+    label: "Ops — Pipeline Health",
+    description: "Scheduler, mailboxes, recent runs, send queue",
+    icon: Activity,
+    shortcut: "Cmd+0",
+    keywords: ["ops", "health", "scheduler", "runs", "mailbox", "queue", "status"],
+    action: { type: "navigate", path: "/ops" },
   },
   {
     id: "nav-hunt",

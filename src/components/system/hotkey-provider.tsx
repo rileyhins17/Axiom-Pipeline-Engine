@@ -39,6 +39,7 @@ export function HotkeyProvider({ children }: { children: React.ReactNode }) {
 
       if (event.metaKey || event.ctrlKey) {
         const routes: Record<string, Route> = {
+          "0": "/ops",
           "1": "/dashboard",
           "2": "/hunt",
           "3": "/vault",

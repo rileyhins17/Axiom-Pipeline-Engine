@@ -82,6 +82,66 @@
   --sidebar-ring: oklch(0.708 0 0);
 }
 
+/* ========== SEMANTIC STATUS TOKENS (v4 UI pass) ========== */
+:root {
+  --status-success: oklch(0.75 0.18 160);
+  --status-success-soft: oklch(0.75 0.18 160 / 0.12);
+  --status-success-border: oklch(0.75 0.18 160 / 0.28);
+  --status-warning: oklch(0.78 0.17 75);
+  --status-warning-soft: oklch(0.78 0.17 75 / 0.12);
+  --status-warning-border: oklch(0.78 0.17 75 / 0.28);
+  --status-danger: oklch(0.68 0.22 22);
+  --status-danger-soft: oklch(0.68 0.22 22 / 0.12);
+  --status-danger-border: oklch(0.68 0.22 22 / 0.28);
+  --status-info: oklch(0.74 0.13 200);
+  --status-info-soft: oklch(0.74 0.13 200 / 0.12);
+  --status-info-border: oklch(0.74 0.13 200 / 0.28);
+  --status-neutral: oklch(0.60 0.02 160);
+  --status-neutral-soft: oklch(1 0 0 / 0.04);
+  --status-neutral-border: oklch(1 0 0 / 0.08);
+}
+
+/* Status dot utility — tiny pulsing indicator for live health */
+.status-dot {
+  position: relative;
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+}
+.status-dot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: currentColor;
+  opacity: 0.4;
+  animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+.status-dot[data-state="healthy"] { color: var(--status-success); background: var(--status-success); }
+.status-dot[data-state="warning"] { color: var(--status-warning); background: var(--status-warning); }
+.status-dot[data-state="danger"]  { color: var(--status-danger);  background: var(--status-danger); }
+.status-dot[data-state="idle"]    { color: var(--status-neutral); background: var(--status-neutral); }
+.status-dot[data-state="idle"]::after { animation: none; }
+
+/* Metric chip — compact, scannable KPI pill used on /ops & dashboard pulse */
+.metric-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  background: var(--status-neutral-soft);
+  border: 1px solid var(--status-neutral-border);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: oklch(0.85 0.01 160);
+}
+.metric-chip[data-tone="success"] { background: var(--status-success-soft); border-color: var(--status-success-border); color: var(--status-success); }
+.metric-chip[data-tone="warning"] { background: var(--status-warning-soft); border-color: var(--status-warning-border); color: var(--status-warning); }
+.metric-chip[data-tone="danger"]  { background: var(--status-danger-soft);  border-color: var(--status-danger-border);  color: var(--status-danger); }
+.metric-chip[data-tone="info"]    { background: var(--status-info-soft);    border-color: var(--status-info-border);    color: var(--status-info); }
+
 .dark {
   --background: oklch(0.08 0.008 160);
   --foreground: oklch(0.95 0.01 160);
@@ -127,20 +187,29 @@
 }
 
 /* ============================================================
-   THE OMNISCIENT v3 — DESIGN SYSTEM
+   THE OMNISCIENT v4 — DESIGN SYSTEM
+   Calmer surfaces, stronger hierarchy, less visual noise.
    ============================================================ */
 
-/* ========== AMBIENT AURORA BACKGROUND ========== */
+/* Base typography — tighter, more refined */
+html { font-feature-settings: "ss01", "cv11"; }
+body {
+  font-feature-settings: "ss01", "cv11";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -0.005em;
+}
+h1, h2, h3, h4 { letter-spacing: -0.02em; }
+
+/* ========== AMBIENT BACKGROUND (muted, single gradient, no animation) ========== */
 body::before {
   content: "";
   position: fixed;
   inset: 0;
   z-index: -2;
   background:
-    radial-gradient(ellipse 80% 60% at 10% 20%, rgba(52, 211, 153, 0.06) 0%, transparent 60%),
-    radial-gradient(ellipse 60% 80% at 90% 80%, rgba(6, 182, 212, 0.05) 0%, transparent 60%),
-    radial-gradient(ellipse 50% 50% at 50% 0%, rgba(139, 92, 246, 0.04) 0%, transparent 50%);
-  animation: aurora-drift 20s ease-in-out infinite alternate;
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(52, 211, 153, 0.035) 0%, transparent 55%),
+    radial-gradient(ellipse 60% 40% at 100% 100%, rgba(6, 182, 212, 0.025) 0%, transparent 55%);
   pointer-events: none;
 }
 
@@ -161,24 +230,18 @@ body::before {
   }
 }
 
-/* ========== PARTICLE FIELD ========== */
+/* ========== SUBTLE GRID (replaces particle field) ========== */
 body::after {
   content: "";
   position: fixed;
   inset: 0;
   z-index: -1;
   background-image:
-    radial-gradient(1px 1px at 20% 30%, rgba(52, 211, 153, 0.3) 0%, transparent 100%),
-    radial-gradient(1px 1px at 40% 70%, rgba(6, 182, 212, 0.25) 0%, transparent 100%),
-    radial-gradient(1px 1px at 60% 15%, rgba(139, 92, 246, 0.2) 0%, transparent 100%),
-    radial-gradient(1px 1px at 80% 50%, rgba(52, 211, 153, 0.25) 0%, transparent 100%),
-    radial-gradient(1px 1px at 10% 80%, rgba(245, 158, 11, 0.15) 0%, transparent 100%),
-    radial-gradient(1px 1px at 70% 90%, rgba(6, 182, 212, 0.2) 0%, transparent 100%),
-    radial-gradient(1px 1px at 30% 45%, rgba(52, 211, 153, 0.15) 0%, transparent 100%),
-    radial-gradient(1px 1px at 90% 25%, rgba(139, 92, 246, 0.15) 0%, transparent 100%),
-    radial-gradient(1.5px 1.5px at 50% 50%, rgba(52, 211, 153, 0.1) 0%, transparent 100%),
-    radial-gradient(1px 1px at 15% 55%, rgba(6, 182, 212, 0.15) 0%, transparent 100%);
-  animation: particle-float 30s ease-in-out infinite;
+    linear-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
+  background-size: 48px 48px;
+  background-position: -1px -1px;
+  mask-image: radial-gradient(ellipse 80% 80% at 50% 50%, black 30%, transparent 90%);
   pointer-events: none;
 }
 
@@ -206,27 +269,85 @@ body::after {
   }
 }
 
+/* ========== SURFACES v4 — refined elevation system ========== */
+.surface {
+  background: oklch(0.11 0.01 158);
+  border: 1px solid oklch(1 0 0 / 0.06);
+  border-radius: 12px;
+}
+.surface-raised {
+  background: oklch(0.125 0.012 158);
+  border: 1px solid oklch(1 0 0 / 0.08);
+  border-radius: 12px;
+  box-shadow: 0 1px 0 0 oklch(1 0 0 / 0.02) inset, 0 12px 32px -18px rgba(0, 0, 0, 0.6);
+}
+.surface-inset {
+  background: oklch(0.09 0.01 158);
+  border: 1px solid oklch(1 0 0 / 0.04);
+  border-radius: 10px;
+}
+.surface-hover {
+  transition: border-color 180ms ease, background 180ms ease;
+}
+.surface-hover:hover {
+  border-color: oklch(1 0 0 / 0.12);
+  background: oklch(0.13 0.012 158);
+}
+
+/* Section headers — consistent rhythm across pages */
+.section-label {
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: oklch(0.58 0.02 160);
+  font-weight: 600;
+}
+.section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: oklch(0.95 0.01 160);
+  letter-spacing: -0.01em;
+}
+.page-title {
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  color: oklch(0.98 0.01 160);
+}
+.page-subtitle {
+  font-size: 13px;
+  color: oklch(0.60 0.02 160);
+  line-height: 1.5;
+}
+
+/* KPI numerals — tabular, crisp */
+.kpi-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
 /* ========== GLASSMORPHISM (Enhanced) ========== */
 .glass {
-  background: rgba(255, 255, 255, 0.025);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: oklch(0.11 0.01 158 / 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .glass-strong {
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(32px);
-  -webkit-backdrop-filter: blur(32px);
+  background: oklch(0.11 0.01 158 / 0.88);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .glass-ultra {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.02) 100%);
-  backdrop-filter: blur(40px) saturate(1.5);
-  -webkit-backdrop-filter: blur(40px) saturate(1.5);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  background: oklch(0.12 0.012 158 / 0.92);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 20px 60px -20px rgba(0, 0, 0, 0.6);
 }
 
 /* ========== HOLOGRAPHIC SHIMMER ========== */

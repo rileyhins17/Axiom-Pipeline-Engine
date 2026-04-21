@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 
 import { BrandMark } from "@/components/brand-mark";
+import { PulseStrip } from "@/components/system/pulse-strip";
 import { Button } from "@/components/ui/button";
 import { StatCard } from "@/components/ui/stat-card";
 import { AUTOMATION_SETTINGS_DEFAULTS } from "@/lib/automation-policy";
@@ -173,7 +174,8 @@ export default async function DashboardPage() {
   ];
 
   return (
-    <div className="mx-auto max-w-7xl space-y-8">
+    <div className="mx-auto max-w-7xl space-y-6">
+      <PulseStrip />
       <section className="rounded-[32px] border border-white/[0.06] bg-[radial-gradient(circle_at_top,rgba(16,185,129,0.14),transparent_32%),linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] px-6 py-10 shadow-[0_20px_80px_rgba(0,0,0,0.35)] md:px-10">
         <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
           <div className="max-w-3xl">
