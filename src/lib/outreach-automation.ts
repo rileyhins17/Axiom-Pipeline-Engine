@@ -454,15 +454,24 @@ function getStepType(stepNumber: number): OutreachSequenceStepType {
 }
 
 function normalizeAutomationSettings(settings: OutreachAutomationSettingRecord) {
+  // DB is the source of truth; only fill in missing/invalid values from defaults.
+  const pickNumber = (value: unknown, fallback: number) =>
+    typeof value === "number" && Number.isFinite(value) ? value : fallback;
+  const pickBool = (value: unknown, fallback: boolean) =>
+    typeof value === "boolean" ? value : fallback;
   return {
     ...settings,
-    weekdaysOnly: AUTOMATION_SETTINGS_DEFAULTS.weekdaysOnly,
-    initialDelayMinMinutes: AUTOMATION_SETTINGS_DEFAULTS.initialDelayMinMinutes,
-    initialDelayMaxMinutes: AUTOMATION_SETTINGS_DEFAULTS.initialDelayMaxMinutes,
-    followUp1BusinessDays: AUTOMATION_SETTINGS_DEFAULTS.followUp1BusinessDays,
-    followUp2BusinessDays: AUTOMATION_SETTINGS_DEFAULTS.followUp2BusinessDays,
-    schedulerClaimBatch: AUTOMATION_SETTINGS_DEFAULTS.schedulerClaimBatch,
-    replySyncStaleMinutes: AUTOMATION_SETTINGS_DEFAULTS.replySyncStaleMinutes,
+    weekdaysOnly: pickBool(settings.weekdaysOnly, AUTOMATION_SETTINGS_DEFAULTS.weekdaysOnly),
+    sendWindowStartHour: pickNumber(settings.sendWindowStartHour, AUTOMATION_SETTINGS_DEFAULTS.sendWindowStartHour),
+    sendWindowStartMinute: pickNumber(settings.sendWindowStartMinute, AUTOMATION_SETTINGS_DEFAULTS.sendWindowStartMinute),
+    sendWindowEndHour: pickNumber(settings.sendWindowEndHour, AUTOMATION_SETTINGS_DEFAULTS.sendWindowEndHour),
+    sendWindowEndMinute: pickNumber(settings.sendWindowEndMinute, AUTOMATION_SETTINGS_DEFAULTS.sendWindowEndMinute),
+    initialDelayMinMinutes: pickNumber(settings.initialDelayMinMinutes, AUTOMATION_SETTINGS_DEFAULTS.initialDelayMinMinutes),
+    initialDelayMaxMinutes: pickNumber(settings.initialDelayMaxMinutes, AUTOMATION_SETTINGS_DEFAULTS.initialDelayMaxMinutes),
+    followUp1BusinessDays: pickNumber(settings.followUp1BusinessDays, AUTOMATION_SETTINGS_DEFAULTS.followUp1BusinessDays),
+    followUp2BusinessDays: pickNumber(settings.followUp2BusinessDays, AUTOMATION_SETTINGS_DEFAULTS.followUp2BusinessDays),
+    schedulerClaimBatch: pickNumber(settings.schedulerClaimBatch, AUTOMATION_SETTINGS_DEFAULTS.schedulerClaimBatch),
+    replySyncStaleMinutes: pickNumber(settings.replySyncStaleMinutes, AUTOMATION_SETTINGS_DEFAULTS.replySyncStaleMinutes),
   };
 }
 

@@ -13,10 +13,10 @@ export const AUTONOMOUS_QUEUE_BATCH_SIZE = 20;
 export const AUTOMATION_SETTINGS_DEFAULTS = {
   enabled: true,
   globalPaused: false,
-  sendWindowStartHour: 9,
+  sendWindowStartHour: 0,
   sendWindowStartMinute: 0,
-  sendWindowEndHour: 16,
-  sendWindowEndMinute: 30,
+  sendWindowEndHour: 23,
+  sendWindowEndMinute: 59,
   weekdaysOnly: false,
   initialDelayMinMinutes: 3,
   initialDelayMaxMinutes: 12,
