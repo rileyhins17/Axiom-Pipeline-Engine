@@ -259,6 +259,31 @@ function addSeconds(date: Date, seconds: number) {
   return new Date(date.getTime() + seconds * 1000);
 }
 
+/**
+ * Add N days to a date. When weekdaysOnly is true, skip Saturday/Sunday in
+ * the given timezone so follow-ups don't land on a weekend. When false, this
+ * is just calendar-day addition (correct for 24/7 operation).
+ */
+function addDaysRespectingWeekdays(
+  date: Date,
+  days: number,
+  timeZone: string,
+  weekdaysOnly: boolean,
+) {
+  if (!weekdaysOnly) {
+    return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
+  }
+  let remaining = days;
+  let cursor = new Date(date);
+  while (remaining > 0) {
+    cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000);
+    const parts = getLocalDateParts(cursor, timeZone);
+    const dow = parts.weekday; // "Mon".."Sun"
+    if (dow !== "Sat" && dow !== "Sun") remaining -= 1;
+  }
+  return cursor;
+}
+
 function startOfHour(date: Date) {
   const copy = new Date(date);
   copy.setMinutes(0, 0, 0);
@@ -608,7 +633,18 @@ function buildScheduledTimeline(now: Date, config: OutreachSequenceConfig) {
   const initialDelay = getRandomInt(config.initialDelayMinMinutes, config.initialDelayMaxMinutes);
   const initial = adjustToAllowedSendWindow(addMinutes(now, initialDelay), config);
 
-  return [initial];
+  // Follow-up 1: N days after the initial send (weekend-aware when weekdaysOnly=true).
+  const followUp1 = adjustToAllowedSendWindow(
+    addDaysRespectingWeekdays(initial, config.followUp1BusinessDays, config.timezone, config.weekdaysOnly),
+    config,
+  );
+  // Follow-up 2: N days after follow-up 1.
+  const followUp2 = adjustToAllowedSendWindow(
+    addDaysRespectingWeekdays(followUp1, config.followUp2BusinessDays, config.timezone, config.weekdaysOnly),
+    config,
+  );
+
+  return [initial, followUp1, followUp2];
 }
 
 async function listSendableMailboxes(prisma: PrismaLike) {
