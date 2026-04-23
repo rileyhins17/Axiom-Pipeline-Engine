@@ -127,7 +127,11 @@ export type AutomationOverview = {
   };
 };
 
-/** The daily send target — 40 emails/day */
-export const DAILY_TARGET = 40;
+/**
+ * Rough daily send target used for the progress ring and "on-pace" copy.
+ * Assumes 2 active mailboxes × 40/day cap each. Actual caps are per-mailbox
+ * (see MAILBOX_DAILY_SEND_TARGET in src/lib/automation-policy.ts).
+ */
+export const DAILY_TARGET = 80;
 
 export type TabId = "overview" | "queue" | "mailboxes" | "blocked" | "rules";

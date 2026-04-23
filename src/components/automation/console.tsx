@@ -248,7 +248,7 @@ function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview
               </span>
               <span className="hidden text-zinc-700 sm:inline">·</span>
               <span className="hidden text-xs text-zinc-500 sm:inline">
-                Runs every 5 min via Cloudflare cron
+                Runs every minute via Cloudflare cron
               </span>
               {issuesCount > 0 && (
                 <>

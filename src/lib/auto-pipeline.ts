@@ -179,8 +179,10 @@ async function autoQueue(systemUserId: string): Promise<{ queued: number; skippe
 export async function runAutoPipeline(systemUserId: string): Promise<AutoPipelineResult> {
   const prisma = getPrisma();
 
-  // Step 1: Auto-enrich (limit to 3 per run to stay within API budget)
-  const { enriched, failed: enrichFailed } = await autoEnrich(prisma, 3);
+  // Step 1: Auto-enrich (limit to 10 per run so the funnel keeps pace with
+  // send throughput — old limit of 3 left NOT_CONTACTED leads backed up for
+  // hours once the queue grew past a few dozen).
+  const { enriched, failed: enrichFailed } = await autoEnrich(prisma, 10);
 
   // Step 2: Auto-qualify enriched leads
   const qualified = await autoQualify(prisma);

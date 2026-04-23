@@ -20,7 +20,10 @@
     }
   ],
   "triggers": {
-    "crons": ["*/5 * * * *"]
+    // Scheduler fires every minute for maximum reactivity. Each tick
+    // runs auto-pipeline + reply sync + up to schedulerClaimBatch sends,
+    // so shorter cron = tighter send spacing when there's backlog.
+    "crons": ["*/1 * * * *"]
   },
   "vars": {
     "APP_BASE_URL": "https://operations.getaxiom.ca/",

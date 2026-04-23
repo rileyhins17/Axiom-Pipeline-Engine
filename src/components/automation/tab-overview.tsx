@@ -181,7 +181,7 @@ export function OverviewTab({
                 hint={
                   overview.settings.globalPaused
                     ? "Engine is paused. No outreach will send until you resume."
-                    : "The scheduler auto-runs every 5 minutes. Trigger a cycle only when you need immediate action."
+                    : "The scheduler auto-runs every minute. Hit the button to process the queue now without waiting."
                 }
               />
 
