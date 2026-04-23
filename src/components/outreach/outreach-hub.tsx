@@ -181,11 +181,11 @@ export function OutreachHub({
   );
 
   const handleQueueRequested = useCallback(
-    async (leadIds: number[]) => {
+    async (leadIds: number[], options?: { immediate?: boolean }) => {
       const res = await fetch("/api/outreach/automation/queue", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ leadIds }),
+        body: JSON.stringify({ leadIds, immediate: options?.immediate }),
       });
 
       const data = await res.json().catch(() => null);
@@ -195,9 +195,12 @@ export function OutreachHub({
 
       const queued = data?.queued?.length || 0;
       const skipped = data?.skipped?.length || 0;
+      const immediate = Boolean(data?.immediate);
       toast(
         queued > 0
-          ? `Queued ${queued} first-touch lead${queued === 1 ? "" : "s"}${skipped > 0 ? `, skipped ${skipped}` : ""}`
+          ? immediate
+            ? `Sending ${queued} lead${queued === 1 ? "" : "s"} now — next tick will dispatch${skipped > 0 ? `, skipped ${skipped}` : ""}`
+            : `Queued ${queued} first-touch lead${queued === 1 ? "" : "s"}${skipped > 0 ? `, skipped ${skipped}` : ""}`
           : `No leads were queued${skipped > 0 ? `, skipped ${skipped}` : ""}`,
         { type: queued > 0 ? "success" : "error", icon: "note" },
       );

@@ -55,5 +55,15 @@ export function shouldAutonomouslyQueueLead(lead: LeadRecord) {
     return false;
   }
 
-  return lead.axiomTier !== "D";
+  if (lead.axiomTier === "D") return false;
+
+  // Skip role/department inboxes for auto-queue. info@, contact@, hello@,
+  // sales@ etc. are classified as emailType='generic' and have near-zero
+  // reply rates + high spam-flag risk. Owner/staff emails only.
+  // A human can still manually queue a generic email via the outreach UI
+  // if they really want to.
+  const emailType = (lead.emailType || "").toLowerCase();
+  if (emailType === "generic") return false;
+
+  return true;
 }

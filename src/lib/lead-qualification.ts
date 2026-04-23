@@ -59,7 +59,14 @@ export function hasValidPipelineEmail(input: EmailQualificationInput) {
   }
 
   if (emailType === "generic") {
-    return confidence >= 0.42;
+    // Role/department inboxes (info@, contact@, hello@, sales@) are a
+    // waste of sender reputation — they rarely reach a decision-maker,
+    // they get marked as spam at a higher rate, and they inflate open
+    // counts without producing replies. Treat them as NOT pipeline-valid
+    // so neither auto-queue nor the manual outreach UI will dispatch
+    // to them. If a user really wants to contact info@ they should
+    // edit the lead's email to a personal address first.
+    return false;
   }
 
   return false;

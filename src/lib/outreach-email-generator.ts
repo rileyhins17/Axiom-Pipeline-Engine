@@ -220,6 +220,11 @@ Core Rules for Perfection:
    - "Schedule a quick 10-minute call"
    - Any exclamation marks (!) - use periods only.
    - Any em dashes (—)
+   - DO NOT mention Google reviews, review count, or star rating unless the
+     provided anchor explicitly references them. Reviews are a boring,
+     templated hook. Lead with something else — the domain, the niche, the
+     city, the contact's name, a specific observation. Reviews may appear
+     as a secondary aside at most, never as the opening line.
 4. Formatting: 
    - Use plain text formatting. No bold. 
    - Keep paragraphs to 1-2 sentences. 

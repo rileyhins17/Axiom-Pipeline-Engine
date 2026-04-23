@@ -13,6 +13,7 @@ import {
   Search,
   ShieldCheck,
   Sparkles,
+  Zap,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -855,12 +856,13 @@ export function InitialOutreachPanel({
   sequences: PreSendSequence[];
   gmailConnected: boolean;
   onSendRequested: (leadIds: number[]) => void;
-  onQueueRequested: (leadIds: number[]) => Promise<void>;
+  onQueueRequested: (leadIds: number[], options?: { immediate?: boolean }) => Promise<void>;
   onRefresh: () => Promise<void>;
 }) {
   const { toast } = useToast();
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [queueing, setQueueing] = useState(false);
+  const [sendingNow, setSendingNow] = useState(false);
 
   const queuedOrSending = sequences.filter((sequence) => sequence.state === "QUEUED" || sequence.state === "SENDING");
   const blocked = sequences.filter((sequence) => sequence.state === "BLOCKED");
@@ -893,6 +895,19 @@ export function InitialOutreachPanel({
       await onRefresh();
     } finally {
       setQueueing(false);
+    }
+  };
+
+  const sendNowSelected = async () => {
+    const leadIds = Array.from(selectedIds);
+    if (leadIds.length === 0) return;
+    setSendingNow(true);
+    try {
+      await onQueueRequested(leadIds, { immediate: true });
+      setSelectedIds(new Set());
+      await onRefresh();
+    } finally {
+      setSendingNow(false);
     }
   };
 
@@ -974,11 +989,21 @@ export function InitialOutreachPanel({
                 <Button
                   type="button"
                   onClick={() => void queueSelected()}
-                  disabled={!gmailConnected || selectedIds.size === 0 || queueing}
+                  disabled={!gmailConnected || selectedIds.size === 0 || queueing || sendingNow}
                   className="rounded-full bg-white px-4 text-sm text-black hover:bg-zinc-200"
                 >
                   {queueing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
                   Queue Initial Send
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => void sendNowSelected()}
+                  disabled={!gmailConnected || selectedIds.size === 0 || queueing || sendingNow}
+                  title="Queue and fast-forward step 1 so the next cron tick (within 60s) dispatches immediately."
+                  className="rounded-full border border-amber-500/25 bg-gradient-to-r from-amber-400 to-orange-500 px-4 text-sm font-semibold text-black hover:from-amber-300 hover:to-orange-400"
+                >
+                  {sendingNow ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
+                  Send now
                 </Button>
               </div>
             </div>

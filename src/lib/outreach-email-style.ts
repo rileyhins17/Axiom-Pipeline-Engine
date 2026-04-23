@@ -333,19 +333,14 @@ function getObservationCandidate(lead: LeadRecord) {
 }
 
 function buildPersonalizationReason(lead: LeadRecord, observation: ReturnType<typeof getObservationCandidate>) {
-  const businessName = lead.businessName;
-  const city = lead.city;
-  const reviewCount = Number(lead.reviewCount || 0);
-  const parts = [`Email is personalized to ${businessName} in ${city}`];
-
-  if (reviewCount > 0) {
-    parts.push(`with ${reviewCount} Google review${reviewCount === 1 ? "" : "s"}`);
-  }
+  const parts = [`Email is personalized to ${lead.businessName} in ${lead.city}`];
 
   if (observation?.evidence) {
     parts.push(`and an observed issue: ${observation.evidence}`);
   } else if (lead.websiteStatus === "MISSING") {
     parts.push("and no usable website surfaced during the scrape");
+  } else if (lead.niche) {
+    parts.push(`using the ${lead.niche} context and available site signals`);
   } else {
     parts.push("using the available site and lead context without forcing a hard claim");
   }
@@ -353,20 +348,47 @@ function buildPersonalizationReason(lead: LeadRecord, observation: ReturnType<ty
   return parts.join(" ");
 }
 
+/**
+ * The "concrete anchor" is the specific detail the LLM must weave into the
+ * opening line so the email feels researched and not templated. It used to
+ * hard-code "X Google reviews" whenever a review count existed, which made
+ * EVERY email open with the same review mention. Now we pick deterministically
+ * (based on lead id) from a pool of anchors — domain, niche, city, category,
+ * website grade, contact name — so hooks rotate naturally and review counts
+ * are just one option among many, never a guaranteed mention.
+ */
 function buildConcreteAnchor(lead: LeadRecord) {
   const domain = extractDomain(lead.websiteUrl);
+  const city = lead.city?.trim() || "";
+  const niche = lead.niche?.trim() || "";
+  const category = lead.category?.trim() || "";
+  const name = lead.businessName?.trim() || "their site";
+  const grade = lead.websiteGrade?.trim() || "";
+  const contactFirst = (lead.contactName || "").trim().split(/\s+/)[0] || "";
   const reviewCount = Number(lead.reviewCount || 0);
 
-  if (domain && reviewCount > 0) {
-    return `while looking through ${domain} and seeing ${reviewCount} Google reviews`;
+  const candidates: string[] = [];
+  if (domain) candidates.push(`while clicking through ${domain}`);
+  if (domain && niche) candidates.push(`poking around ${domain} looking at ${niche} shops in ${city || "the area"}`);
+  if (niche && city) candidates.push(`while looking at ${niche} in ${city}`);
+  if (category && city) candidates.push(`while scanning ${category} around ${city}`);
+  if (domain && grade && /[DE]/i.test(grade)) candidates.push(`after poking at ${domain} for a minute on mobile`);
+  if (domain && contactFirst) candidates.push(`while clicking around ${domain} and spotting ${contactFirst}'s name`);
+  if (niche) candidates.push(`while looking at a few ${niche} sites tonight`);
+  if (city) candidates.push(`while digging through local businesses in ${city}`);
+  // Review count is allowed but only as one candidate among many, and only
+  // when it is actually notable (10+). Prevents "X Google reviews" from
+  // being forced into every email.
+  if (domain && reviewCount >= 10) {
+    candidates.push(`while looking through ${domain} (saw ${reviewCount} reviews too)`);
   }
-  if (domain) {
-    return `while looking through ${domain}`;
-  }
-  if (reviewCount > 0) {
-    return `after seeing ${reviewCount} Google reviews for ${lead.businessName}`;
-  }
-  return `while looking at ${lead.businessName} in ${lead.city}`;
+  // Ultimate fallback: nothing specific, but still feels casual.
+  candidates.push(`while looking at ${name} in ${city || "your area"}`);
+
+  // Deterministic pick so the same lead always gets the same anchor (stable
+  // across retries / regenerations), but anchors vary across leads.
+  const seed = Number(lead.id || 0) || name.length + city.length;
+  return candidates[seed % candidates.length];
 }
 
 function buildConfidenceScore(lead: LeadRecord, observationStrength: number, validEmail: boolean) {

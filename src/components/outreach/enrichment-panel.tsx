@@ -39,7 +39,7 @@ type EnrichmentPanelProps = {
   leads: EnrichedLead[];
   gmailConnected: boolean;
   onSendRequested: (leadIds: number[]) => void;
-  onQueueRequested: (leadIds: number[]) => Promise<void>;
+  onQueueRequested: (leadIds: number[], options?: { immediate?: boolean }) => Promise<void>;
   onLeadsUpdated: () => void;
   queuedLeadIds: number[];
 };
