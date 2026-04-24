@@ -11,42 +11,158 @@ import {
   UserRoundPlus,
 } from "lucide-react";
 
+import { hasValidPipelineEmail } from "@/lib/lead-qualification";
+import { listAutomationOverview } from "@/lib/outreach-automation";
+import { isContactedOutreachStatus, READY_FOR_FIRST_TOUCH_STATUS } from "@/lib/outreach";
+import { partitionPreSendLeads } from "@/lib/pipeline-lifecycle";
+import { getPrisma } from "@/lib/prisma";
+import { listScrapeJobs } from "@/lib/scrape-jobs";
 import { requireSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
-const kpis = [
-  { label: "Total Leads", value: "1,250", delta: "+12%", period: "vs May 6 - May 12", color: "#62e79f", points: "2,4 18,1 34,3 50,0 66,5 82,5 98,4 114,6 130,2 146,8 162,3 178,9 194,5 210,14 226,6 242,11 258,4 274,9" },
-  { label: "Contacts in Vault", value: "950", delta: "+9%", period: "vs May 6 - May 12", color: "#55c6dc", points: "2,7 18,5 34,8 50,6 66,4 82,7 98,4 114,9 130,5 146,7 162,2 178,5 194,10 210,3 226,8 242,4 258,9 274,5" },
-  { label: "Active Outreach", value: "320", delta: "+15%", period: "vs May 6 - May 12", color: "#55c6dc", points: "2,9 18,6 34,7 50,10 66,7 82,3 98,9 114,4 130,8 146,6 162,1 178,4 194,8 210,3 226,9 242,5 258,7 274,2" },
-  { label: "Responses", value: "109", delta: "+8%", period: "vs May 6 - May 12", color: "#62e79f", points: "2,8 18,4 34,5 50,6 66,2 82,9 98,8 114,6 130,7 146,3 162,6 178,4 194,8 210,5 226,13 242,6 258,9 274,3" },
-  { label: "Meetings Booked", value: "27", delta: "+17%", period: "vs May 6 - May 12", color: "#f59e0b", points: "2,9 18,6 34,8 50,7 66,3 82,7 98,2 114,6 130,5 146,1 162,3 178,7 194,2 210,8 226,3 242,5 258,1 274,0" },
-  { label: "Conversion Rate", value: "8.44%", delta: "+1.2pp", period: "vs May 6 - May 12", color: "#62e79f", points: "2,8 18,3 34,8 50,9 66,7 82,4 98,5 114,2 130,6 146,1 162,5 178,3 194,12 210,4 226,8 242,3 258,6 274,2" },
-];
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
-const actionQueue = [
-  { action: "Review New Leads", detail: "105 new leads require review", item: "Lead Generator", priority: "High", due: "1h" },
-  { action: "Enrich Contacts", detail: "230 contacts need enrichment", item: "Vault", priority: "Medium", due: "3h" },
-  { action: "Follow Up", detail: "48 contacts waiting for follow up", item: "Outreach", priority: "High", due: "5h" },
-  { action: "Workflow Alerts", detail: "2 workflows need attention", item: "Automation", priority: "Medium", due: "1d" },
-  { action: "Data Quality", detail: "12 duplicates detected", item: "Data Quality", priority: "Low", due: "2d" },
-];
+type Tone = "green" | "blue" | "cyan" | "amber";
+type PriorityLevel = "High" | "Medium" | "Low";
 
-const activity = [
-  { icon: UserRoundPlus, tone: "green", title: "105 new leads generated", detail: "from LinkedIn Sales Navigator", time: "9:15 AM" },
-  { icon: Folder, tone: "blue", title: "230 contacts imported to vault", detail: "from CSV upload", time: "8:42 AM" },
-  { icon: Send, tone: "cyan", title: 'Campaign "Q2 Outreach" sent', detail: "to 320 recipients", time: "8:30 AM" },
-  { icon: Database, tone: "green", title: "34 responses received", detail: "12% response rate", time: "7:45 AM" },
-  { icon: Cog, tone: "amber", title: 'Workflow "Nurture Sequence" triggered', detail: "for 18 contacts", time: "6:20 AM" },
-];
+type Kpi = {
+  color: string;
+  delta: string;
+  deltaTone: "good" | "bad" | "neutral";
+  label: string;
+  period: string;
+  points: string;
+  value: string;
+};
 
-const campaigns = [
-  ["Q2 Outreach", "48", "15.0%", "12"],
-  ["Enterprise Follow Up", "32", "18.2%", "8"],
-  ["Product Demo Invite", "18", "20.0%", "5"],
-  ["Nurture Sequence", "11", "11.0%", "2"],
-  ["Re-engagement May", "9", "9.8%", "1"],
-];
+type ActionRow = {
+  action: string;
+  count: number;
+  detail: string;
+  due: string;
+  item: string;
+  priority: PriorityLevel;
+};
+
+type ActivityRow = {
+  date: Date;
+  detail: string;
+  icon: typeof UserRoundPlus;
+  time: string;
+  title: string;
+  tone: Tone;
+};
+
+function formatNumber(value: number) {
+  return Math.round(value).toLocaleString("en-US");
+}
+
+function formatPercent(numerator: number, denominator: number, decimals = 0) {
+  if (denominator <= 0) return decimals === 0 ? "0%" : "0.0%";
+  return `${((numerator / denominator) * 100).toFixed(decimals)}%`;
+}
+
+function startOfDay(date: Date) {
+  const next = new Date(date);
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
+
+function daysAgo(days: number) {
+  const date = startOfDay(new Date());
+  date.setDate(date.getDate() - days);
+  return date;
+}
+
+function isBetween(date: Date | string | null | undefined, start: Date, end: Date) {
+  if (!date) return false;
+  const time = new Date(date).getTime();
+  return time >= start.getTime() && time < end.getTime();
+}
+
+function calcDelta(current: number, previous: number, suffix = "%") {
+  if (previous === 0 && current === 0) return { label: `0${suffix}`, tone: "neutral" as const };
+  if (previous === 0) return { label: `+${current}${suffix}`, tone: "good" as const };
+  const change = ((current - previous) / previous) * 100;
+  return {
+    label: `${change >= 0 ? "+" : ""}${change.toFixed(0)}${suffix}`,
+    tone: change > 0 ? "good" as const : change < 0 ? "bad" as const : "neutral" as const,
+  };
+}
+
+function calcPointDelta(currentRate: number, previousRate: number) {
+  const change = currentRate - previousRate;
+  return {
+    label: `${change >= 0 ? "+" : ""}${change.toFixed(1)}pp`,
+    tone: change > 0 ? "good" as const : change < 0 ? "bad" as const : "neutral" as const,
+  };
+}
+
+function shortDate(date: Date) {
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function formatDashboardDate(date: Date) {
+  return date.toLocaleString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function formatTime(date: Date | string | null | undefined) {
+  if (!date) return "Live";
+  return new Date(date).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+}
+
+function seriesByDay<T>(items: T[], getDate: (item: T) => Date | string | null | undefined, days = 14) {
+  const starts = Array.from({ length: days }, (_, index) => daysAgo(days - index - 1));
+  return starts.map((start) => {
+    const end = new Date(start.getTime() + MS_PER_DAY);
+    return items.filter((item) => isBetween(getDate(item), start, end)).length;
+  });
+}
+
+function buildSparkline(values: number[]) {
+  const width = 274;
+  const height = 18;
+  const max = Math.max(...values, 1);
+  const min = Math.min(...values, 0);
+  const spread = Math.max(max - min, 1);
+  return values
+    .map((value, index) => {
+      const x = values.length === 1 ? 0 : (index / (values.length - 1)) * width;
+      const y = height - 2 - ((value - min) / spread) * (height - 4);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(" ");
+}
+
+function priorityFor(count: number): PriorityLevel {
+  if (count >= 25) return "High";
+  if (count >= 5) return "Medium";
+  return "Low";
+}
+
+function dueFor(count: number, urgent = false) {
+  if (count <= 0) return "-";
+  if (urgent || count >= 25) return "1h";
+  if (count >= 5) return "3h";
+  return "1d";
+}
+
+function duplicateCount(leads: Array<{ businessName: string; city: string; dedupeKey?: string | null }>) {
+  const counts = new Map<string, number>();
+  for (const lead of leads) {
+    const key = (lead.dedupeKey || `${lead.businessName}:${lead.city}`).trim().toLowerCase();
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  return Array.from(counts.values()).reduce((total, count) => total + Math.max(0, count - 1), 0);
+}
 
 function IconTile({
   children,
@@ -54,7 +170,7 @@ function IconTile({
   size = "lg",
 }: {
   children: React.ReactNode;
-  tone: "green" | "blue" | "cyan" | "amber";
+  tone: Tone;
   size?: "sm" | "lg";
 }) {
   const styles = {
@@ -74,7 +190,14 @@ function IconTile({
   );
 }
 
-function KpiCard({ item }: { item: (typeof kpis)[number] }) {
+function KpiCard({ item }: { item: Kpi }) {
+  const deltaClass =
+    item.deltaTone === "bad"
+      ? "text-[#ff6666]"
+      : item.deltaTone === "neutral"
+        ? "text-[#9da8b4]"
+        : "text-[#62e79f]";
+
   return (
     <div className="rounded-md border border-[#24313c] bg-[#121b25] p-4">
       <div className="flex items-center justify-between text-sm text-[#9da8b4]">
@@ -83,7 +206,7 @@ function KpiCard({ item }: { item: (typeof kpis)[number] }) {
       </div>
       <div className="mt-5 flex items-end gap-3">
         <div className="text-[28px] font-semibold leading-none text-[#f2f5f8]">{item.value}</div>
-        <div className="text-sm font-semibold text-[#62e79f]">{item.delta}</div>
+        <div className={`text-sm font-semibold ${deltaClass}`}>{item.delta}</div>
       </div>
       <div className="mt-2 text-[13px] text-[#98a3af]">{item.period}</div>
       <svg className="mt-4 h-[22px] w-full overflow-visible" viewBox="0 0 276 18" preserveAspectRatio="none" aria-hidden="true">
@@ -93,13 +216,214 @@ function KpiCard({ item }: { item: (typeof kpis)[number] }) {
   );
 }
 
-function Priority({ value }: { value: string }) {
+function Priority({ value }: { value: PriorityLevel }) {
   const color = value === "High" ? "text-[#ff6666]" : value === "Medium" ? "text-[#f59e0b]" : "text-[#62e79f]";
   return <span className={`text-[13px] font-medium ${color}`}>{value}</span>;
 }
 
 export default async function DashboardPage() {
   await requireSession();
+
+  const prisma = getPrisma();
+  const now = new Date();
+  const thisWeekStart = daysAgo(7);
+  const previousWeekStart = daysAgo(14);
+  const period = `vs ${shortDate(previousWeekStart)} - ${shortDate(thisWeekStart)}`;
+
+  const [automationOverview, scrapeJobs, leads, sentEmails, sentTotal] = await Promise.all([
+    listAutomationOverview().catch(() => null),
+    listScrapeJobs(8).catch(() => []),
+    prisma.lead.findMany({
+      where: { isArchived: false },
+      select: {
+        id: true,
+        businessName: true,
+        city: true,
+        createdAt: true,
+        dedupeKey: true,
+        email: true,
+        emailConfidence: true,
+        emailFlags: true,
+        emailType: true,
+        enrichedAt: true,
+        enrichmentData: true,
+        axiomScore: true,
+        outreachStatus: true,
+        source: true,
+        lastContactedAt: true,
+      },
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.outreachEmail.findMany({
+      where: { status: "sent" },
+      orderBy: { sentAt: "desc" },
+      take: 500,
+    }).catch(() => []),
+    prisma.outreachEmail.count({ where: { status: "sent" } }).catch(() => 0),
+  ]);
+
+  const preSendStages = partitionPreSendLeads(
+    leads.filter((lead) => {
+      if (isContactedOutreachStatus(lead.outreachStatus)) return false;
+      if (lead.outreachStatus === READY_FOR_FIRST_TOUCH_STATUS) return false;
+      return true;
+    }),
+  );
+
+  const totalLeads = leads.length;
+  const contactableLeads = leads.filter((lead) => hasValidPipelineEmail(lead)).length;
+  const responses = leads.filter((lead) => lead.outreachStatus === "REPLIED" || lead.outreachStatus === "INTERESTED").length;
+  const interested = leads.filter((lead) => lead.outreachStatus === "INTERESTED").length;
+  const activeOutreach =
+    (automationOverview?.stats.active ?? 0) +
+    (automationOverview?.stats.queued ?? 0) +
+    (automationOverview?.stats.ready ?? 0);
+  const activeWorkflows = automationOverview?.sequences.length ?? 0;
+  const runningWorkflows = (automationOverview?.stats.sending ?? 0) + (automationOverview?.stats.waiting ?? 0);
+  const responseRate = sentTotal > 0 ? (responses / sentTotal) * 100 : 0;
+  const captureRate = totalLeads > 0 ? (contactableLeads / totalLeads) * 100 : 0;
+  const duplicates = duplicateCount(leads);
+
+  const thisWeekLeads = leads.filter((lead) => isBetween(lead.createdAt, thisWeekStart, now)).length;
+  const previousWeekLeads = leads.filter((lead) => isBetween(lead.createdAt, previousWeekStart, thisWeekStart)).length;
+  const thisWeekContacts = leads.filter((lead) => hasValidPipelineEmail(lead) && isBetween(lead.createdAt, thisWeekStart, now)).length;
+  const previousWeekContacts = leads.filter((lead) => hasValidPipelineEmail(lead) && isBetween(lead.createdAt, previousWeekStart, thisWeekStart)).length;
+  const thisWeekSent = sentEmails.filter((email) => isBetween(email.sentAt, thisWeekStart, now)).length;
+  const previousWeekSent = sentEmails.filter((email) => isBetween(email.sentAt, previousWeekStart, thisWeekStart)).length;
+  const thisWeekResponses = leads.filter((lead) => (lead.outreachStatus === "REPLIED" || lead.outreachStatus === "INTERESTED") && isBetween(lead.lastContactedAt, thisWeekStart, now)).length;
+  const previousWeekResponses = leads.filter((lead) => (lead.outreachStatus === "REPLIED" || lead.outreachStatus === "INTERESTED") && isBetween(lead.lastContactedAt, previousWeekStart, thisWeekStart)).length;
+  const thisWeekInterested = leads.filter((lead) => lead.outreachStatus === "INTERESTED" && isBetween(lead.lastContactedAt, thisWeekStart, now)).length;
+  const previousWeekInterested = leads.filter((lead) => lead.outreachStatus === "INTERESTED" && isBetween(lead.lastContactedAt, previousWeekStart, thisWeekStart)).length;
+  const currentConversion = thisWeekSent > 0 ? (thisWeekResponses / thisWeekSent) * 100 : 0;
+  const previousConversion = previousWeekSent > 0 ? (previousWeekResponses / previousWeekSent) * 100 : 0;
+
+  const leadDelta = calcDelta(thisWeekLeads, previousWeekLeads);
+  const contactDelta = calcDelta(thisWeekContacts, previousWeekContacts);
+  const outreachDelta = calcDelta(thisWeekSent, previousWeekSent);
+  const responseDelta = calcDelta(thisWeekResponses, previousWeekResponses);
+  const interestedDelta = calcDelta(thisWeekInterested, previousWeekInterested);
+  const conversionDelta = calcPointDelta(currentConversion, previousConversion);
+
+  const leadSeries = seriesByDay(leads, (lead) => lead.createdAt);
+  const contactSeries = seriesByDay(leads.filter((lead) => hasValidPipelineEmail(lead)), (lead) => lead.createdAt);
+  const sentSeries = seriesByDay(sentEmails, (email) => email.sentAt);
+  const responseSeries = seriesByDay(
+    leads.filter((lead) => lead.outreachStatus === "REPLIED" || lead.outreachStatus === "INTERESTED"),
+    (lead) => lead.lastContactedAt,
+  );
+  const interestedSeries = seriesByDay(leads.filter((lead) => lead.outreachStatus === "INTERESTED"), (lead) => lead.lastContactedAt);
+
+  const kpis: Kpi[] = [
+    { label: "Total Leads", value: formatNumber(totalLeads), delta: leadDelta.label, deltaTone: leadDelta.tone, period, color: "#62e79f", points: buildSparkline(leadSeries) },
+    { label: "Contacts in Vault", value: formatNumber(contactableLeads), delta: contactDelta.label, deltaTone: contactDelta.tone, period, color: "#55c6dc", points: buildSparkline(contactSeries) },
+    { label: "Active Outreach", value: formatNumber(activeOutreach), delta: outreachDelta.label, deltaTone: outreachDelta.tone, period, color: "#55c6dc", points: buildSparkline(sentSeries) },
+    { label: "Responses", value: formatNumber(responses), delta: responseDelta.label, deltaTone: responseDelta.tone, period, color: "#62e79f", points: buildSparkline(responseSeries) },
+    { label: "Meetings Booked", value: formatNumber(interested), delta: interestedDelta.label, deltaTone: interestedDelta.tone, period, color: "#f59e0b", points: buildSparkline(interestedSeries) },
+    { label: "Conversion Rate", value: `${responseRate.toFixed(2)}%`, delta: conversionDelta.label, deltaTone: conversionDelta.tone, period, color: "#62e79f", points: buildSparkline(responseSeries) },
+  ];
+
+  const actionQueue: ActionRow[] = [
+    {
+      action: "Review New Leads",
+      count: preSendStages.intake.length,
+      detail: `${formatNumber(preSendStages.intake.length)} sourced leads require review`,
+      item: "Lead Generator",
+      priority: priorityFor(preSendStages.intake.length),
+      due: dueFor(preSendStages.intake.length),
+    },
+    {
+      action: "Enrich Contacts",
+      count: (automationOverview?.pipeline.needsEnrichment ?? 0) + (automationOverview?.pipeline.enriching ?? 0),
+      detail: `${formatNumber((automationOverview?.pipeline.needsEnrichment ?? 0) + (automationOverview?.pipeline.enriching ?? 0))} contacts need enrichment`,
+      item: "Vault",
+      priority: priorityFor((automationOverview?.pipeline.needsEnrichment ?? 0) + (automationOverview?.pipeline.enriching ?? 0)),
+      due: dueFor((automationOverview?.pipeline.needsEnrichment ?? 0) + (automationOverview?.pipeline.enriching ?? 0)),
+    },
+    {
+      action: "Follow Up",
+      count: automationOverview?.stats.waiting ?? 0,
+      detail: `${formatNumber(automationOverview?.stats.waiting ?? 0)} contacts waiting for follow up`,
+      item: "Outreach",
+      priority: priorityFor(automationOverview?.stats.waiting ?? 0),
+      due: automationOverview?.engine.nextSendAt ? formatTime(automationOverview.engine.nextSendAt) : dueFor(automationOverview?.stats.waiting ?? 0),
+    },
+    {
+      action: "Workflow Alerts",
+      count: automationOverview?.stats.blocked ?? 0,
+      detail: `${formatNumber(automationOverview?.stats.blocked ?? 0)} workflows need attention`,
+      item: "Automation",
+      priority: ((automationOverview?.stats.blocked ?? 0) > 0 ? "High" : "Low") as PriorityLevel,
+      due: dueFor(automationOverview?.stats.blocked ?? 0, true),
+    },
+    {
+      action: "Data Quality",
+      count: duplicates,
+      detail: `${formatNumber(duplicates)} duplicates detected`,
+      item: "Data Quality",
+      priority: priorityFor(duplicates),
+      due: dueFor(duplicates),
+    },
+  ].filter((row) => row.count > 0);
+
+  const visibleActions =
+    actionQueue.length > 0
+      ? actionQueue.slice(0, 5)
+      : [{
+          action: "No Action Required",
+          count: 0,
+          detail: "Live pipeline checks are clean",
+          due: "-",
+          item: "System",
+          priority: "Low" as PriorityLevel,
+        }];
+
+  const recentLeadActivities: ActivityRow[] = leads.slice(0, 2).map((lead) => ({
+    date: lead.createdAt,
+    detail: `${lead.city || "Unknown city"} - ${lead.source || "lead source"}`,
+    icon: UserRoundPlus,
+    time: formatTime(lead.createdAt),
+    title: `${lead.businessName} added`,
+    tone: "green",
+  }));
+  const recentSentActivities: ActivityRow[] = (automationOverview?.recentSent ?? []).slice(0, 2).map((email) => ({
+    date: email.sentAt,
+    detail: email.lead?.businessName || email.recipientEmail,
+    icon: Send,
+    time: formatTime(email.sentAt),
+    title: "Outreach email sent",
+    tone: "cyan",
+  }));
+  const recentRunActivities: ActivityRow[] = scrapeJobs.slice(0, 1).map((job) => ({
+    date: job.updatedAt,
+    detail: `${job.niche} in ${job.city}`,
+    icon: Cog,
+    time: formatTime(job.updatedAt),
+    title: `Lead Generator ${job.status}`,
+    tone: job.status === "failed" ? "amber" : "blue",
+  }));
+  const recentResponseActivities: ActivityRow[] = leads
+    .filter((lead) => lead.outreachStatus === "REPLIED" || lead.outreachStatus === "INTERESTED")
+    .slice(0, 2)
+    .map((lead) => ({
+      date: lead.lastContactedAt || lead.createdAt,
+      detail: lead.businessName,
+      icon: Database,
+      time: formatTime(lead.lastContactedAt || lead.createdAt),
+      title: lead.outreachStatus === "INTERESTED" ? "Interested response received" : "Reply received",
+      tone: "green",
+    }));
+
+  const activity = [...recentLeadActivities, ...recentSentActivities, ...recentResponseActivities, ...recentRunActivities]
+    .sort((a, b) => b.date.getTime() - a.date.getTime())
+    .slice(0, 5);
+
+  const campaignRows = [
+    ["Ready First Touch", formatNumber(automationOverview?.stats.ready ?? 0), formatPercent(automationOverview?.stats.ready ?? 0, Math.max(activeWorkflows, 1), 1), formatNumber(interested)],
+    ["Queued Automation", formatNumber(automationOverview?.stats.queued ?? 0), formatPercent(automationOverview?.stats.queued ?? 0, Math.max(activeWorkflows, 1), 1), formatNumber(automationOverview?.stats.sending ?? 0)],
+    ["Active Follow Up", formatNumber(automationOverview?.stats.active ?? 0), formatPercent(responses, Math.max(activeOutreach, 1), 1), formatNumber(responses)],
+    ["Completed Sequences", formatNumber(automationOverview?.stats.completed ?? 0), formatPercent(automationOverview?.stats.completed ?? 0, Math.max(activeWorkflows, 1), 1), formatNumber(automationOverview?.stats.replied ?? 0)],
+    ["Blocked Workflows", formatNumber(automationOverview?.stats.blocked ?? 0), formatPercent(automationOverview?.stats.blocked ?? 0, Math.max(activeWorkflows, 1), 1), "0"],
+  ];
 
   return (
     <div className="min-h-[calc(100vh-163px)] text-[#d9e0e8]">
@@ -109,7 +433,7 @@ export default async function DashboardPage() {
           <p className="mt-1 text-[15px] text-[#b7c0cb]">Unified overview of your pipeline engine</p>
         </div>
         <div className="text-right">
-          <div className="mb-3 text-sm text-[#9aa5b1]">Tuesday, May 13, 2025&nbsp;&nbsp; 9:41 AM</div>
+          <div className="mb-3 text-sm text-[#9aa5b1]">{formatDashboardDate(now)}</div>
           <div className="flex gap-3">
             <button className="flex h-9 items-center gap-2 rounded-md border border-[#2a3644] bg-[#182231] px-4 text-sm font-medium text-white" type="button">
               <Settings2 className="h-4 w-4" />
@@ -117,7 +441,7 @@ export default async function DashboardPage() {
             </button>
             <button className="flex h-9 min-w-[173px] items-center justify-between rounded-md border border-[#2a3644] bg-[#182231] px-4 text-sm font-medium text-white" type="button">
               This Week
-              <span className="text-[#9aa5b1]">⌄</span>
+              <span className="text-[#9aa5b1]">v</span>
             </button>
           </div>
         </div>
@@ -130,8 +454,8 @@ export default async function DashboardPage() {
             <IconTile tone="green"><UserRoundPlus className="h-8 w-8" /></IconTile>
             <div className="w-[128px]">
               <div className="font-semibold text-white">Lead Generator</div>
-              <div className="mt-2 text-sm text-[#62e79f]">1,250 <span className="text-[#dce3ea]">Leads</span></div>
-              <div className="text-sm text-[#62e79f]">+12% <span className="text-[#9aa5b1]">vs last week</span></div>
+              <div className="mt-2 text-sm text-[#62e79f]">{formatNumber(totalLeads)} <span className="text-[#dce3ea]">Leads</span></div>
+              <div className="text-sm text-[#62e79f]">{leadDelta.label} <span className="text-[#9aa5b1]">vs last week</span></div>
             </div>
           </div>
           <div className="h-px w-[58px] bg-[#53606d]" />
@@ -141,8 +465,8 @@ export default async function DashboardPage() {
             <IconTile tone="blue"><Folder className="h-8 w-8" /></IconTile>
             <div className="w-[128px]">
               <div className="font-semibold text-white">Vault</div>
-              <div className="mt-2 text-sm text-white">950 <span className="text-[#dce3ea]">Contacts</span></div>
-              <div className="text-sm text-[#9aa5b1]">76% of leads captured</div>
+              <div className="mt-2 text-sm text-white">{formatNumber(contactableLeads)} <span className="text-[#dce3ea]">Contacts</span></div>
+              <div className="text-sm text-[#9aa5b1]">{captureRate.toFixed(0)}% of leads captured</div>
             </div>
           </div>
           <div className="h-px w-[58px] bg-[#53606d]" />
@@ -152,8 +476,8 @@ export default async function DashboardPage() {
             <IconTile tone="cyan"><Send className="h-8 w-8" /></IconTile>
             <div className="w-[128px]">
               <div className="font-semibold text-white">Outreach</div>
-              <div className="mt-2 text-sm text-white">320 <span className="text-[#dce3ea]">Active</span></div>
-              <div className="text-sm text-[#9aa5b1]">34% response rate</div>
+              <div className="mt-2 text-sm text-white">{formatNumber(activeOutreach)} <span className="text-[#dce3ea]">Active</span></div>
+              <div className="text-sm text-[#9aa5b1]">{responseRate.toFixed(0)}% response rate</div>
             </div>
           </div>
           <div className="h-px w-[58px] bg-[#53606d]" />
@@ -163,8 +487,8 @@ export default async function DashboardPage() {
             <IconTile tone="amber"><Cog className="h-8 w-8" /></IconTile>
             <div className="w-[128px]">
               <div className="font-semibold text-white">Automation</div>
-              <div className="mt-2 text-sm text-white">18 <span className="text-[#dce3ea]">Workflows</span></div>
-              <div className="text-sm text-[#9aa5b1]">5 running now</div>
+              <div className="mt-2 text-sm text-white">{formatNumber(activeWorkflows)} <span className="text-[#dce3ea]">Workflows</span></div>
+              <div className="text-sm text-[#9aa5b1]">{formatNumber(runningWorkflows)} running now</div>
             </div>
           </div>
         </div>
@@ -179,7 +503,7 @@ export default async function DashboardPage() {
           <div className="flex h-[59px] items-center justify-between border-b border-[#24313c] px-4">
             <div className="flex items-center gap-3">
               <h2 className="text-base font-semibold text-white">Action Queue</h2>
-              <span className="rounded-md bg-[#26313d] px-2 py-0.5 text-sm font-semibold text-[#c7d0da]">7</span>
+              <span className="rounded-md bg-[#26313d] px-2 py-0.5 text-sm font-semibold text-[#c7d0da]">{actionQueue.length}</span>
             </div>
             <button className="text-sm text-[#55a7ff]" type="button">View All</button>
           </div>
@@ -190,7 +514,7 @@ export default async function DashboardPage() {
             <span>Priority</span>
             <span>Due</span>
           </div>
-          {actionQueue.map((item) => (
+          {visibleActions.map((item) => (
             <div key={item.action} className="grid grid-cols-[36px_1.6fr_0.72fr_0.7fr_44px] items-center border-b border-[#24313c] px-4 py-[9px] text-sm">
               <span className="h-4 w-4 rounded border border-[#53606d]" />
               <div>
@@ -203,7 +527,7 @@ export default async function DashboardPage() {
             </div>
           ))}
           <div className="flex h-[69px] items-center justify-between px-4">
-            <span className="text-sm text-[#a9b3bf]">7 actions</span>
+            <span className="text-sm text-[#a9b3bf]">{actionQueue.length} actions</span>
             <button className="flex h-9 items-center gap-2 rounded-md border border-[#364253] bg-[#17212d] px-4 text-sm font-medium text-white" type="button">
               <Check className="h-4 w-4" />
               Mark All Complete
@@ -216,9 +540,9 @@ export default async function DashboardPage() {
             <h2 className="text-base font-semibold text-white">Recent Activity</h2>
           </div>
           <div className="space-y-0 px-4">
-            {activity.map((item) => (
-              <div key={item.title} className="flex items-center gap-3 border-b border-[#24313c] py-[13px]">
-                <IconTile tone={item.tone as "green" | "blue" | "cyan" | "amber"} size="sm">
+            {activity.length > 0 ? activity.map((item) => (
+              <div key={`${item.title}:${item.time}`} className="flex items-center gap-3 border-b border-[#24313c] py-[13px]">
+                <IconTile tone={item.tone} size="sm">
                   <item.icon className="h-5 w-5" />
                 </IconTile>
                 <div className="min-w-0 flex-1">
@@ -227,7 +551,9 @@ export default async function DashboardPage() {
                 </div>
                 <div className="text-[13px] text-[#9aa5b1]">{item.time}</div>
               </div>
-            ))}
+            )) : (
+              <div className="py-10 text-sm text-[#8f9aa6]">No recent pipeline activity yet.</div>
+            )}
           </div>
         </div>
 
@@ -242,7 +568,7 @@ export default async function DashboardPage() {
             <span>Rate</span>
             <span>Meetings</span>
           </div>
-          {campaigns.map((row) => (
+          {campaignRows.map((row) => (
             <div key={row[0]} className="grid grid-cols-[1.35fr_0.6fr_0.55fr_0.55fr] border-b border-[#24313c] px-5 py-[15px] text-sm">
               <span className="font-medium text-white">{row[0]}</span>
               <span className="text-[#d9e0e8]">{row[1]}</span>
@@ -253,7 +579,7 @@ export default async function DashboardPage() {
           <div className="p-4">
             <button className="flex h-9 w-full items-center justify-between rounded-md border border-[#2a3644] bg-[#151f2b] px-3 text-sm font-medium text-white" type="button">
               View All Campaigns
-              <span className="text-lg leading-none">→</span>
+              <span className="text-lg leading-none">-&gt;</span>
             </button>
           </div>
         </div>
