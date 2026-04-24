@@ -84,27 +84,6 @@ function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview
     }
   };
 
-  const handleRun = async () => {
-    const d = await exec<RunResponse>("run", () => fetch("/api/outreach/automation/run", { method: "POST" }));
-    if (!d) return;
-
-    const parts: string[] = [];
-    const enriched = d.pipeline?.enriched ?? 0;
-    const qualified = d.pipeline?.qualified ?? 0;
-    const queued = d.pipeline?.queued ?? 0;
-    const sent = d.sent ?? 0;
-    if (enriched > 0) parts.push(`${enriched} enriched`);
-    if (qualified > 0) parts.push(`${qualified} qualified`);
-    if (queued > 0) parts.push(`${queued} queued`);
-    if (sent > 0) parts.push(`${sent} sent`);
-
-    toast(parts.length > 0 ? parts.join(", ") : "Check complete. Nothing to send.", {
-      type: "success",
-      icon: "note",
-    });
-    await refresh();
-  };
-
   const handleTogglePause = async () => {
     const next = !overview.settings.globalPaused;
     const d = await exec("pause", () =>
@@ -264,7 +243,7 @@ function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview
       <TabBar tabs={tabs} activeTab={tab} onSelect={setTab} />
 
       <div id={`panel-${tab}`} role="tabpanel" aria-labelledby={`tab-${tab}`} className="pt-1">
-        {tab === "overview" && <OverviewTab overview={overview} onRun={handleRun} onPause={handleTogglePause} busyKey={busyKey} />}
+        {tab === "overview" && <OverviewTab overview={overview} onPause={handleTogglePause} busyKey={busyKey} />}
         {tab === "queue" && <QueueTab overview={overview} busyKey={busyKey} onUpdateSeq={updateSeq} />}
         {tab === "mailboxes" && (
           <MailboxesTab mailboxes={overview.mailboxes} busyKey={busyKey} onUpdateMailbox={updateMailbox} />

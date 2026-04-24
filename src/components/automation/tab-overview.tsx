@@ -26,12 +26,10 @@ function isRealIssue(seq: AutomationSequence) {
 
 export function OverviewTab({
   overview,
-  onRun,
   onPause,
   busyKey,
 }: {
   overview: AutomationOverview;
-  onRun: () => void;
   onPause: () => void;
   busyKey: string | null;
 }) {
@@ -129,43 +127,27 @@ export function OverviewTab({
               }
             />
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Button
-                onClick={onRun}
-                disabled={busyKey === "run" || overview.settings.globalPaused}
-                className={cn(
-                  "h-11 cursor-pointer justify-center gap-2 rounded-lg text-sm font-semibold",
-                  "bg-emerald-500 text-emerald-950 hover:bg-emerald-400",
-                  "disabled:cursor-not-allowed disabled:bg-emerald-500/30 disabled:text-emerald-200/60",
-                )}
-                aria-label="Process queue now"
-              >
-                {busyKey === "run" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
-                Process queue
-              </Button>
-
-              <Button
-                onClick={onPause}
-                disabled={busyKey === "pause"}
-                variant="outline"
-                className={cn(
-                  "h-11 cursor-pointer justify-center gap-2 rounded-lg text-sm font-semibold",
-                  overview.settings.globalPaused
-                    ? "border-cyan-400/30 bg-cyan-500/10 text-cyan-200 hover:bg-cyan-500/20"
-                    : "border-rose-400/30 bg-rose-500/[0.08] text-rose-200 hover:bg-rose-500/15",
-                )}
-                aria-label={overview.settings.globalPaused ? "Resume engine" : "Pause engine"}
-              >
-                {busyKey === "pause" ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : overview.settings.globalPaused ? (
-                  <Play className="h-4 w-4" />
-                ) : (
-                  <Pause className="h-4 w-4" />
-                )}
-                {overview.settings.globalPaused ? "Resume" : "Pause"}
-              </Button>
-            </div>
+            <Button
+              onClick={onPause}
+              disabled={busyKey === "pause"}
+              className={cn(
+                "h-11 w-full cursor-pointer justify-center gap-2 rounded-lg text-sm font-semibold",
+                overview.settings.globalPaused
+                  ? "border-cyan-400/30 bg-cyan-500/10 text-cyan-200 hover:bg-cyan-500/20"
+                  : "border-rose-400/30 bg-rose-500/[0.08] text-rose-200 hover:bg-rose-500/15",
+              )}
+              aria-label={overview.settings.globalPaused ? "Resume engine" : "Pause engine"}
+              variant="outline"
+            >
+              {busyKey === "pause" ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : overview.settings.globalPaused ? (
+                <Play className="h-4 w-4" />
+              ) : (
+                <Pause className="h-4 w-4" />
+              )}
+              {overview.settings.globalPaused ? "Resume" : "Pause"}
+            </Button>
           </Panel>
 
           <Panel>
