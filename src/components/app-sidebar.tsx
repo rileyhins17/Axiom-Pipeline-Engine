@@ -76,7 +76,7 @@ export function AppSidebar() {
   }, [pathname]);
 
   return (
-    <Sidebar className="border-r border-white/[0.04] bg-black">
+    <Sidebar className="border-r border-white/[0.06] bg-black">
       <SidebarHeader className="px-4 pb-4 pt-5">
         <Link href={"/dashboard" as Route} className="block">
           <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-4 transition-colors hover:border-white/[0.14]">

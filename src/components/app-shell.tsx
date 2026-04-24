@@ -29,7 +29,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <SidebarProvider>
       <AppSidebar />
       <main className="min-h-screen w-full flex-1 bg-background">
-        <div className="sticky top-0 z-40 border-b border-white/[0.05] bg-background/90 backdrop-blur-xl">
+        <div className="sticky top-0 z-40 border-b border-white/[0.06] bg-background/90 backdrop-blur-xl">
           <div className="flex h-14 items-center gap-3 px-4 md:px-6">
             <SidebarTrigger className="text-muted-foreground transition-colors hover:text-white" />
             <LayoutBreadcrumb />
