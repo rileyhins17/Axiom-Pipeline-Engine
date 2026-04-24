@@ -635,11 +635,23 @@ export function buildPlainTextEmail(body: string, senderFirstName: string) {
     .replace(/\r/g, "")
     .trim();
 
-  const withSignature = sanitized.toLowerCase().endsWith(senderFirstName.toLowerCase())
-    ? sanitized
-    : `${sanitized}\n\n${senderFirstName}`;
+  // Check if signature is already in the body
+  const hasSignature = sanitized.toLowerCase().includes(senderFirstName.toLowerCase());
 
-  return withSignature.replace(/\n{3,}/g, "\n\n");
+  const withSignature = hasSignature
+    ? sanitized
+    : `${sanitized}\n\nBest,\n${senderFirstName}`;
+
+  // Normalize multiple newlines to just two, and add footer
+  const normalized = withSignature.replace(/\n{3,}/g, "\n\n");
+
+  return [
+    normalized,
+    "",
+    "---",
+    "From Axiom Infrastructure",
+    "getaxiom.ca"
+  ].join("\n");
 }
 
 function escapeHtml(value: string) {
@@ -655,18 +667,67 @@ export function buildHtmlEmail(bodyPlain: string) {
   const paragraphs = bodyPlain
     .split(/\n{2,}/)
     .map((paragraph) => paragraph.trim())
-    .filter(Boolean)
+    .filter(Boolean);
+
+  // Find the signature (last line containing just the name, usually after blank lines)
+  let signature = "";
+  let contentParagraphs = paragraphs;
+
+  if (paragraphs.length > 0) {
+    const lastParagraph = paragraphs[paragraphs.length - 1];
+    const lines = lastParagraph.split("\n");
+    if (lines.length > 0) {
+      const possibleSignature = lines[lines.length - 1].trim();
+      // Check if it looks like a signature (short, capitalized, single word or two)
+      if (possibleSignature.length < 30 && possibleSignature.match(/^[A-Z][a-z]+(\s[A-Z][a-z]+)?$/)) {
+        signature = possibleSignature;
+        // Remove signature from last paragraph
+        const remaining = lines.slice(0, -1).join("\n").trim();
+        contentParagraphs = [...paragraphs.slice(0, -1), remaining].filter(Boolean);
+      }
+    }
+  }
+
+  const bodyParagraphs = contentParagraphs
     .map(
       (paragraph) =>
-        `<p style="margin:0 0 16px;font-size:15px;line-height:1.65;color:#1a1a1a;">${escapeHtml(paragraph).replace(/\n/g, "<br />")}</p>`,
+        `<p style="margin:0 0 16px;font-size:15px;line-height:1.75;color:#1f2937;font-family:'Segoe UI',sans-serif;">${escapeHtml(paragraph).replace(/\n/g, "<br />")}</p>`,
     )
     .join("");
 
+  const signatureHtml = signature
+    ? `<p style="margin:24px 0 0 0;font-size:14px;line-height:1.6;color:#4b5563;font-family:'Segoe UI',sans-serif;border-top:1px solid #e5e7eb;padding-top:16px;">Best,<br /><strong style="color:#1f2937;">${escapeHtml(signature)}</strong></p>`
+    : "";
+
   return [
-    `<div style="background:#ffffff;padding:0;margin:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">`,
-    `<div style="max-width:620px;margin:0 auto;padding:0;">`,
-    paragraphs,
+    `<!DOCTYPE html>`,
+    `<html>`,
+    `<head>`,
+    `<meta charset="utf-8">`,
+    `<meta name="viewport" content="width=device-width, initial-scale=1.0">`,
+    `<style type="text/css">`,
+    `body { margin:0; padding:0; background:#f9fafb; }`,
+    `.email-container { background:#ffffff; max-width:620px; margin:0 auto; }`,
+    `.email-content { padding:40px 32px; }`,
+    `p { margin:0 0 16px 0; }`,
+    `a { color:#10b981; text-decoration:none; }`,
+    `a:hover { text-decoration:underline; }`,
+    `@media (max-width:480px) { .email-content { padding:24px 20px; } }`,
+    `</style>`,
+    `</head>`,
+    `<body style="margin:0;padding:16px;background:#f9fafb;font-family:'Segoe UI','Helvetica Neue',sans-serif;">`,
+    `<div class="email-container" style="background:#ffffff;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08);">`,
+    `<div class="email-content" style="padding:40px 32px;">`,
+    bodyParagraphs,
+    signatureHtml,
+    `</div>`,
+    `<div style="background:#f0fdf4;border-top:1px solid #e5e7eb;padding:20px 32px;text-align:center;">`,
+    `<p style="margin:0;font-size:12px;color:#6b7280;font-family:'Segoe UI',sans-serif;">`,
+    `From Axiom Infrastructure • <a href="https://getaxiom.ca" style="color:#10b981;text-decoration:none;">getaxiom.ca</a>`,
+    `</p>`,
     `</div>`,
     `</div>`,
+    `</body>`,
+    `</html>`,
   ].join("");
 }
