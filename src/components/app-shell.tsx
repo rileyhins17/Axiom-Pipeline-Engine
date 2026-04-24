@@ -1,8 +1,10 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Bell, CheckCircle2, HelpCircle, Plus, Settings } from "lucide-react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
+import { authClient } from "@/lib/auth-client";
 import { AppSidebar } from "@/components/app-sidebar";
 import { LayoutBreadcrumb } from "@/components/layout-breadcrumb";
 import { SearchTrigger } from "@/components/system/search-trigger";
@@ -18,6 +20,21 @@ function isPublicPath(pathname: string) {
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const [session, setSession] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    authClient.getSession().then((result) => {
+      setSession(result.data);
+      setLoading(false);
+    });
+  }, []);
+
+  const handleNewClick = () => router.push("/hunt");
+  const handleNotificationsClick = () => router.push("/automation?tab=overview");
+  const handleSettingsClick = () => router.push("/settings");
+  const handleHelpClick = () => window.open("https://docs.getaxiom.ca", "_blank");
 
   if (isPublicPath(pathname)) {
     return (
@@ -40,31 +57,47 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
             <SearchTrigger />
             <div className="hidden items-center gap-2 md:flex">
-              <Button size="sm" className="h-9 rounded-md bg-emerald-400 px-3 text-sm font-semibold text-black hover:bg-emerald-300">
+              <Button
+                size="sm"
+                onClick={handleNewClick}
+                className="h-9 rounded-md bg-emerald-400 px-3 text-sm font-semibold text-black hover:bg-emerald-300 cursor-pointer"
+              >
                 <Plus className="size-4" />
                 New
               </Button>
               <span className="h-7 w-px bg-white/[0.08]" />
-              <IconButton label="Notifications">
+              <IconButton label="Notifications" onClick={handleNotificationsClick}>
                 <Bell className="size-4" />
                 <span className="absolute -right-1 -top-1 rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
                   12
                 </span>
               </IconButton>
-              <IconButton label="Help">
+              <IconButton label="Help" onClick={handleHelpClick}>
                 <HelpCircle className="size-4" />
               </IconButton>
-              <IconButton label="Settings">
+              <IconButton label="Settings" onClick={handleSettingsClick}>
                 <Settings className="size-4" />
               </IconButton>
             </div>
             <div className="hidden items-center gap-3 pl-2 lg:flex">
               <div className="text-right">
-                <div className="text-xs font-semibold text-white">Alex Morgan</div>
-                <div className="text-[11px] text-zinc-500">Admin</div>
+                <div className="text-xs font-semibold text-white">
+                  {loading ? "Loading..." : session?.user?.name || session?.user?.email || "User"}
+                </div>
+                <div className="text-[11px] text-zinc-500">
+                  {session?.user?.role ? session.user.role.charAt(0).toUpperCase() + session.user.role.slice(1) : "User"}
+                </div>
               </div>
               <div className="flex size-9 items-center justify-center rounded-full bg-[#111d2b] text-xs font-semibold text-cyan-200">
-                AM
+                {(() => {
+                  if (!session?.user?.name) return "?";
+                  return session.user.name
+                    .split(" ")
+                    .map((word: string) => word[0])
+                    .join("")
+                    .toUpperCase()
+                    .slice(0, 2);
+                })()}
               </div>
             </div>
           </div>
@@ -92,12 +125,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   );
 }
 
-function IconButton({ label, children }: { label: string; children: React.ReactNode }) {
+function IconButton({
+  label,
+  children,
+  onClick,
+}: {
+  label: string;
+  children: React.ReactNode;
+  onClick?: () => void;
+}) {
   return (
     <button
       type="button"
       aria-label={label}
-      className="relative flex size-9 items-center justify-center rounded-md border border-white/[0.1] bg-white/[0.03] text-zinc-400 transition-colors hover:bg-white/[0.06] hover:text-white"
+      onClick={onClick}
+      className="relative flex size-9 items-center justify-center rounded-md border border-white/[0.1] bg-white/[0.03] text-zinc-400 transition-colors hover:bg-white/[0.06] hover:text-white cursor-pointer"
     >
       {children}
     </button>
