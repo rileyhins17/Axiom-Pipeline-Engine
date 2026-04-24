@@ -99,6 +99,22 @@ function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview
     }
   };
 
+  const handleSendNow = async () => {
+    const d = await exec<{ sent: number; failed: number }>("send", () =>
+      fetch("/api/outreach/send", { method: "POST" }),
+    );
+    if (d) {
+      const parts: string[] = [];
+      if (d.sent > 0) parts.push(`${d.sent} sent`);
+      if (d.failed > 0) parts.push(`${d.failed} failed`);
+      toast(parts.length > 0 ? parts.join(", ") : "No emails to send.", {
+        type: d.failed > 0 ? "error" : "success",
+        icon: "note",
+      });
+      await refresh();
+    }
+  };
+
   const updateSeq = async (id: string, action: string) => {
     const d = await exec(`${action}:${id}`, () =>
       fetch(`/api/outreach/automation/sequences/${id}`, {
@@ -243,7 +259,7 @@ function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview
       <TabBar tabs={tabs} activeTab={tab} onSelect={setTab} />
 
       <div id={`panel-${tab}`} role="tabpanel" aria-labelledby={`tab-${tab}`} className="pt-1">
-        {tab === "overview" && <OverviewTab overview={overview} onPause={handleTogglePause} busyKey={busyKey} />}
+        {tab === "overview" && <OverviewTab overview={overview} onSendNow={handleSendNow} onPause={handleTogglePause} busyKey={busyKey} />}
         {tab === "queue" && <QueueTab overview={overview} busyKey={busyKey} onUpdateSeq={updateSeq} />}
         {tab === "mailboxes" && (
           <MailboxesTab mailboxes={overview.mailboxes} busyKey={busyKey} onUpdateMailbox={updateMailbox} />
