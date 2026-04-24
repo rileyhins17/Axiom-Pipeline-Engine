@@ -209,15 +209,16 @@ function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview
   ];
 
   return (
-    <div className="animate-slide-up">
+    <div className="animate-slide-up space-y-6">
       {/* Header */}
-      <header className="flex flex-col gap-5 pb-6 lg:flex-row lg:items-center lg:justify-between">
+      <header className="app-shell-surface flex flex-col gap-5 rounded-[28px] p-5 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-center gap-5">
           <ProgressRing progress={progress} sentToday={sentToday} paceStatus={paceStatus} />
 
           <div className="min-w-0">
-            <h1 className="text-2xl font-semibold tracking-tight text-white">Automation</h1>
-            <p className="mt-0.5 text-sm text-zinc-400">
+            <p className="app-eyebrow">Automation</p>
+            <h1 className="app-title mt-2 text-3xl font-semibold">Follow-up engine and mailbox control.</h1>
+            <p className="mt-2 text-sm text-zinc-400">
               Outreach engine — target {DAILY_TARGET} emails/day
             </p>
             <div className="mt-2.5 flex flex-wrap items-center gap-x-2.5 gap-y-1.5">

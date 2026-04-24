@@ -143,18 +143,19 @@ export function SettingsClient({ runtimeStatus }: { runtimeStatus: RuntimeStatus
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <div className="animate-slide-up">
-        <h1 className="text-4xl font-extrabold tracking-tight">
-          <span className="gradient-text">Settings</span>
+    <div className="mx-auto max-w-6xl space-y-6">
+      <div className="app-shell-surface animate-slide-up rounded-[28px] p-6">
+        <p className="app-eyebrow">Settings</p>
+        <h1 className="app-title mt-2 text-3xl font-semibold md:text-4xl">
+          Runtime controls, safety rails, and operator preferences.
         </h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Runtime controls and protected environment status for Axiom Pipeline Engine.
+        <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-400">
+          Keep sensitive configuration readable, keep destructive actions isolated, and keep the browser experience tuned for long work sessions.
         </p>
       </div>
 
       <Card
-        className="glass-strong animate-slide-up rounded-xl glow-emerald"
+        className="animate-slide-up rounded-2xl"
         style={{ animationDelay: "100ms" }}
       >
         <CardHeader>
@@ -203,7 +204,7 @@ export function SettingsClient({ runtimeStatus }: { runtimeStatus: RuntimeStatus
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card
-          className="glass-strong animate-slide-up rounded-xl glow-cyan"
+          className="animate-slide-up rounded-2xl"
           style={{ animationDelay: "160ms" }}
         >
           <CardHeader>
@@ -241,7 +242,7 @@ export function SettingsClient({ runtimeStatus }: { runtimeStatus: RuntimeStatus
         </Card>
 
         <Card
-          className="glass-strong animate-slide-up rounded-xl glow-emerald"
+          className="animate-slide-up rounded-2xl"
           style={{ animationDelay: "220ms" }}
         >
           <CardHeader>
@@ -281,7 +282,7 @@ export function SettingsClient({ runtimeStatus }: { runtimeStatus: RuntimeStatus
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card
-          className="glass-strong animate-slide-up rounded-xl glow-emerald"
+          className="animate-slide-up rounded-2xl"
           style={{ animationDelay: "260ms" }}
         >
           <CardHeader>
@@ -342,7 +343,7 @@ export function SettingsClient({ runtimeStatus }: { runtimeStatus: RuntimeStatus
         </Card>
 
         <Card
-          className="glass-strong animate-slide-up rounded-xl glow-amber"
+          className="animate-slide-up rounded-2xl"
           style={{ animationDelay: "320ms" }}
         >
           <CardHeader>

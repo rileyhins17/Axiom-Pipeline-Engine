@@ -392,29 +392,48 @@ export function OutreachDatabase({
     filtered.length > 0 && filtered.every((l) => selectedIds.has(l.id));
 
   return (
-    <div className="space-y-4 pb-24">
+    <div className="space-y-5 pb-24">
       {/* Header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div className="app-shell-surface rounded-[28px] p-5 md:p-6">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-white">Outreach</h1>
-          <p className="mt-0.5 text-sm text-zinc-500">
+          <p className="app-eyebrow">Outreach Command</p>
+          <h1 className="app-title mt-2 text-3xl font-semibold md:text-4xl">Prepare, approve, and send from one table.</h1>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-400">
             Lead database — {stats.total.toLocaleString()} leads
           </p>
         </div>
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
+        <div className="relative mt-5">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search leads…"
-            className="h-8 w-64 rounded-lg border border-white/[0.06] bg-white/[0.02] pl-9 pr-3 text-xs text-zinc-200 placeholder:text-zinc-600 focus:border-white/20 focus:outline-none focus:ring-1 focus:ring-white/10"
+            className="h-11 w-full rounded-full border border-white/[0.09] bg-black/25 pl-10 pr-4 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-white/20 focus:outline-none focus:ring-1 focus:ring-white/10 lg:w-80"
           />
+        </div>
+        <div className="mt-5 grid gap-3 md:grid-cols-4">
+          <div className="app-panel-quiet rounded-2xl p-4">
+            <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">Total leads</div>
+            <div className="mt-2 text-2xl font-semibold text-white">{stats.total.toLocaleString()}</div>
+          </div>
+          <div className="app-panel-quiet rounded-2xl p-4">
+            <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">Needs prep</div>
+            <div className="mt-2 text-2xl font-semibold text-violet-200">{(stats.notContacted + stats.enriching).toLocaleString()}</div>
+          </div>
+          <div className="app-panel-quiet rounded-2xl p-4">
+            <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">Ready</div>
+            <div className="mt-2 text-2xl font-semibold text-emerald-200">{stats.readyForTouch.toLocaleString()}</div>
+          </div>
+          <div className="app-panel-quiet rounded-2xl p-4">
+            <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">Follow-ups</div>
+            <div className="mt-2 text-2xl font-semibold text-amber-200">{stats.followUp.toLocaleString()}</div>
+          </div>
         </div>
       </div>
 
       {/* Filter bar */}
-      <div className="flex flex-wrap gap-1 border-b border-white/[0.06] pb-3">
+      <div className="app-panel-subtle flex flex-wrap gap-1 rounded-2xl p-2">
         {FILTERS.map((f) => {
           const count = stats[f.statKey];
           const isActive = filter === f.id;
@@ -422,9 +441,9 @@ export function OutreachDatabase({
             <button
               key={f.id}
               onClick={() => setFilter(f.id)}
-              className={`cursor-pointer rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+              className={`cursor-pointer rounded-xl px-3 py-2 text-xs font-medium transition-colors ${
                 isActive
-                  ? "bg-white/10 text-white"
+                  ? "bg-white/10 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]"
                   : "text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-300"
               }`}
             >
@@ -444,10 +463,10 @@ export function OutreachDatabase({
       </div>
 
       {/* Table */}
-      <div className="overflow-x-auto rounded-xl border border-white/[0.06] bg-white/[0.02]">
+      <div className="overflow-x-auto rounded-[22px] border border-white/[0.08] bg-white/[0.025] shadow-[0_18px_60px_rgba(0,0,0,0.18)]">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-white/[0.06] text-[11px] text-zinc-500">
+            <tr className="border-b border-white/[0.08] bg-black/20 text-[11px] uppercase tracking-[0.14em] text-zinc-500">
               <th className="w-8 px-3 py-2">
                 <input
                   type="checkbox"
@@ -467,7 +486,7 @@ export function OutreachDatabase({
               <SortTh label="Added" sortKey="createdAt" active={sortKey} dir={sortDir} onClick={toggleSort} />
             </tr>
           </thead>
-          <tbody className="divide-y divide-white/[0.04]">
+          <tbody className="divide-y divide-white/[0.05]">
             {filtered.length === 0 ? (
               <tr>
                 <td className="px-3 py-8 text-center text-xs text-zinc-500" colSpan={8}>
@@ -481,7 +500,7 @@ export function OutreachDatabase({
                   <tr
                     key={lead.id}
                     className={`group transition-colors ${
-                      isSelected ? "bg-cyan-500/[0.06]" : "hover:bg-white/[0.02]"
+                      isSelected ? "bg-cyan-500/[0.08]" : "hover:bg-white/[0.035]"
                     }`}
                   >
                     <td className="px-3 py-2.5">
@@ -556,7 +575,7 @@ export function OutreachDatabase({
       </div>
 
       {/* Count */}
-      <div className="text-xs tabular-nums text-zinc-600">
+      <div className="text-xs tabular-nums text-zinc-500">
         Showing {filtered.length.toLocaleString()} of {stats.total.toLocaleString()} leads
       </div>
 

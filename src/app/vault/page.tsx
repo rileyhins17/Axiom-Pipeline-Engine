@@ -73,17 +73,14 @@ export default async function VaultPage() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
-      <section className="rounded-[28px] border border-white/[0.06] bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] px-6 py-6">
+      <section className="app-shell-surface rounded-[28px] px-6 py-7">
         <div className="max-w-3xl">
-          <p className="text-[11px] uppercase tracking-[0.32em] text-emerald-400/80">
-            Axiom Pipeline Engine
-          </p>
-          <h1 className="mt-3 text-3xl font-semibold tracking-tight text-white md:text-4xl">
-            Vault
+          <p className="app-eyebrow">Vault</p>
+          <h1 className="app-title mt-3 text-3xl font-semibold md:text-4xl">
+            Verify the lead base before anything moves downstream.
           </h1>
           <p className="mt-2 text-sm leading-6 text-zinc-400">
-            Browse the lead database, verify records, and export filtered slices without the extra
-            dashboard noise.
+            Browse, filter, review, and export records with the same connected operating system used by Outreach and Automation.
           </p>
         </div>
       </section>
@@ -112,7 +109,7 @@ export default async function VaultPage() {
         />
       </section>
 
-      <Card className="overflow-hidden rounded-[28px] border-white/[0.06] bg-white/[0.02]">
+      <Card className="overflow-hidden rounded-[28px]">
         <CardHeader className="pb-3">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">

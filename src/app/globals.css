@@ -83,37 +83,37 @@
 }
 
 .dark {
-  --background: oklch(0.08 0.008 160);
-  --foreground: oklch(0.95 0.01 160);
-  --card: oklch(0.11 0.01 158);
-  --card-foreground: oklch(0.95 0.01 160);
-  --popover: oklch(0.11 0.01 158);
-  --popover-foreground: oklch(0.95 0.01 160);
-  --primary: oklch(0.75 0.18 160);
-  --primary-foreground: oklch(0.08 0.008 160);
-  --secondary: oklch(0.16 0.014 158);
-  --secondary-foreground: oklch(0.95 0.01 160);
-  --muted: oklch(0.16 0.014 158);
-  --muted-foreground: oklch(0.60 0.02 160);
-  --accent: oklch(0.16 0.018 158);
-  --accent-foreground: oklch(0.95 0.01 160);
+  --background: oklch(0.105 0.006 250);
+  --foreground: oklch(0.94 0.006 250);
+  --card: oklch(0.145 0.008 250);
+  --card-foreground: oklch(0.94 0.006 250);
+  --popover: oklch(0.135 0.008 250);
+  --popover-foreground: oklch(0.94 0.006 250);
+  --primary: oklch(0.78 0.145 166);
+  --primary-foreground: oklch(0.09 0.006 250);
+  --secondary: oklch(0.18 0.01 250);
+  --secondary-foreground: oklch(0.94 0.006 250);
+  --muted: oklch(0.18 0.01 250);
+  --muted-foreground: oklch(0.62 0.012 250);
+  --accent: oklch(0.2 0.016 230);
+  --accent-foreground: oklch(0.94 0.006 250);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 6%);
-  --input: oklch(1 0 0 / 10%);
-  --ring: oklch(0.75 0.18 160);
-  --chart-1: oklch(0.75 0.18 160);
-  --chart-2: oklch(0.70 0.15 195);
+  --border: oklch(1 0 0 / 8%);
+  --input: oklch(1 0 0 / 11%);
+  --ring: oklch(0.78 0.145 166);
+  --chart-1: oklch(0.78 0.145 166);
+  --chart-2: oklch(0.74 0.13 205);
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.06 0.01 160);
-  --sidebar-foreground: oklch(0.95 0.01 160);
-  --sidebar-primary: oklch(0.75 0.18 160);
-  --sidebar-primary-foreground: oklch(0.95 0.01 160);
-  --sidebar-accent: oklch(0.12 0.014 158);
-  --sidebar-accent-foreground: oklch(0.95 0.01 160);
-  --sidebar-border: oklch(1 0 0 / 6%);
-  --sidebar-ring: oklch(0.75 0.18 160);
+  --sidebar: oklch(0.082 0.008 250);
+  --sidebar-foreground: oklch(0.94 0.006 250);
+  --sidebar-primary: oklch(0.78 0.145 166);
+  --sidebar-primary-foreground: oklch(0.94 0.006 250);
+  --sidebar-accent: oklch(0.155 0.01 250);
+  --sidebar-accent-foreground: oklch(0.94 0.006 250);
+  --sidebar-border: oklch(1 0 0 / 8%);
+  --sidebar-ring: oklch(0.78 0.145 166);
 }
 
 @layer base {
@@ -123,6 +123,11 @@
 
   body {
     @apply bg-background text-foreground;
+    background:
+      linear-gradient(180deg, rgba(20, 24, 31, 0.96) 0%, rgba(9, 11, 15, 1) 44rem),
+      linear-gradient(120deg, rgba(16, 185, 129, 0.08), transparent 42%),
+      #080a0d;
+    min-height: 100vh;
   }
 }
 
@@ -957,6 +962,78 @@ body::after {
 
 .perf-mode .skeleton-shimmer {
   animation: none !important;
+}
+
+/* ========== CONNECTED OPS REFINEMENT LAYER ========== */
+body::before {
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.014) 1px, transparent 1px) !important;
+  background-size: 48px 48px !important;
+  animation: none !important;
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.72), transparent 68%);
+  opacity: 1 !important;
+}
+
+body::after {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.028), transparent) !important;
+  animation: none !important;
+  opacity: 0.55 !important;
+}
+
+.app-shell-surface {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.012)),
+    rgba(9, 11, 15, 0.74);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.32);
+}
+
+.app-panel {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.046), rgba(255, 255, 255, 0.018));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 18px 70px rgba(0, 0, 0, 0.22);
+}
+
+.app-panel-subtle {
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.026);
+}
+
+.app-panel-quiet {
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.app-eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(52, 211, 153, 0.82);
+}
+
+.app-title {
+  letter-spacing: -0.02em;
+  color: white;
+}
+
+.app-muted {
+  color: rgb(161 161 170);
+}
+
+.workflow-node {
+  position: relative;
+}
+
+.workflow-node:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  width: 22px;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(52, 211, 153, 0.35), rgba(255, 255, 255, 0.08));
 }
 
 /* ========== TOAST ANIMATIONS ========== */

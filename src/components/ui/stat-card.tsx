@@ -28,16 +28,16 @@ export function StatCard({
   return (
     <div
       className={cn(
-        "rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4",
+        "app-panel rounded-2xl p-4 transition-colors hover:border-white/[0.14]",
         glowClass,
         className,
       )}
     >
-      <div className="mb-4 flex items-center justify-between">
-        <span className="text-[11px] font-medium text-zinc-500">{label}</span>
-        <div className={cn("[&>svg]:h-4 [&>svg]:w-4", iconColor)}>{icon}</div>
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-zinc-500">{label}</span>
+        <div className={cn("rounded-lg border border-white/[0.08] bg-black/20 p-2 [&>svg]:h-4 [&>svg]:w-4", iconColor)}>{icon}</div>
       </div>
-      <div className={cn("text-3xl font-semibold leading-none", iconColor)}>{value}</div>
+      <div className="text-3xl font-semibold leading-none text-white">{value}</div>
       {subtitle && <div className="mt-2 text-sm text-zinc-500">{subtitle}</div>}
       {trend && (
         <div

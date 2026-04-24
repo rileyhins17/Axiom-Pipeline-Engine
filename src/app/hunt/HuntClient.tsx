@@ -233,15 +233,15 @@ function HuntInner({ initialIntakeLeads }: { initialIntakeLeads: IntakeLead[] })
 
   return (
     <div className="mx-auto max-w-7xl space-y-8">
-      <section className="rounded-[26px] border border-white/[0.06] bg-[radial-gradient(circle_at_right_top,rgba(34,197,94,0.08),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] px-6 py-5 shadow-[0_20px_80px_rgba(0,0,0,0.35)] md:px-8">
+      <section className="app-shell-surface rounded-[28px] px-6 py-6 md:px-8">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
           <div className="min-w-0">
-            <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-[10px] font-mono uppercase tracking-[0.28em] text-emerald-300">
+            <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-[10px] font-mono uppercase tracking-[0.22em] text-emerald-300">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_14px_rgba(52,211,153,0.7)]" />
               Lead Generator
             </div>
-            <h1 className="mt-4 max-w-4xl text-3xl font-semibold tracking-tight text-white md:text-4xl">
-              Launch one market and watch the Axiom fit score update live.
+            <h1 className="app-title mt-4 max-w-4xl text-3xl font-semibold md:text-4xl">
+              Launch a market, score the results, and hand good leads to Outreach.
             </h1>
             <p className="mt-3 max-w-4xl text-sm leading-6 text-zinc-400 md:text-base">
               Single-target launch, real-time scoring, and diagnostics kept behind the scenes until you actually need them.
