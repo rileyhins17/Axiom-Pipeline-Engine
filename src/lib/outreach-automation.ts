@@ -1804,7 +1804,7 @@ async function sendScheduledStep(
       subject: email.subject,
       bodyHtml: email.bodyHtml,
       bodyPlain: email.bodyPlain,
-      generationModel: "deepseek/deepseek-chat",
+      generationModel: "deepseek-chat",
       claimedByRunId: runId,
     },
   });

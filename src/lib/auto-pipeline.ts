@@ -110,7 +110,7 @@ async function resetStuckEnriching(prisma: ReturnType<typeof getPrisma>): Promis
 }
 
 /**
- * Auto-enrich leads using OpenRouter/DeepSeek.
+ * Auto-enrich leads using DeepSeek.
  *
  * Parallelized in small chunks so a single cron tick can drain meaningful
  * backlogs (sequential x 10 was topping out ~150s which blows the worker

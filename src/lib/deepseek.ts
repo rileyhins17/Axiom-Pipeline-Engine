@@ -1,29 +1,16 @@
 /**
- * DeepSeek Chat API Client (via OpenRouter)
+ * DeepSeek Chat API Client (direct)
  *
- * Lightweight wrapper around OpenRouter's API using the deepseek-chat model.
- * Uses raw fetch() — fully Cloudflare Workers compatible.
+ * Lightweight wrapper around DeepSeek's official API using raw fetch() —
+ * fully Cloudflare Workers compatible. No OpenRouter middleman.
  */
 
 import { getServerEnv } from "@/lib/env";
 
-const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
-const DEFAULT_MODEL = "deepseek/deepseek-chat";
-/**
- * When the primary paid model errors with an insufficient-credits / auth /
- * hard rate-limit response, fall through this list in order. These are free
- * or very cheap OpenRouter tier models that keep the pipeline moving even
- * if the operator forgets to top up credits. Ordered best-quality first.
- */
-const FALLBACK_MODELS = [
-  "deepseek/deepseek-chat-v3-0324:free",
-  "meta-llama/llama-3.3-70b-instruct:free",
-  "google/gemini-2.0-flash-exp:free",
-];
+const DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions";
+const DEFAULT_MODEL = "deepseek-chat";
 const MAX_RETRIES = 3;
 const INITIAL_RETRY_DELAY_MS = 1000;
-/** OpenRouter returns 402 when the account has no credits. */
-const INSUFFICIENT_CREDITS_STATUS = 402;
 
 export type ChatMessage = {
   role: "system" | "user" | "assistant";
@@ -62,13 +49,18 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Call the DeepSeek chat completions endpoint with automatic retries.
+ * Call the DeepSeek chat completions endpoint with automatic retries on
+ * 429 / transient 5xx. Client errors (4xx other than 429) bubble immediately.
  */
-async function callModel(
-  model: string,
-  options: DeepSeekOptions,
-  apiKey: string,
-): Promise<DeepSeekResponse> {
+export async function chatCompletion(options: DeepSeekOptions): Promise<DeepSeekResponse> {
+  const env = getServerEnv();
+
+  if (!env.DEEPSEEK_API_KEY) {
+    throw new DeepSeekError(500, "DEEPSEEK_API_KEY is not configured");
+  }
+
+  const model = options.model || DEFAULT_MODEL;
+
   const body: Record<string, unknown> = {
     model,
     messages: options.messages,
@@ -85,11 +77,11 @@ async function callModel(
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
-      const response = await fetch(OPENROUTER_API_URL, {
+      const response = await fetch(DEEPSEEK_API_URL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
+          Authorization: `Bearer ${env.DEEPSEEK_API_KEY}`,
         },
         body: JSON.stringify(body),
       });
@@ -130,7 +122,7 @@ async function callModel(
       lastError = error instanceof Error ? error : new Error(String(error));
 
       if (error instanceof DeepSeekError && error.status >= 400 && error.status < 500 && error.status !== 429) {
-        // Client error (not rate limit) — don't retry this model
+        // Client error (not rate limit) — don't retry
         throw error;
       }
 
@@ -141,53 +133,6 @@ async function callModel(
   }
 
   throw lastError || new DeepSeekError(500, "DeepSeek API call failed after retries");
-}
-
-/**
- * Call the DeepSeek chat completions endpoint with automatic retries.
- * On a 402 (insufficient credits) or 401 (auth) response from the primary
- * paid model, transparently falls through to free OpenRouter models so the
- * pipeline keeps moving even when the paid account is dry.
- */
-export async function chatCompletion(options: DeepSeekOptions): Promise<DeepSeekResponse> {
-  const env = getServerEnv();
-
-  if (!env.OPENROUTER_API_KEY) {
-    throw new DeepSeekError(500, "OPENROUTER_API_KEY is not configured");
-  }
-
-  const primaryModel = options.model || DEFAULT_MODEL;
-  // Only fall back when caller didn't explicitly pin a model.
-  const chain = options.model
-    ? [primaryModel]
-    : [primaryModel, ...FALLBACK_MODELS];
-
-  let lastError: Error | null = null;
-
-  for (const model of chain) {
-    try {
-      return await callModel(model, options, env.OPENROUTER_API_KEY);
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error));
-
-      // Only fall through on "can't charge you" / "who are you" responses.
-      // Everything else (bad request, server error, etc.) should bubble so
-      // we see real bugs rather than masking them behind free models.
-      if (
-        error instanceof DeepSeekError &&
-        (error.status === INSUFFICIENT_CREDITS_STATUS || error.status === 401)
-      ) {
-        console.warn(
-          `[deepseek] model=${model} status=${error.status} — falling through to next model`,
-        );
-        continue;
-      }
-
-      throw error;
-    }
-  }
-
-  throw lastError || new DeepSeekError(500, "All OpenRouter models failed");
 }
 
 /**
