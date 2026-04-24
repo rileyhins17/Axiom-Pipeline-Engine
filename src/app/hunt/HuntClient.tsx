@@ -233,18 +233,28 @@ function HuntInner({ initialIntakeLeads }: { initialIntakeLeads: IntakeLead[] })
 
   return (
     <div className="mx-auto max-w-7xl space-y-8">
-      <section className="app-shell-surface rounded-[28px] px-6 py-6 md:px-8">
-        <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
+      <section className="relative overflow-hidden rounded-3xl border border-white/[0.06] bg-[radial-gradient(ellipse_900px_350px_at_top_right,rgba(34,197,94,0.10),transparent_60%),radial-gradient(ellipse_700px_250px_at_top_left,rgba(34,211,238,0.08),transparent_60%),linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.005))] px-6 py-8 md:px-10 md:py-10">
+        <div
+          className="pointer-events-none absolute inset-0 opacity-[0.025]"
+          style={{
+            backgroundImage:
+              "linear-gradient(to right, white 1px, transparent 1px), linear-gradient(to bottom, white 1px, transparent 1px)",
+            backgroundSize: "48px 48px",
+          }}
+          aria-hidden
+        />
+        <div className="relative flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
           <div className="min-w-0">
-            <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-[10px] font-mono uppercase tracking-[0.22em] text-emerald-300">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_14px_rgba(52,211,153,0.7)]" />
+            <div className="inline-flex items-center gap-2 rounded-full border border-cyan-500/20 bg-cyan-500/[0.08] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-cyan-300">
+              <Target className="h-3 w-3" />
               Lead Generator
             </div>
-            <h1 className="app-title mt-4 max-w-4xl text-3xl font-semibold md:text-4xl">
-              Launch a market, score the results, and hand good leads to Outreach.
+            <h1 className="mt-4 max-w-4xl text-4xl font-semibold tracking-tight text-white md:text-5xl">
+              Source markets in real time.
             </h1>
-            <p className="mt-3 max-w-4xl text-sm leading-6 text-zinc-400 md:text-base">
-              Single-target launch, real-time scoring, and diagnostics kept behind the scenes until you actually need them.
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-400 md:text-base">
+              Pick a niche + city, hit launch, and watch the Axiom score update live as the worker
+              streams results.
             </p>
           </div>
 

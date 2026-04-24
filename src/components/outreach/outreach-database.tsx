@@ -6,12 +6,20 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowUpDown,
   ChevronDown,
+  ChevronRight,
+  CircleDashed,
+  Globe,
   Loader2,
   Mail,
+  MailCheck,
+  MessageSquare,
   Search,
+  Send,
   Sparkles,
+  UserCircle2,
   Wand2,
   X,
+  XCircle,
   Zap,
 } from "lucide-react";
 
@@ -62,19 +70,104 @@ type FilterId =
   | "replied"
   | "not_interested";
 
-const FILTERS: { id: FilterId; label: string; statKey: keyof Stats }[] = [
-  { id: "all", label: "All", statKey: "total" },
-  { id: "not_contacted", label: "New", statKey: "notContacted" },
-  { id: "enriching", label: "Enriching", statKey: "enriching" },
-  { id: "enriched", label: "Enriched", statKey: "enriched" },
-  { id: "ready", label: "Ready", statKey: "readyForTouch" },
-  { id: "outreached", label: "Sent", statKey: "outreached" },
-  { id: "follow_up", label: "Follow-up", statKey: "followUp" },
-  { id: "replied", label: "Replied", statKey: "replied" },
-  { id: "not_interested", label: "Declined", statKey: "notInterested" },
+type StageDef = {
+  id: FilterId;
+  label: string;
+  shortLabel: string;
+  statKey: keyof Stats;
+  icon: typeof CircleDashed;
+  accentFrom: string;
+  accentTo: string;
+  accentText: string;
+  description: string;
+};
+
+// Ordered left-to-right as leads move through the funnel. "All" and the two
+// terminal states (Replied / Declined) sit outside the main funnel as chips.
+const FUNNEL_STAGES: StageDef[] = [
+  {
+    id: "not_contacted",
+    label: "New",
+    shortLabel: "New",
+    statKey: "notContacted",
+    icon: CircleDashed,
+    accentFrom: "from-zinc-500/30",
+    accentTo: "to-zinc-600/10",
+    accentText: "text-zinc-300",
+    description: "Sourced — awaiting enrichment",
+  },
+  {
+    id: "enriching",
+    label: "Enriching",
+    shortLabel: "Enriching",
+    statKey: "enriching",
+    icon: Wand2,
+    accentFrom: "from-violet-500/40",
+    accentTo: "to-violet-600/10",
+    accentText: "text-violet-300",
+    description: "AI is filling in contact + signals",
+  },
+  {
+    id: "enriched",
+    label: "Enriched",
+    shortLabel: "Enriched",
+    statKey: "enriched",
+    icon: Sparkles,
+    accentFrom: "from-blue-500/40",
+    accentTo: "to-blue-600/10",
+    accentText: "text-blue-300",
+    description: "Data complete — ready to qualify",
+  },
+  {
+    id: "ready",
+    label: "Ready",
+    shortLabel: "Ready",
+    statKey: "readyForTouch",
+    icon: MailCheck,
+    accentFrom: "from-emerald-500/40",
+    accentTo: "to-emerald-600/10",
+    accentText: "text-emerald-300",
+    description: "Approved for first-touch send",
+  },
+  {
+    id: "outreached",
+    label: "Sent",
+    shortLabel: "Sent",
+    statKey: "outreached",
+    icon: Send,
+    accentFrom: "from-cyan-500/40",
+    accentTo: "to-cyan-600/10",
+    accentText: "text-cyan-300",
+    description: "First email landed — awaiting reply",
+  },
+  {
+    id: "follow_up",
+    label: "Follow-up",
+    shortLabel: "Follow-up",
+    statKey: "followUp",
+    icon: Mail,
+    accentFrom: "from-amber-500/40",
+    accentTo: "to-amber-600/10",
+    accentText: "text-amber-300",
+    description: "Automated follow-up due",
+  },
 ];
 
-// Map ?stage= query param values to internal filter ids so Dashboard can deep-link.
+const TERMINAL_CHIPS: { id: FilterId; label: string; statKey: keyof Stats; tone: string }[] = [
+  {
+    id: "replied",
+    label: "Replied",
+    statKey: "replied",
+    tone: "border-emerald-500/30 bg-emerald-500/10 text-emerald-200",
+  },
+  {
+    id: "not_interested",
+    label: "Declined",
+    statKey: "notInterested",
+    tone: "border-red-500/30 bg-red-500/10 text-red-300",
+  },
+];
+
 const STAGE_QUERY_MAP: Record<string, FilterId> = {
   new: "not_contacted",
   "not-contacted": "not_contacted",
@@ -132,24 +225,25 @@ function statusLabel(status: string): string {
   return labels[status] || status;
 }
 
-function statusColor(status: string): string {
+function statusDotColor(status: string): string {
   switch (status) {
     case "REPLIED":
     case "INTERESTED":
-      return "border-emerald-500/20 bg-emerald-500/10 text-emerald-300";
+      return "bg-emerald-400";
     case "OUTREACHED":
+      return "bg-cyan-400";
     case "READY_FOR_FIRST_TOUCH":
-      return "border-cyan-500/20 bg-cyan-500/10 text-cyan-300";
+      return "bg-emerald-400";
     case "ENRICHING":
-      return "border-violet-500/20 bg-violet-500/10 text-violet-300";
+      return "bg-violet-400";
     case "ENRICHED":
-      return "border-blue-500/20 bg-blue-500/10 text-blue-300";
+      return "bg-blue-400";
     case "FOLLOW_UP_DUE":
-      return "border-amber-500/20 bg-amber-500/10 text-amber-300";
+      return "bg-amber-400";
     case "NOT_INTERESTED":
-      return "border-red-500/20 bg-red-500/10 text-red-300";
+      return "bg-red-400";
     default:
-      return "border-white/[0.06] bg-white/[0.04] text-zinc-400";
+      return "bg-zinc-500";
   }
 }
 
@@ -157,7 +251,43 @@ function fmtDate(d: string | null): string {
   if (!d) return "—";
   const dt = new Date(d);
   if (Number.isNaN(dt.getTime())) return "—";
+  const diff = Date.now() - dt.getTime();
+  const day = 86400000;
+  if (diff < day) return "today";
+  if (diff < 2 * day) return "yesterday";
+  if (diff < 7 * day) return `${Math.floor(diff / day)}d ago`;
   return dt.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function initials(name: string): string {
+  return name
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
+function tierColor(tier: string | null): string {
+  switch (tier) {
+    case "A":
+      return "border-emerald-500/40 bg-emerald-500/15 text-emerald-200";
+    case "B":
+      return "border-cyan-500/40 bg-cyan-500/15 text-cyan-200";
+    case "C":
+      return "border-amber-500/40 bg-amber-500/15 text-amber-200";
+    case "D":
+      return "border-red-500/40 bg-red-500/15 text-red-200";
+    default:
+      return "border-white/[0.08] bg-white/[0.04] text-zinc-400";
+  }
+}
+
+function scoreColor(score: number | null): string {
+  if (score == null) return "text-zinc-600";
+  if (score >= 70) return "text-emerald-300";
+  if (score >= 50) return "text-cyan-300";
+  if (score >= 35) return "text-amber-300";
+  return "text-zinc-500";
 }
 
 type SortKey =
@@ -183,7 +313,6 @@ export function OutreachDatabase({
   const searchParams = useSearchParams();
   const { toast } = useToast();
 
-  // Seed filter from ?stage= (Dashboard deep-links) on first render.
   const initialStage = searchParams.get("stage")?.toLowerCase() ?? null;
   const seededFilter: FilterId =
     initialStage && STAGE_QUERY_MAP[initialStage] ? STAGE_QUERY_MAP[initialStage] : "all";
@@ -197,15 +326,11 @@ export function OutreachDatabase({
   const [composerOpen, setComposerOpen] = useState(false);
   const [composerLeadIds, setComposerLeadIds] = useState<number[]>([]);
 
-  // Keep URL in sync with active filter so deep-links stay canonical and
-  // back/forward navigation works as expected.
   useEffect(() => {
     const params = new URLSearchParams(Array.from(searchParams.entries()));
     if (filter === "all") {
       params.delete("stage");
     } else {
-      // Use the first key in STAGE_QUERY_MAP that points to this filter for a
-      // human-readable URL. Fallback: the internal id.
       const humanKey =
         Object.entries(STAGE_QUERY_MAP).find(([, value]) => value === filter)?.[0] ?? filter;
       params.set("stage", humanKey);
@@ -260,9 +385,6 @@ export function OutreachDatabase({
     return results;
   }, [initialLeads, filter, search, sortKey, sortDir]);
 
-  // Derive selection metadata so buttons know when they're actionable. We only
-  // enable Queue / Send Now for leads already past enrichment, and Enrich for
-  // leads that still need it.
   const selection = useMemo(() => {
     const leads = filtered.filter((l) => selectedIds.has(l.id));
     return {
@@ -275,9 +397,8 @@ export function OutreachDatabase({
   }, [filtered, selectedIds]);
 
   const toggleSort = (key: SortKey) => {
-    if (sortKey === key) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
+    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
       setSortKey(key);
       setSortDir("desc");
     }
@@ -294,11 +415,8 @@ export function OutreachDatabase({
 
   const toggleAll = () => {
     const allVisible = filtered.every((l) => selectedIds.has(l.id));
-    if (allVisible && filtered.length > 0) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(filtered.map((l) => l.id)));
-    }
+    if (allVisible && filtered.length > 0) setSelectedIds(new Set());
+    else setSelectedIds(new Set(filtered.map((l) => l.id)));
   };
 
   const clearSelection = () => setSelectedIds(new Set());
@@ -306,10 +424,7 @@ export function OutreachDatabase({
   const queueForAutomation = async (immediate: boolean) => {
     const leadIds = selection.queueable.map((l) => l.id);
     if (leadIds.length === 0) {
-      toast("Select leads that are Ready or Enriched to queue them.", {
-        type: "error",
-        icon: "note",
-      });
+      toast("Select Ready or Enriched leads to queue.", { type: "error", icon: "note" });
       return;
     }
     setBusy(immediate ? "send-now" : "queue");
@@ -321,7 +436,6 @@ export function OutreachDatabase({
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error || "Failed to queue");
-
       const queued = data?.queued?.length || 0;
       const skipped = data?.skipped?.length || 0;
       toast(
@@ -359,10 +473,10 @@ export function OutreachDatabase({
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error || "Failed to enrich");
-      toast(`Enriched ${data?.enriched ?? leadIds.length} lead${leadIds.length === 1 ? "" : "s"}`, {
-        type: "success",
-        icon: "note",
-      });
+      toast(
+        `Enriched ${data?.enriched ?? leadIds.length} lead${leadIds.length === 1 ? "" : "s"}`,
+        { type: "success", icon: "note" },
+      );
       clearSelection();
       router.refresh();
     } catch (error) {
@@ -391,26 +505,47 @@ export function OutreachDatabase({
   const allVisibleSelected =
     filtered.length > 0 && filtered.every((l) => selectedIds.has(l.id));
 
+  // Compute max stage count for proportional bar heights in the funnel.
+  const maxStageValue = Math.max(1, ...FUNNEL_STAGES.map((s) => stats[s.statKey]));
+
   return (
-    <div className="space-y-5 pb-24">
-      {/* Header */}
-      <div className="app-shell-surface rounded-[28px] p-5 md:p-6">
-        <div>
-          <p className="app-eyebrow">Outreach Command</p>
-          <h1 className="app-title mt-2 text-3xl font-semibold md:text-4xl">Prepare, approve, and send from one table.</h1>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-400">
-            Lead database — {stats.total.toLocaleString()} leads
-          </p>
-        </div>
-        <div className="relative mt-5">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search leads…"
-            className="h-11 w-full rounded-full border border-white/[0.09] bg-black/25 pl-10 pr-4 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-white/20 focus:outline-none focus:ring-1 focus:ring-white/10 lg:w-80"
-          />
+    <div className="space-y-6 pb-28">
+      {/* Hero: page title + total + primary action */}
+      <div className="overflow-hidden rounded-3xl border border-white/[0.06] bg-[radial-gradient(ellipse_at_top_left,rgba(16,185,129,0.10),transparent_50%),radial-gradient(ellipse_at_top_right,rgba(59,130,246,0.08),transparent_50%)] px-6 py-7 md:px-8 md:py-9">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.28em] text-emerald-400/80">
+              <span className="relative inline-flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
+              </span>
+              Outreach Pipeline
+            </div>
+            <h1 className="mt-3 text-4xl font-semibold tracking-tight text-white md:text-5xl">
+              {stats.total.toLocaleString()}
+              <span className="ml-3 text-lg font-normal text-zinc-500">
+                lead{stats.total === 1 ? "" : "s"} across {FUNNEL_STAGES.length} stages
+              </span>
+            </h1>
+            <p className="mt-2 max-w-2xl text-sm text-zinc-400">
+              Move leads from sourced to sent. Click any stage to filter, select rows to enrich or
+              dispatch, or hit{" "}
+              <span className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 font-mono text-[11px] text-amber-200">
+                Send now
+              </span>{" "}
+              to fast-forward the queue.
+            </p>
+          </div>
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search business, city, email, contact…"
+              className="h-11 w-full rounded-xl border border-white/[0.08] bg-black/40 pl-11 pr-4 text-sm text-zinc-100 placeholder:text-zinc-600 backdrop-blur-xl focus:border-emerald-500/40 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 lg:w-96"
+            />
+          </div>
         </div>
         <div className="mt-5 grid gap-3 md:grid-cols-4">
           <div className="app-panel-quiet rounded-2xl p-4">
@@ -432,155 +567,242 @@ export function OutreachDatabase({
         </div>
       </div>
 
-      {/* Filter bar */}
-      <div className="app-panel-subtle flex flex-wrap gap-1 rounded-2xl p-2">
-        {FILTERS.map((f) => {
-          const count = stats[f.statKey];
-          const isActive = filter === f.id;
-          return (
-            <button
-              key={f.id}
-              onClick={() => setFilter(f.id)}
-              className={`cursor-pointer rounded-xl px-3 py-2 text-xs font-medium transition-colors ${
-                isActive
-                  ? "bg-white/10 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]"
-                  : "text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-300"
-              }`}
-            >
-              {f.label}
-              {count > 0 && (
-                <span
-                  className={`ml-1.5 tabular-nums ${
-                    isActive ? "text-zinc-300" : "text-zinc-600"
+      {/* Stage funnel — the main visual landmark of the page. Each column is a
+          click-to-filter button with a proportional height bar, a big count,
+          and a caption. Terminal chips (Replied / Declined) + All sit below. */}
+      <div className="rounded-3xl border border-white/[0.06] bg-white/[0.02] p-4 md:p-6">
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Funnel</div>
+            <div className="mt-0.5 text-sm font-medium text-white">Click a stage to filter</div>
+          </div>
+          <button
+            onClick={() => setFilter("all")}
+            className={`cursor-pointer rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+              filter === "all"
+                ? "border-white/20 bg-white/10 text-white"
+                : "border-white/[0.08] bg-white/[0.02] text-zinc-400 hover:bg-white/[0.04] hover:text-white"
+            }`}
+          >
+            All · {stats.total.toLocaleString()}
+          </button>
+        </div>
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-6">
+          {FUNNEL_STAGES.map((stage, idx) => {
+            const value = stats[stage.statKey];
+            const isActive = filter === stage.id;
+            const heightPct = Math.max(8, Math.round((value / maxStageValue) * 100));
+            const Icon = stage.icon;
+            return (
+              <button
+                key={stage.id}
+                onClick={() => setFilter(stage.id)}
+                className={`group relative overflow-hidden rounded-2xl border p-4 text-left transition-all ${
+                  isActive
+                    ? "border-white/20 bg-white/[0.06] shadow-[0_0_40px_rgba(255,255,255,0.04)]"
+                    : "border-white/[0.06] bg-white/[0.01] hover:border-white/[0.12] hover:bg-white/[0.03]"
+                } cursor-pointer`}
+              >
+                {/* Background bar representing proportional volume. */}
+                <div
+                  className={`absolute inset-x-0 bottom-0 bg-gradient-to-t ${stage.accentFrom} ${stage.accentTo} transition-all duration-500`}
+                  style={{ height: `${heightPct}%` }}
+                  aria-hidden
+                />
+                <div className="relative flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <Icon className={`h-3.5 w-3.5 ${stage.accentText}`} />
+                      <span className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">
+                        {stage.shortLabel}
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-mono text-zinc-600">0{idx + 1}</span>
+                  </div>
+                  <div
+                    className={`text-3xl font-semibold tabular-nums ${isActive ? "text-white" : stage.accentText}`}
+                  >
+                    {value.toLocaleString()}
+                  </div>
+                  <div className="text-[11px] leading-4 text-zinc-500">{stage.description}</div>
+                </div>
+                {isActive && (
+                  <div className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-400 text-[10px] font-bold text-black">
+                    ✓
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Terminal states as chips below the funnel. */}
+        <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-white/[0.06] pt-4">
+          <span className="text-[11px] uppercase tracking-[0.2em] text-zinc-600">Terminal</span>
+          {TERMINAL_CHIPS.map((chip) => {
+            const value = stats[chip.statKey];
+            const isActive = filter === chip.id;
+            return (
+              <button
+                key={chip.id}
+                onClick={() => setFilter(chip.id)}
+                className={`cursor-pointer rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                  isActive
+                    ? chip.tone
+                    : "border-white/[0.06] bg-white/[0.02] text-zinc-400 hover:bg-white/[0.04] hover:text-white"
+                }`}
+              >
+                {chip.label}
+                <span className="ml-1.5 tabular-nums">{value.toLocaleString()}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Leads list — card-style rows with avatar, contact stack, score ring,
+          and status ribbon. More scannable than a dense table. */}
+      <div className="rounded-3xl border border-white/[0.06] bg-white/[0.02]">
+        <div className="flex items-center justify-between border-b border-white/[0.06] px-5 py-3">
+          <div className="flex items-center gap-3">
+            <input
+              type="checkbox"
+              aria-label={allVisibleSelected ? "Deselect all" : "Select all"}
+              checked={allVisibleSelected}
+              onChange={toggleAll}
+              disabled={filtered.length === 0}
+              className="h-4 w-4 cursor-pointer rounded border-white/20 bg-transparent accent-emerald-400"
+            />
+            <span className="text-xs text-zinc-500">
+              {filtered.length.toLocaleString()} shown
+              {selection.count > 0 && (
+                <span className="ml-2 text-emerald-300">· {selection.count} selected</span>
+              )}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 text-[11px] text-zinc-500">
+            <SortButton label="Score" k="axiomScore" current={sortKey} dir={sortDir} onClick={toggleSort} />
+            <SortButton label="Added" k="createdAt" current={sortKey} dir={sortDir} onClick={toggleSort} />
+            <SortButton label="Last contact" k="lastContactedAt" current={sortKey} dir={sortDir} onClick={toggleSort} />
+          </div>
+        </div>
+
+        {filtered.length === 0 ? (
+          <div className="px-6 py-20 text-center">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.02]">
+              <Search className="h-5 w-5 text-zinc-600" />
+            </div>
+            <div className="mt-4 text-sm text-zinc-400">
+              {search ? "No leads match your search." : "No leads in this stage."}
+            </div>
+            {search && (
+              <button
+                onClick={() => setSearch("")}
+                className="mt-3 cursor-pointer text-xs text-emerald-400 hover:underline"
+              >
+                Clear search
+              </button>
+            )}
+          </div>
+        ) : (
+          <ul className="divide-y divide-white/[0.04]">
+            {filtered.map((lead) => {
+              const isSelected = selectedIds.has(lead.id);
+              return (
+                <li
+                  key={lead.id}
+                  className={`group relative flex items-center gap-4 px-5 py-3.5 transition-colors ${
+                    isSelected ? "bg-emerald-500/[0.06]" : "hover:bg-white/[0.02]"
                   }`}
                 >
-                  {count}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
+                  {/* Left rail: vertical accent strip when selected */}
+                  {isSelected && (
+                    <span className="absolute inset-y-2 left-0 w-[3px] rounded-r-full bg-emerald-400" />
+                  )}
 
-      {/* Table */}
-      <div className="overflow-x-auto rounded-[22px] border border-white/[0.08] bg-white/[0.025] shadow-[0_18px_60px_rgba(0,0,0,0.18)]">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-white/[0.08] bg-black/20 text-[11px] uppercase tracking-[0.14em] text-zinc-500">
-              <th className="w-8 px-3 py-2">
-                <input
-                  type="checkbox"
-                  aria-label={allVisibleSelected ? "Deselect all" : "Select all"}
-                  checked={allVisibleSelected}
-                  onChange={toggleAll}
-                  disabled={filtered.length === 0}
-                  className="h-3.5 w-3.5 cursor-pointer rounded border-white/20 bg-transparent accent-cyan-400"
-                />
-              </th>
-              <SortTh label="Business" sortKey="businessName" active={sortKey} dir={sortDir} onClick={toggleSort} />
-              <SortTh label="City" sortKey="city" active={sortKey} dir={sortDir} onClick={toggleSort} />
-              <th className="px-3 py-2 text-left font-medium">Contact</th>
-              <SortTh label="Score" sortKey="axiomScore" active={sortKey} dir={sortDir} onClick={toggleSort} />
-              <SortTh label="Status" sortKey="outreachStatus" active={sortKey} dir={sortDir} onClick={toggleSort} />
-              <SortTh label="Last contact" sortKey="lastContactedAt" active={sortKey} dir={sortDir} onClick={toggleSort} />
-              <SortTh label="Added" sortKey="createdAt" active={sortKey} dir={sortDir} onClick={toggleSort} />
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-white/[0.05]">
-            {filtered.length === 0 ? (
-              <tr>
-                <td className="px-3 py-8 text-center text-xs text-zinc-500" colSpan={8}>
-                  {search ? "No leads match your search." : "No leads in this category."}
-                </td>
-              </tr>
-            ) : (
-              filtered.map((lead) => {
-                const isSelected = selectedIds.has(lead.id);
-                return (
-                  <tr
-                    key={lead.id}
-                    className={`group transition-colors ${
-                      isSelected ? "bg-cyan-500/[0.08]" : "hover:bg-white/[0.035]"
-                    }`}
+                  <input
+                    type="checkbox"
+                    aria-label={`Select ${lead.businessName}`}
+                    checked={isSelected}
+                    onChange={() => toggleLead(lead.id)}
+                    className="h-4 w-4 shrink-0 cursor-pointer rounded border-white/20 bg-transparent accent-emerald-400"
+                  />
+
+                  {/* Avatar initial */}
+                  <div
+                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border text-xs font-semibold tracking-wide ${tierColor(lead.axiomTier)}`}
+                    title={lead.axiomTier ? `Tier ${lead.axiomTier}` : "No tier"}
                   >
-                    <td className="px-3 py-2.5">
-                      <input
-                        type="checkbox"
-                        aria-label={`Select ${lead.businessName}`}
-                        checked={isSelected}
-                        onChange={() => toggleLead(lead.id)}
-                        className="h-3.5 w-3.5 cursor-pointer rounded border-white/20 bg-transparent accent-cyan-400"
-                      />
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <Link
-                        href={`/lead/${lead.id}`}
-                        className="text-sm font-medium text-white transition-colors hover:text-cyan-300"
-                      >
-                        {lead.businessName}
-                      </Link>
-                      <div className="text-[11px] text-zinc-600">{lead.niche}</div>
-                    </td>
-                    <td className="px-3 py-2.5 text-xs text-zinc-400">{lead.city}</td>
-                    <td className="px-3 py-2.5">
-                      {lead.email ? (
-                        <div>
-                          <div className="text-xs text-zinc-300">{lead.contactName || "—"}</div>
-                          <div className="font-mono text-[11px] text-zinc-500">{lead.email}</div>
-                        </div>
-                      ) : (
-                        <span className="text-xs text-zinc-600">No email</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2.5">
-                      {lead.axiomScore != null ? (
-                        <span
-                          className={`text-xs font-medium tabular-nums ${
-                            lead.axiomScore >= 70
-                              ? "text-emerald-300"
-                              : lead.axiomScore >= 50
-                                ? "text-cyan-300"
-                                : lead.axiomScore >= 35
-                                  ? "text-amber-300"
-                                  : "text-zinc-500"
-                          }`}
-                        >
-                          {lead.axiomScore}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-zinc-600">—</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <span
-                        className={`inline-flex rounded border px-1.5 py-0.5 text-[10px] font-medium ${statusColor(
-                          lead.outreachStatus,
-                        )}`}
-                      >
-                        {statusLabel(lead.outreachStatus)}
+                    {initials(lead.businessName)}
+                  </div>
+
+                  {/* Business + niche */}
+                  <div className="min-w-0 flex-1">
+                    <Link
+                      href={`/lead/${lead.id}`}
+                      className="block truncate text-sm font-semibold text-white transition-colors hover:text-emerald-300"
+                    >
+                      {lead.businessName}
+                    </Link>
+                    <div className="mt-0.5 flex items-center gap-2 text-[11px] text-zinc-500">
+                      <Globe className="h-3 w-3" />
+                      <span className="truncate">
+                        {lead.niche} · {lead.city || "—"}
                       </span>
-                    </td>
-                    <td className="px-3 py-2.5 text-xs text-zinc-500">
-                      {fmtDate(lead.lastContactedAt)}
-                    </td>
-                    <td className="px-3 py-2.5 text-xs text-zinc-600">
-                      {fmtDate(lead.createdAt)}
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
+                    </div>
+                  </div>
+
+                  {/* Contact */}
+                  <div className="hidden min-w-0 flex-1 md:block">
+                    {lead.email ? (
+                      <>
+                        <div className="flex items-center gap-1.5 text-xs text-zinc-300">
+                          <UserCircle2 className="h-3.5 w-3.5 text-zinc-500" />
+                          <span className="truncate">{lead.contactName || "No name"}</span>
+                        </div>
+                        <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[11px] text-zinc-500">
+                          <Mail className="h-3 w-3" />
+                          <span className="truncate">{lead.email}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 rounded border border-zinc-700/60 bg-zinc-800/40 px-2 py-0.5 text-[10px] font-medium text-zinc-500">
+                        <XCircle className="h-3 w-3" />
+                        No email
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Score */}
+                  <div className="hidden shrink-0 text-right md:block">
+                    <div className={`text-xl font-bold tabular-nums ${scoreColor(lead.axiomScore)}`}>
+                      {lead.axiomScore ?? "—"}
+                    </div>
+                    <div className="text-[10px] uppercase tracking-wider text-zinc-600">score</div>
+                  </div>
+
+                  {/* Status */}
+                  <div className="hidden shrink-0 items-center gap-2 md:flex">
+                    <span className={`h-1.5 w-1.5 rounded-full ${statusDotColor(lead.outreachStatus)}`} />
+                    <span className="text-xs font-medium text-zinc-300">
+                      {statusLabel(lead.outreachStatus)}
+                    </span>
+                  </div>
+
+                  {/* Last contact */}
+                  <div className="hidden w-20 shrink-0 text-right text-[11px] text-zinc-500 lg:block">
+                    {fmtDate(lead.lastContactedAt)}
+                  </div>
+
+                  <ChevronRight className="hidden h-4 w-4 shrink-0 text-zinc-700 transition-colors group-hover:text-zinc-400 md:block" />
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </div>
 
-      {/* Count */}
-      <div className="text-xs tabular-nums text-zinc-500">
-        Showing {filtered.length.toLocaleString()} of {stats.total.toLocaleString()} leads
-      </div>
-
-      {/* Sticky bulk-action bar. Only appears when the user has selected leads,
-          so it never gets in the way of browsing. */}
+      {/* Sticky bulk-action bar */}
       {selection.count > 0 && (
         <div className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center px-4">
           <div className="pointer-events-auto flex w-full max-w-4xl flex-wrap items-center gap-3 rounded-2xl border border-white/[0.08] bg-zinc-950/95 px-4 py-3 shadow-2xl shadow-black/60 backdrop-blur">
@@ -608,11 +830,7 @@ export function OutreachDatabase({
                 title="Run AI enrichment on New / Enriching leads"
                 className="h-8 cursor-pointer gap-1.5 rounded-lg border border-violet-500/30 bg-violet-500/10 px-3 text-xs text-violet-200 hover:bg-violet-500/20 disabled:opacity-40"
               >
-                {busy === "enrich" ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Wand2 className="h-3.5 w-3.5" />
-                )}
+                {busy === "enrich" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
                 Enrich
                 {selection.enrichable.length > 0 && ` (${selection.enrichable.length})`}
               </Button>
@@ -634,11 +852,7 @@ export function OutreachDatabase({
                 title="Queue for the automation scheduler (respects daily caps + min-delay)"
                 className="h-8 cursor-pointer gap-1.5 rounded-lg bg-white px-3 text-xs font-semibold text-black hover:bg-zinc-200 disabled:opacity-40"
               >
-                {busy === "queue" ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Sparkles className="h-3.5 w-3.5" />
-                )}
+                {busy === "queue" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
                 Queue
                 {selection.queueable.length > 0 && ` (${selection.queueable.length})`}
               </Button>
@@ -649,11 +863,7 @@ export function OutreachDatabase({
                 title="Queue and fast-forward step 1 — dispatches on the next cron tick (within 60s)"
                 className="h-8 cursor-pointer gap-1.5 rounded-lg border border-amber-500/30 bg-gradient-to-r from-amber-400 to-orange-500 px-3 text-xs font-semibold text-black hover:from-amber-300 hover:to-orange-400 disabled:opacity-40"
               >
-                {busy === "send-now" ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Zap className="h-3.5 w-3.5" />
-                )}
+                {busy === "send-now" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
                 Send now
               </Button>
             </div>
@@ -676,35 +886,35 @@ export function OutreachDatabase({
   );
 }
 
-function SortTh({
+function SortButton({
   label,
-  sortKey: key,
-  active,
+  k,
+  current,
   dir,
   onClick,
 }: {
   label: string;
-  sortKey: SortKey;
-  active: SortKey;
+  k: SortKey;
+  current: SortKey;
   dir: "asc" | "desc";
   onClick: (key: SortKey) => void;
 }) {
-  const isActive = active === key;
+  const isActive = current === k;
   return (
-    <th
-      className="cursor-pointer select-none px-3 py-2 text-left font-medium transition-colors hover:text-zinc-300"
-      onClick={() => onClick(key)}
+    <button
+      onClick={() => onClick(k)}
+      className={`inline-flex cursor-pointer items-center gap-1 rounded px-2 py-1 transition-colors ${
+        isActive
+          ? "bg-white/[0.06] text-white"
+          : "text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-300"
+      }`}
     >
-      <span className="inline-flex items-center gap-1">
-        {label}
-        {isActive ? (
-          <ChevronDown
-            className={`h-3 w-3 transition-transform ${dir === "asc" ? "rotate-180" : ""}`}
-          />
-        ) : (
-          <ArrowUpDown className="h-2.5 w-2.5 opacity-0 group-hover:opacity-40" />
-        )}
-      </span>
-    </th>
+      {label}
+      {isActive ? (
+        <ChevronDown className={`h-3 w-3 transition-transform ${dir === "asc" ? "rotate-180" : ""}`} />
+      ) : (
+        <ArrowUpDown className="h-2.5 w-2.5 opacity-40" />
+      )}
+    </button>
   );
 }

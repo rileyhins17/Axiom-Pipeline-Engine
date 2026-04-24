@@ -210,16 +210,23 @@ function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview
 
   return (
     <div className="animate-slide-up space-y-6">
-      {/* Header */}
-      <header className="app-shell-surface flex flex-col gap-5 rounded-[28px] p-5 lg:flex-row lg:items-center lg:justify-between">
+      {/* Hero header — matches dashboard / outreach treatment */}
+      <header className="relative overflow-hidden rounded-3xl border border-white/[0.06] bg-[radial-gradient(ellipse_900px_300px_at_top_left,rgba(139,92,246,0.10),transparent_60%),radial-gradient(ellipse_700px_250px_at_top_right,rgba(16,185,129,0.06),transparent_60%),linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.005))] p-6 md:p-8">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-center gap-5">
           <ProgressRing progress={progress} sentToday={sentToday} paceStatus={paceStatus} />
 
           <div className="min-w-0">
-            <p className="app-eyebrow">Automation</p>
-            <h1 className="app-title mt-2 text-3xl font-semibold">Follow-up engine and mailbox control.</h1>
-            <p className="mt-2 text-sm text-zinc-400">
-              Outreach engine — target {DAILY_TARGET} emails/day
+            <div className="inline-flex items-center gap-2 rounded-full border border-violet-500/20 bg-violet-500/[0.08] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-violet-300">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-violet-400 opacity-60" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-violet-400" />
+              </span>
+              Automation Engine
+            </div>
+            <h1 className="mt-3 text-3xl font-semibold tracking-tight text-white md:text-4xl">Automation</h1>
+            <p className="mt-1 text-sm text-zinc-400">
+              Target {DAILY_TARGET} emails/day · runs every minute
             </p>
             <div className="mt-2.5 flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
               <Chip tone={isActive ? "emerald" : "amber"}>
@@ -285,6 +292,7 @@ function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview
             <RefreshCw className="h-3.5 w-3.5" />
             Refresh
           </Button>
+        </div>
         </div>
       </header>
 

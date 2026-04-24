@@ -73,15 +73,23 @@ export default async function VaultPage() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
-      <section className="app-shell-surface rounded-[28px] px-6 py-7">
-        <div className="max-w-3xl">
-          <p className="app-eyebrow">Vault</p>
-          <h1 className="app-title mt-3 text-3xl font-semibold md:text-4xl">
-            Verify the lead base before anything moves downstream.
-          </h1>
-          <p className="mt-2 text-sm leading-6 text-zinc-400">
-            Browse, filter, review, and export records with the same connected operating system used by Outreach and Automation.
-          </p>
+      <section className="relative overflow-hidden rounded-3xl border border-white/[0.06] bg-[radial-gradient(ellipse_800px_300px_at_top_left,rgba(59,130,246,0.10),transparent_60%),linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.005))] px-6 py-8 md:px-10">
+        <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+          <div className="max-w-2xl">
+            <div className="inline-flex items-center gap-2 rounded-full border border-blue-500/20 bg-blue-500/[0.08] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-blue-300">
+              <Database className="h-3 w-3" />
+              Lead Vault
+            </div>
+            <h1 className="mt-4 text-4xl font-semibold tracking-tight text-white md:text-5xl">
+              {totalLeads.toLocaleString()}
+              <span className="ml-2 text-base font-normal text-zinc-500">
+                record{totalLeads === 1 ? "" : "s"} on file
+              </span>
+            </h1>
+            <p className="mt-3 max-w-xl text-sm leading-6 text-zinc-400">
+              Browse the full database, verify records, and export filtered slices.
+            </p>
+          </div>
         </div>
       </section>
 
@@ -109,7 +117,7 @@ export default async function VaultPage() {
         />
       </section>
 
-      <Card className="overflow-hidden rounded-[28px]">
+      <Card className="overflow-hidden rounded-3xl border-white/[0.06] bg-white/[0.02]">
         <CardHeader className="pb-3">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">

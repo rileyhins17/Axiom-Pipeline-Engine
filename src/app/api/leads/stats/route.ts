@@ -13,6 +13,14 @@ export async function GET(request: Request) {
     const prisma = getPrisma();
     const total = await prisma.lead.count({ where: { isArchived: false } });
 
+    // Pipeline status counts powering the sidebar nav badges. Cheap status
+    // bucket counts so the user sees how much work lives behind each route.
+    const [readyForTouch, followUp, replied] = await Promise.all([
+      prisma.lead.count({ where: { isArchived: false, outreachStatus: "READY_FOR_FIRST_TOUCH" } }),
+      prisma.lead.count({ where: { isArchived: false, outreachStatus: "FOLLOW_UP_DUE" } }),
+      prisma.lead.count({ where: { isArchived: false, outreachStatus: "REPLIED" } }),
+    ]);
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -49,6 +57,9 @@ export async function GET(request: Request) {
       todayCallable,
       todayTierSA,
       todayDisqualified,
+      readyForTouch,
+      followUp,
+      replied,
     });
   } catch {
     return NextResponse.json({
@@ -58,6 +69,9 @@ export async function GET(request: Request) {
       todayCallable: 0,
       todayTierSA: 0,
       todayDisqualified: 0,
+      readyForTouch: 0,
+      followUp: 0,
+      replied: 0,
     });
   }
 }
