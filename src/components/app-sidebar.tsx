@@ -1,7 +1,15 @@
 "use client";
 
 import * as React from "react";
-import { Bot, Database, LayoutDashboard, MessageSquareText, Settings, Target } from "lucide-react";
+import {
+  Bot,
+  Crosshair,
+  Database,
+  LayoutDashboard,
+  MessageSquareText,
+  Settings,
+  Target,
+} from "lucide-react";
 import type { Route } from "next";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -28,7 +36,7 @@ const navItems = [
     shortcut: "Cmd+1",
   },
   {
-    title: "Lead Generator",
+    title: "Hunt",
     url: "/hunt",
     icon: Target,
     shortcut: "Cmd+2",
@@ -52,10 +60,16 @@ const navItems = [
     shortcut: "Cmd+5",
   },
   {
+    title: "Triage",
+    url: "/triage",
+    icon: Crosshair,
+    shortcut: "Cmd+6",
+  },
+  {
     title: "Settings",
     url: "/settings",
     icon: Settings,
-    shortcut: "Cmd+6",
+    shortcut: "Cmd+7",
   },
 ];
 
@@ -76,47 +90,47 @@ export function AppSidebar() {
   }, [pathname]);
 
   return (
-    <Sidebar className="border-r border-white/[0.04] bg-black">
-      <SidebarHeader className="px-4 pb-4 pt-5">
+    <Sidebar className="border-r border-white/10 bg-[#050807]">
+      <SidebarHeader className="px-3 pb-3 pt-4">
         <Link href={"/dashboard" as Route} className="block">
-          <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-4 transition-colors hover:border-white/[0.14]">
+          <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3 transition-colors hover:border-white/15">
             <BrandMark
               className="w-full justify-center border-none bg-transparent px-0 py-0 shadow-none"
-              imageClassName="h-10"
+              imageClassName="h-9"
               showBorder={false}
             />
-            <div className="mt-4 space-y-1 text-center">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-zinc-400">
+            <div className="mt-3 text-center">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.24em] text-zinc-500">
                 Axiom
               </div>
-              <div className="text-xl font-semibold text-white">Pipeline Engine</div>
+              <div className="mt-1 text-base font-semibold text-white">Pipeline Engine</div>
             </div>
           </div>
         </Link>
       </SidebarHeader>
 
-      <SidebarContent className="px-3">
+      <SidebarContent className="px-2">
         <SidebarGroup>
           <SidebarGroupContent>
-            <SidebarMenu className="gap-1.5">
+            <SidebarMenu className="gap-1">
               {navItems.map((item) => {
-                const isActive = pathname === item.url;
+                const isActive = pathname === item.url || pathname.startsWith(`${item.url}/`);
                 return (
                   <SidebarMenuItem key={item.title}>
                     <SidebarMenuButton asChild isActive={isActive}>
                       <Link
                         href={item.url as Route}
-                        className={`group relative flex items-center gap-3 rounded-xl px-3 py-3 transition-all ${
+                        className={`operator-focus group relative flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors ${
                           isActive
-                            ? "bg-emerald-500/10 text-white"
-                            : "text-zinc-500 hover:bg-white/[0.04] hover:text-white"
+                            ? "bg-white/[0.065] text-white"
+                            : "text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-100"
                         }`}
                       >
                         {isActive && (
-                          <div className="absolute left-0 top-1/2 h-6 w-[3px] -translate-y-1/2 rounded-full bg-emerald-400" />
+                          <div className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-full bg-emerald-400" />
                         )}
                         <item.icon
-                          className={`h-4 w-4 shrink-0 ${
+                          className={`h-4 w-4 shrink-0 transition-colors ${
                             isActive ? "text-emerald-400" : "text-zinc-500 group-hover:text-white"
                           }`}
                         />
@@ -136,7 +150,7 @@ export function AppSidebar() {
 
       <SidebarFooter className="p-4">
         <SidebarSeparator className="mb-4 opacity-30" />
-        <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
+        <div className="rounded-xl border border-white/10 bg-white/[0.025] px-4 py-3">
           <div className="flex items-center justify-between">
             <span className="text-[10px] uppercase tracking-[0.24em] text-zinc-500">Leads</span>
             <span className="font-mono text-sm text-emerald-400">
@@ -145,7 +159,7 @@ export function AppSidebar() {
           </div>
           <div className="mt-2 text-[11px] text-zinc-500">
             Added today:{" "}
-            <span className="font-mono text-cyan-400">{stats ? stats.todayLeads : "—"}</span>
+            <span className="font-mono text-cyan-400">{stats ? stats.todayLeads : "-"}</span>
           </div>
         </div>
       </SidebarFooter>

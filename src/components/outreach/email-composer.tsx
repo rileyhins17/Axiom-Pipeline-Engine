@@ -61,18 +61,18 @@ export function EmailComposer({ leadIds, onClose, onComplete }: EmailComposerPro
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={phase !== "sending" ? onClose : undefined} />
+      <div className="absolute inset-0 bg-black/70" onClick={phase !== "sending" ? onClose : undefined} />
 
       {/* Dialog */}
-      <div className="relative z-10 mx-4 w-full max-w-lg rounded-2xl border border-white/[0.08] bg-zinc-950 shadow-2xl shadow-black/60">
+      <div className="relative z-10 mx-4 w-full max-w-lg rounded-xl border border-white/10 bg-zinc-950 shadow-2xl shadow-black/60">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-white/[0.06] px-6 py-4">
           <div className="flex items-center gap-2">
             <Mail className="h-5 w-5 text-emerald-400" />
-            <h2 className="text-lg font-bold text-white">
-              {phase === "confirm" && "Confirm Email Outreach"}
-              {phase === "sending" && "Sending Emails..."}
-              {phase === "done" && "Outreach Complete"}
+              <h2 className="text-lg font-semibold text-white">
+              {phase === "confirm" && "Manual send override"}
+              {phase === "sending" && "Sending emails"}
+              {phase === "done" && "Manual send complete"}
             </h2>
           </div>
           {phase !== "sending" && (
@@ -89,23 +89,23 @@ export function EmailComposer({ leadIds, onClose, onComplete }: EmailComposerPro
         <div className="px-6 py-5">
           {phase === "confirm" && (
             <div className="space-y-4">
-              <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+              <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 p-4">
                 <div className="flex items-start gap-3">
                   <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" />
                   <div>
                     <div className="text-sm font-semibold text-white">
-                      Send personalized emails to {leadIds.length} lead{leadIds.length !== 1 ? "s" : ""}?
+                      Send personalized email to {leadIds.length} selected lead{leadIds.length !== 1 ? "s" : ""}?
                     </div>
                     <div className="mt-1 text-xs text-zinc-400">
-                      AI will generate a unique email for each selected lead using enrichment or fallback context,
-                      then send it from your connected Gmail account. This manual send bypasses automation queue rules.
+                      This is the guaranteed manual path: Axiom generates the message and sends through Gmail without waiting for automation queue rules.
+                      Mailbox capacity and Gmail connection still apply.
                     </div>
                   </div>
                 </div>
               </div>
 
-              <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-3 text-xs text-zinc-400">
-                <div className="space-y-1">
+              <div className="rounded-lg border border-white/10 bg-white/[0.025] p-3 text-xs text-zinc-400">
+                <div className="flex flex-col gap-1">
                   <div className="flex justify-between">
                     <span>Leads selected</span>
                     <span className="font-mono text-white">{leadIds.length}</span>
@@ -119,7 +119,7 @@ export function EmailComposer({ leadIds, onClose, onComplete }: EmailComposerPro
                     <span className="text-emerald-400">Gmail API</span>
                   </div>
                   <div className="flex justify-between">
-                    <span>Automation blocks</span>
+                    <span>Automation queue</span>
                     <span className="text-amber-400">Manual override</span>
                   </div>
                 </div>
@@ -134,15 +134,15 @@ export function EmailComposer({ leadIds, onClose, onComplete }: EmailComposerPro
                 <Send className="absolute inset-0 m-auto h-5 w-5 text-white" />
               </div>
               <div className="text-sm font-semibold text-white">
-                Generating & sending emails...
+                Generating and sending emails
               </div>
               <div className="mt-1 text-xs text-zinc-500">
                 AI is crafting personalized emails for each lead. This may take a moment.
               </div>
               <div className="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-white/5">
                 <div
-                  className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-cyan-500 transition-all duration-500"
-                  style={{ width: "100%", animation: "pulse 2s ease-in-out infinite" }}
+                  className="h-full rounded-full bg-emerald-500 transition-all duration-500"
+                  style={{ width: "100%" }}
                 />
               </div>
             </div>
@@ -204,17 +204,17 @@ export function EmailComposer({ leadIds, onClose, onComplete }: EmailComposerPro
               </Button>
               <Button
                 onClick={handleSend}
-                className="gap-1.5 bg-gradient-to-r from-emerald-600 to-cyan-600 font-bold text-white shadow-lg shadow-emerald-500/20 hover:from-emerald-500 hover:to-cyan-500"
+                className="gap-1.5 bg-emerald-500 font-semibold text-emerald-950 hover:bg-emerald-400"
               >
                 <Send className="h-3.5 w-3.5" />
-                Send {leadIds.length} Email{leadIds.length !== 1 ? "s" : ""}
+                Send manually
               </Button>
             </>
           )}
           {phase === "done" && (
             <Button
               onClick={onClose}
-              className="gap-1.5 bg-gradient-to-r from-emerald-600 to-cyan-600 font-bold text-white hover:from-emerald-500 hover:to-cyan-500"
+              className="gap-1.5 bg-emerald-500 font-semibold text-emerald-950 hover:bg-emerald-400"
             >
               <CheckCircle2 className="h-3.5 w-3.5" />
               Done

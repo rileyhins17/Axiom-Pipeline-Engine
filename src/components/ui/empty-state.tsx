@@ -32,11 +32,10 @@ export function EmptyState({
             "flex flex-col items-center justify-center py-16 px-6 text-center",
             className
         )}>
-            <div className="relative mb-6">
-                <div className="w-16 h-16 rounded-2xl glass-strong flex items-center justify-center">
-                    <Icon className="w-7 h-7 text-muted-foreground/50" />
+            <div className="relative mb-5">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-white/10 bg-white/[0.025]">
+                    <Icon className="h-5 w-5 text-muted-foreground" />
                 </div>
-                <div className="absolute -inset-2 rounded-3xl border border-dashed border-white/[0.06]" />
             </div>
             <h3 className="text-sm font-semibold text-foreground/80 mb-1">{title}</h3>
             <p className="text-xs text-muted-foreground max-w-[280px] leading-relaxed">{description}</p>

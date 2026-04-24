@@ -26,50 +26,52 @@ function TriageInner() {
     const router = useRouter();
     const { toast } = useToast();
 
-    const [filters, setFilters] = useState<TriageFilters>(DEFAULT_FILTERS);
+    const [filters, setFilters] = useState<TriageFilters>(() => getTriageFilters());
     const [leads, setLeads] = useState<TriageLead[]>([]);
     const [loading, setLoading] = useState(true);
-    const [currentIndex, setCurrentIndex] = useState(0);
+    const [currentIndex, setCurrentIndex] = useState(() => getTriageIndex());
     const [drawerOpen, setDrawerOpen] = useState(false);
     const [helpOpen, setHelpOpen] = useState(false);
-    const [stats, setStats] = useState({ kept: 0, archived: 0, followUp: 0, called: 0, total: 0 });
+    const [stats, setStats] = useState(() => getTriageStats());
     const [actionFlash, setActionFlash] = useState<string | null>(null);
-
-    // Load persisted filters + index
-    useEffect(() => {
-        const f = getTriageFilters();
-        setFilters(f);
-        setCurrentIndex(getTriageIndex());
-        setStats(getTriageStats());
-    }, []);
 
     // Fetch leads when filters change
     useEffect(() => {
-        setLoading(true);
-        const params = new URLSearchParams();
-        if (filters.tiers.length > 0) params.set("tier", filters.tiers.join(","));
-        if (filters.noWebsite) params.set("noWebsite", "1");
-        if (filters.hasEmail) params.set("hasEmail", "1");
-        if (filters.hasPhone) params.set("hasPhone", "1");
-        if (filters.minRating > 0) params.set("minRating", String(filters.minRating));
-        if (filters.city) params.set("city", filters.city);
-        if (filters.niche) params.set("niche", filters.niche);
-        params.set("sort", "score");
+        let cancelled = false;
 
-        fetch(`/api/leads/triage?${params}`)
-            .then(r => r.json())
-            .then(data => {
-                // Filter out locally archived leads
+        async function loadLeads() {
+            setLoading(true);
+            const params = new URLSearchParams();
+            if (filters.tiers.length > 0) params.set("tier", filters.tiers.join(","));
+            if (filters.noWebsite) params.set("noWebsite", "1");
+            if (filters.hasEmail) params.set("hasEmail", "1");
+            if (filters.hasPhone) params.set("hasPhone", "1");
+            if (filters.minRating > 0) params.set("minRating", String(filters.minRating));
+            if (filters.city) params.set("city", filters.city);
+            if (filters.niche) params.set("niche", filters.niche);
+            params.set("sort", "score");
+
+            try {
+                const response = await fetch(`/api/leads/triage?${params}`);
+                const data = await response.json();
+                if (cancelled) return;
                 const filtered = (data.leads || []).filter(
-                    (l: TriageLead) => !isTriageArchived(l.id)
+                    (lead: TriageLead) => !isTriageArchived(lead.id),
                 );
                 setLeads(filtered);
-                // Clamp index
                 const idx = getTriageIndex();
                 setCurrentIndex(Math.min(idx, Math.max(0, filtered.length - 1)));
-            })
-            .catch(() => setLeads([]))
-            .finally(() => setLoading(false));
+            } catch {
+                if (!cancelled) setLeads([]);
+            } finally {
+                if (!cancelled) setLoading(false);
+            }
+        }
+
+        void loadLeads();
+        return () => {
+            cancelled = true;
+        };
     }, [filters]);
 
     const currentLead = leads[currentIndex] || null;
@@ -251,6 +253,37 @@ function TriageInner() {
 
     return (
         <div className="mx-auto flex min-h-[calc(100dvh-80px)] max-w-[1200px] flex-col gap-4 pb-4 md:h-[calc(100vh-80px)] md:pb-0">
+            <section className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+                <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                    <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+                            Speed review
+                        </p>
+                        <h1 className="mt-2 text-2xl font-semibold text-white">Triage</h1>
+                        <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                            Review one lead at a time, keep the good ones, archive weak fits, call immediately, or mark follow-up.
+                        </p>
+                    </div>
+                    <div className="grid grid-cols-4 gap-2 text-center text-xs">
+                        <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+                            <div className="font-mono text-emerald-300">{stats.kept}</div>
+                            <div className="mt-1 text-muted-foreground">Kept</div>
+                        </div>
+                        <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+                            <div className="font-mono text-red-300">{stats.archived}</div>
+                            <div className="mt-1 text-muted-foreground">Archived</div>
+                        </div>
+                        <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+                            <div className="font-mono text-cyan-300">{stats.called}</div>
+                            <div className="mt-1 text-muted-foreground">Called</div>
+                        </div>
+                        <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+                            <div className="font-mono text-amber-300">{Math.max(0, remaining)}</div>
+                            <div className="mt-1 text-muted-foreground">Left</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
             {/* Filter bar */}
             <TriageFilterBar
                 filters={filters}

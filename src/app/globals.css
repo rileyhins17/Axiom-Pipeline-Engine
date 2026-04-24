@@ -983,3 +983,87 @@ body::after {
     transform: translateY(-8px) scale(0.96);
   }
 }
+
+/* ============================================================
+   AXIOM OPERATIONS CONSOLE - premium dark refinement layer
+   ============================================================ */
+
+html {
+  background: hsl(156 18% 4%);
+}
+
+body {
+  min-height: 100vh;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 220px),
+    radial-gradient(circle at 50% -20%, rgba(16, 185, 129, 0.075), transparent 360px),
+    hsl(156 18% 4%);
+  color: var(--foreground);
+  letter-spacing: 0;
+}
+
+body::before,
+body::after {
+  display: none !important;
+}
+
+.glass,
+.glass-strong,
+.glass-ultra,
+.holo-card {
+  background: rgba(255, 255, 255, 0.028) !important;
+  border: 1px solid rgba(255, 255, 255, 0.09) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.holo-card::before,
+.living-border::after {
+  display: none !important;
+}
+
+.gradient-text,
+.gradient-text-warm,
+.gradient-text-cool {
+  background: none !important;
+  color: rgb(244 244 245) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.glow-emerald,
+.glow-cyan,
+.glow-red,
+.glow-amber,
+.glow-purple,
+.stat-card:hover {
+  box-shadow: none !important;
+}
+
+.stat-card:hover,
+.funnel-segment:hover {
+  transform: none !important;
+}
+
+.btn-glow::after {
+  display: none !important;
+}
+
+.operator-focus {
+  outline: none;
+}
+
+.operator-focus:focus-visible {
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.28);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+  }
+}

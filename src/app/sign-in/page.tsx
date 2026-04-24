@@ -49,16 +49,16 @@ function SignInForm() {
   }
 
   return (
-    <div className="min-h-[calc(100vh-6rem)] flex items-center justify-center">
-      <div className="w-full max-w-md space-y-4">
+    <div className="flex min-h-[calc(100vh-6rem)] items-center justify-center">
+      <div className="w-full max-w-md">
         <div className="flex justify-center">
-          <BrandMark className="w-full max-w-[320px] px-4 py-3" imageClassName="h-12" />
+          <BrandMark className="w-full max-w-[300px] border-white/10 bg-white/[0.025] px-4 py-3" imageClassName="h-11" />
         </div>
-        <Card className="w-full glass-strong border-white/10">
+        <Card className="mt-4 w-full border-white/10 bg-white/[0.025]">
         <CardHeader>
-          <CardTitle className="text-2xl font-bold">Axiom Pipeline Engine</CardTitle>
+          <CardTitle className="text-2xl font-semibold">Axiom Pipeline Engine</CardTitle>
           <CardDescription>
-            Sign in to access the protected Axiom operations workspace.
+            Sign in to the protected operations console.
           </CardDescription>
         </CardHeader>
         <CardContent>

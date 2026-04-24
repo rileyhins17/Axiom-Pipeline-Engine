@@ -1,55 +1,130 @@
+import { ToastProvider } from "@/components/ui/toast-provider";
+import { OutreachHub } from "@/components/outreach/outreach-hub";
+import { AUTOMATION_SETTINGS_DEFAULTS } from "@/lib/automation-policy";
+import { isContactedOutreachStatus, READY_FOR_FIRST_TOUCH_STATUS } from "@/lib/outreach";
+import { getActiveAutomationLeadIds, listAutomationOverview } from "@/lib/outreach-automation";
+import { partitionPreSendLeads } from "@/lib/pipeline-lifecycle";
 import { getPrisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/session";
-import { OutreachDatabase } from "@/components/outreach/outreach-database";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
-export default async function OutreachPage() {
-  await requireSession();
-  const prisma = getPrisma();
-
-  const leads = await prisma.lead.findMany({
-    where: { isArchived: false },
-    orderBy: { lastContactedAt: "desc" },
-    select: {
-      id: true,
-      businessName: true,
-      city: true,
-      niche: true,
-      contactName: true,
-      email: true,
-      phone: true,
-      outreachStatus: true,
-      outreachChannel: true,
-      firstContactedAt: true,
-      lastContactedAt: true,
-      nextFollowUpDue: true,
-      enrichedAt: true,
-      axiomScore: true,
-      axiomTier: true,
-      websiteStatus: true,
-      createdAt: true,
+function emptyAutomationOverview() {
+  return {
+    settings: {
+      ...AUTOMATION_SETTINGS_DEFAULTS,
     },
-  });
-
-  const stats = {
-    total: leads.length,
-    notContacted: leads.filter((l) => l.outreachStatus === "NOT_CONTACTED").length,
-    enriching: leads.filter((l) => l.outreachStatus === "ENRICHING").length,
-    enriched: leads.filter((l) => l.outreachStatus === "ENRICHED").length,
-    readyForTouch: leads.filter((l) => l.outreachStatus === "READY_FOR_FIRST_TOUCH").length,
-    outreached: leads.filter((l) => l.outreachStatus === "OUTREACHED").length,
-    followUp: leads.filter((l) => l.outreachStatus === "FOLLOW_UP_DUE").length,
-    replied: leads.filter((l) => l.outreachStatus === "REPLIED" || l.outreachStatus === "INTERESTED").length,
-    notInterested: leads.filter((l) => l.outreachStatus === "NOT_INTERESTED").length,
+    ready: [],
+    mailboxes: [],
+    sequences: [],
+    queued: [],
+    active: [],
+    finished: [],
+    recentSent: [],
+    recentRuns: [],
+    engine: {
+      mode: "ACTIVE",
+      nextSendAt: null,
+      scheduledToday: 0,
+      blockedCount: 0,
+      replyStoppedCount: 0,
+      readyCount: 0,
+      queuedCount: 0,
+      waitingCount: 0,
+      sendingCount: 0,
+    },
+    pipeline: {
+      needsEnrichment: 0,
+      enriching: 0,
+      enriched: 0,
+      readyForTouch: 0,
+    },
+    stats: {
+      ready: 0,
+      queued: 0,
+      sending: 0,
+      waiting: 0,
+      blocked: 0,
+      active: 0,
+      paused: 0,
+      stopped: 0,
+      completed: 0,
+      replied: 0,
+      scheduledToday: 0,
+    },
   };
+}
+
+function mapStageToTab(stage: string | string[] | undefined) {
+  const value = Array.isArray(stage) ? stage[0] : stage;
+  if (value === "initial" || value === "ready") return "initial" as const;
+  if (value === "log" || value === "sent" || value === "replied") return "log" as const;
+  return "prep" as const;
+}
+
+export default async function OutreachPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ stage?: string | string[] }>;
+}) {
+  await requireSession();
+
+  const prisma = getPrisma();
+  const [overview, activeAutomationLeadIds, leads] = await Promise.all([
+    listAutomationOverview().catch(() => emptyAutomationOverview()),
+    getActiveAutomationLeadIds().catch(() => []),
+    prisma.lead.findMany({
+      where: { isArchived: false },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        businessName: true,
+        city: true,
+        niche: true,
+        phone: true,
+        email: true,
+        emailConfidence: true,
+        emailFlags: true,
+        emailType: true,
+        contactName: true,
+        axiomScore: true,
+        axiomTier: true,
+        websiteStatus: true,
+        enrichedAt: true,
+        enrichmentData: true,
+        outreachStatus: true,
+        source: true,
+        createdAt: true,
+        lastUpdated: true,
+        outreachNotes: true,
+      },
+    }),
+  ]);
+
+  const automationLeadIds = new Set(activeAutomationLeadIds);
+  const stageEligibleLeads = leads.filter((lead) => {
+    if (automationLeadIds.has(lead.id)) return false;
+    if (lead.outreachStatus === READY_FOR_FIRST_TOUCH_STATUS) return false;
+    if (isContactedOutreachStatus(lead.outreachStatus)) return false;
+    return true;
+  });
+  const stages = partitionPreSendLeads(stageEligibleLeads);
+  const readyLeads = leads.filter(
+    (lead) => lead.outreachStatus === READY_FOR_FIRST_TOUCH_STATUS && !automationLeadIds.has(lead.id),
+  );
+  const params = await searchParams;
 
   return (
     <div className="mx-auto max-w-7xl">
-      <OutreachDatabase
-        initialLeads={JSON.parse(JSON.stringify(leads))}
-        stats={stats}
-      />
+      <ToastProvider>
+        <OutreachHub
+          initialPrepLeads={JSON.parse(JSON.stringify([...stages.intake, ...stages.enrichment]))}
+          initialQualificationLeads={JSON.parse(JSON.stringify(stages.qualification))}
+          initialReadyLeads={JSON.parse(JSON.stringify(readyLeads))}
+          initialAutomationOverview={JSON.parse(JSON.stringify(overview))}
+          initialTab={mapStageToTab(params.stage)}
+        />
+      </ToastProvider>
     </div>
   );
 }

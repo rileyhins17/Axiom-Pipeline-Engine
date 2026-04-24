@@ -28,17 +28,17 @@ export function StatCard({
   return (
     <div
       className={cn(
-        "rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4",
+        "rounded-xl border border-white/10 bg-white/[0.025] p-4",
         glowClass,
         className,
       )}
     >
       <div className="mb-4 flex items-center justify-between">
-        <span className="text-[11px] font-medium text-zinc-500">{label}</span>
+        <span className="text-[11px] font-medium text-muted-foreground">{label}</span>
         <div className={cn("[&>svg]:h-4 [&>svg]:w-4", iconColor)}>{icon}</div>
       </div>
       <div className={cn("text-3xl font-semibold leading-none", iconColor)}>{value}</div>
-      {subtitle && <div className="mt-2 text-sm text-zinc-500">{subtitle}</div>}
+      {subtitle && <div className="mt-2 text-sm leading-5 text-muted-foreground">{subtitle}</div>}
       {trend && (
         <div
           className={cn(

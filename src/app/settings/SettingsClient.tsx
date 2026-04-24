@@ -143,19 +143,21 @@ export function SettingsClient({ runtimeStatus }: { runtimeStatus: RuntimeStatus
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <div className="animate-slide-up">
-        <h1 className="text-4xl font-extrabold tracking-tight">
-          <span className="gradient-text">Settings</span>
-        </h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Runtime controls and protected environment status for Axiom Pipeline Engine.
+    <div className="mx-auto flex max-w-5xl flex-col gap-6">
+      <section className="rounded-xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.045),rgba(255,255,255,0.018))] p-6">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+          Operator-safe controls
         </p>
-      </div>
+        <h1 className="mt-3 text-3xl font-semibold tracking-tight text-white md:text-4xl">
+          Settings
+        </h1>
+        <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
+          Account controls, display preferences, runtime status, integration readiness, and irreversible actions.
+        </p>
+      </section>
 
       <Card
-        className="glass-strong animate-slide-up rounded-xl glow-emerald"
-        style={{ animationDelay: "100ms" }}
+        className="rounded-xl border-white/10 bg-white/[0.025]"
       >
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg font-bold">
@@ -203,8 +205,7 @@ export function SettingsClient({ runtimeStatus }: { runtimeStatus: RuntimeStatus
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card
-          className="glass-strong animate-slide-up rounded-xl glow-cyan"
-          style={{ animationDelay: "160ms" }}
+        className="rounded-xl border-white/10 bg-white/[0.025]"
         >
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg font-bold">
@@ -241,8 +242,7 @@ export function SettingsClient({ runtimeStatus }: { runtimeStatus: RuntimeStatus
         </Card>
 
         <Card
-          className="glass-strong animate-slide-up rounded-xl glow-emerald"
-          style={{ animationDelay: "220ms" }}
+          className="rounded-xl border-white/10 bg-white/[0.025]"
         >
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg font-bold">
@@ -281,8 +281,7 @@ export function SettingsClient({ runtimeStatus }: { runtimeStatus: RuntimeStatus
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card
-          className="glass-strong animate-slide-up rounded-xl glow-emerald"
-          style={{ animationDelay: "260ms" }}
+          className="rounded-xl border-white/10 bg-white/[0.025]"
         >
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg font-bold">
@@ -342,8 +341,7 @@ export function SettingsClient({ runtimeStatus }: { runtimeStatus: RuntimeStatus
         </Card>
 
         <Card
-          className="glass-strong animate-slide-up rounded-xl glow-amber"
-          style={{ animationDelay: "320ms" }}
+          className="rounded-xl border-white/10 bg-white/[0.025]"
         >
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg font-bold">

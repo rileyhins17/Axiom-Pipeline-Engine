@@ -51,6 +51,24 @@ interface LeadData {
     createdAt: string;
 }
 
+type DossierPainSignal = {
+    type: string;
+    severity: number;
+    evidence: string;
+    source?: string;
+};
+
+type DossierWebsiteAssessment = {
+    speedRisk: number;
+    conversionRisk: number;
+    trustRisk: number;
+    seoRisk: number;
+    overallGrade: string;
+    topFixes: string[];
+};
+
+type ScoreBreakdown = Record<string, string | number | boolean | null>;
+
 function parseJSON<T>(raw: string | null, fallback: T): T {
     if (!raw) return fallback;
     try { return JSON.parse(raw); } catch { return fallback; }
@@ -66,25 +84,35 @@ export function DossierClient({ leadId }: { leadId: number }) {
     const [archiveSyncPending, setArchiveSyncPending] = useState(false);
     const [inCallList, setInCallList] = useState(false);
 
-    // Fetch lead
     useEffect(() => {
-        setLoading(true);
-        setError(null);
-        fetch(`/api/leads/${leadId}`)
-            .then(res => {
-                if (!res.ok) throw new Error(res.status === 404 ? "Lead not found" : "Failed to load");
-                return res.json();
-            })
-            .then((data: LeadData) => {
+        let cancelled = false;
+
+        async function loadLead() {
+            setLoading(true);
+            setError(null);
+            try {
+                const response = await fetch(`/api/leads/${leadId}`);
+                if (!response.ok) {
+                    throw new Error(response.status === 404 ? "Lead not found" : "Failed to load");
+                }
+                const data = (await response.json()) as LeadData;
+                if (cancelled) return;
                 setLead(data);
-                // Check archive override
                 const override = getArchiveOverride(data.id);
                 setArchived(override !== null ? override : data.isArchived);
                 setArchiveSyncPending(override !== null && override !== data.isArchived);
                 setInCallList(isInCallList(data.id));
-            })
-            .catch(e => setError(e.message))
-            .finally(() => setLoading(false));
+            } catch (error) {
+                if (!cancelled) setError(error instanceof Error ? error.message : "Failed to load");
+            } finally {
+                if (!cancelled) setLoading(false);
+            }
+        }
+
+        void loadLead();
+        return () => {
+            cancelled = true;
+        };
     }, [leadId]);
 
     // Keyboard shortcuts
@@ -167,18 +195,31 @@ export function DossierClient({ leadId }: { leadId: number }) {
     }
 
     // Parse JSON fields
-    const painSignals = parseJSON<any[]>(lead.painSignals, []);
-    const assessment = parseJSON<any>(lead.axiomWebsiteAssessment, null);
-    const scoreBreakdown = parseJSON<any>(lead.scoreBreakdown, null);
+    const painSignals = parseJSON<DossierPainSignal[]>(lead.painSignals, []);
+    const assessment = parseJSON<DossierWebsiteAssessment | null>(lead.axiomWebsiteAssessment, null);
+    const scoreBreakdown = parseJSON<ScoreBreakdown | null>(lead.scoreBreakdown, null);
     const disqualifiers = parseJSON<string[]>(lead.disqualifiers, []);
     const disposition = getLeadDisposition(lead.id);
     const dispOpt = disposition ? DISPOSITION_OPTIONS.find(o => o.value === disposition.type) : null;
     const tierConfig = getTierConfig(lead.axiomTier);
+    const dispositionClass =
+        dispOpt?.color === "red"
+            ? "border-red-400/20 bg-red-500/10 text-red-300"
+            : dispOpt?.color === "amber"
+                ? "border-amber-400/20 bg-amber-500/10 text-amber-300"
+                : dispOpt?.color === "orange"
+                    ? "border-orange-400/20 bg-orange-500/10 text-orange-300"
+                    : dispOpt?.color === "emerald"
+                        ? "border-emerald-400/20 bg-emerald-500/10 text-emerald-300"
+                        : dispOpt?.color === "cyan"
+                            ? "border-cyan-400/20 bg-cyan-500/10 text-cyan-300"
+                            : "border-white/10 bg-white/[0.04] text-zinc-300";
 
     return (
         <div className="max-w-[1440px] mx-auto animate-slide-up">
             {/* Header */}
-            <div className="flex items-center justify-between mb-6">
+            <div className="mb-6 rounded-xl border border-white/10 bg-white/[0.025] p-4">
+            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div className="flex items-center gap-4">
                     <button
                         onClick={() => router.push("/vault")}
@@ -187,7 +228,7 @@ export function DossierClient({ leadId }: { leadId: number }) {
                         <ArrowLeft className="w-4 h-4" /> Vault
                     </button>
                     <div className="h-4 w-px bg-white/[0.08]" />
-                    <h1 className="text-xl font-bold text-white flex items-center gap-3">
+                    <h1 className="text-xl font-semibold text-white flex items-center gap-3">
                         <FileText className={cn("w-5 h-5", tierConfig.text)} />
                         Lead Dossier
                     </h1>
@@ -196,7 +237,7 @@ export function DossierClient({ leadId }: { leadId: number }) {
                     {dispOpt && (
                         <span className={cn(
                             "text-[10px] font-mono px-2 py-0.5 rounded-md border",
-                            `bg-${dispOpt.color}-500/10 text-${dispOpt.color}-400 border-${dispOpt.color}-500/20`
+                            dispositionClass
                         )}>
                             {dispOpt.icon} {dispOpt.label}
                         </span>
@@ -208,6 +249,7 @@ export function DossierClient({ leadId }: { leadId: number }) {
                         </span>
                     )}
                 </div>
+            </div>
             </div>
 
             {/* 3-Column Layout */}

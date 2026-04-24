@@ -14,6 +14,12 @@ import {
   type PreSendSequence,
 } from "@/components/outreach/pre-send-stage-panels";
 import { Button } from "@/components/ui/button";
+import {
+  OperatorHeader,
+  OperatorMetric,
+  OperatorMetricGrid,
+  OperatorPanel,
+} from "@/components/ui/operator-page";
 import { useToast } from "@/components/ui/toast-provider";
 
 type Tab = "prep" | "initial" | "log";
@@ -47,7 +53,7 @@ const TAB_CONFIG: Array<{
 type AutomationOverview = {
   ready: Array<PreSendLead>;
   sequences: Array<PreSendSequence>;
-  recentRuns: Array<any>;
+  recentRuns: Array<unknown>;
   stats: {
     ready: number;
     queued: number;
@@ -222,48 +228,30 @@ export function OutreachHub({
   const activeTabConfig = TAB_CONFIG.find((tab) => tab.id === activeTab) || TAB_CONFIG[0];
 
   return (
-    <div className="space-y-5">
+    <div className="flex flex-col gap-5">
       <GmailConnectCard />
 
-      <div className="rounded-[24px] border border-white/[0.06] bg-[radial-gradient(circle_at_top_right,rgba(59,130,246,0.14),transparent_35%),linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-3xl">
-            <div className="flex items-center gap-2 text-sm font-medium text-white">
-              <Sparkles className="h-4 w-4 text-blue-400" />
-              Simpler pre-send workflow
-            </div>
-            <p className="mt-2 text-sm leading-6 text-zinc-400">
-              Prep the lead, launch the first touch, then let Follow-Up take over. The visible flow stays simple from start to finish.
-            </p>
-            <div className="mt-4 grid gap-2 sm:grid-cols-3">
-              <div className="rounded-2xl border border-cyan-500/10 bg-black/20 px-3 py-3">
-                <div className="text-[11px] uppercase tracking-[0.22em] text-cyan-300/80">Step 1</div>
-                <div className="mt-1 text-sm font-medium text-white">Prep</div>
-                <div className="mt-1 text-xs text-zinc-500">{prepLeads.length} leads still need prep</div>
-              </div>
-              <div className="rounded-2xl border border-emerald-500/10 bg-black/20 px-3 py-3">
-                <div className="text-[11px] uppercase tracking-[0.22em] text-emerald-300/80">Step 2</div>
-                <div className="mt-1 text-sm font-medium text-white">Initial Outreach</div>
-                <div className="mt-1 text-xs text-zinc-500">{readyLeads.length} leads ready to launch</div>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-black/20 px-3 py-3">
-                <div className="text-[11px] uppercase tracking-[0.22em] text-zinc-400">Step 3</div>
-                <div className="mt-1 text-sm font-medium text-white">Follow-Up</div>
-                <div className="mt-1 text-xs text-zinc-500">Automation takes over after first send</div>
-              </div>
-            </div>
-          </div>
-
-          <Button asChild className="rounded-full bg-white px-4 text-sm text-black hover:bg-zinc-200">
+      <OperatorHeader
+        eyebrow="Outreach workbench"
+        title="Prep, send, then automate"
+        description="Use this as the first-touch workspace: enrich weak records, approve qualified leads, manually send any selected lead, or hand batches to automation."
+        actions={
+          <Button asChild variant="outline">
             <Link href="/automation">
-              Open Follow-Up Console
+              Open Automation
               <ArrowRight className="h-4 w-4" />
             </Link>
           </Button>
-        </div>
-      </div>
+        }
+      >
+        <OperatorMetricGrid className="md:grid-cols-3">
+          <OperatorMetric label="Needs prep" value={prepLeads.length} detail="intake and enrichment records" icon={Brain} tone="info" />
+          <OperatorMetric label="Ready first touch" value={readyLeads.length} detail="manual send or queue" icon={MailCheck} tone="success" />
+          <OperatorMetric label="Active pre-send" value={preSendSequences.length} detail="queued or sending" icon={Sparkles} tone="accent" />
+        </OperatorMetricGrid>
+      </OperatorHeader>
 
-      <div className="rounded-[24px] border border-white/[0.06] bg-white/[0.02] p-2">
+      <div className="rounded-xl border border-white/10 bg-white/[0.025] p-2">
         <div className="grid gap-2 md:grid-cols-3">
           {TAB_CONFIG.map((tab) => {
             const Icon = tab.icon;
@@ -273,10 +261,10 @@ export function OutreachHub({
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`rounded-2xl px-4 py-3 text-left transition-all ${
+                className={`operator-focus rounded-lg px-4 py-3 text-left transition-colors ${
                   isActive
-                    ? "border border-white/10 bg-black/35 shadow-[0_10px_30px_rgba(0,0,0,0.2)]"
-                    : "border border-transparent bg-transparent hover:border-white/[0.06] hover:bg-white/[0.02]"
+                    ? "border border-white/10 bg-black/35"
+                    : "border border-transparent bg-transparent hover:border-white/10 hover:bg-white/[0.025]"
                 }`}
               >
                 <div className="flex items-center justify-between gap-3">
@@ -305,21 +293,18 @@ export function OutreachHub({
         </div>
       </div>
 
-      <div className="rounded-[28px] border border-white/[0.06] bg-black/20 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
-        <div className="mb-5 flex flex-col gap-3 border-b border-white/[0.06] pb-4 md:flex-row md:items-end md:justify-between">
-          <div>
-            <h2 className="text-2xl font-semibold text-white">{activeTabConfig.label}</h2>
-            <p className="mt-1 max-w-2xl text-sm leading-6 text-zinc-400">
-              {activeTabConfig.description}
-            </p>
-          </div>
-          {typeof tabCounts[activeTab] === "number" && (
-            <div className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-zinc-400">
+      <OperatorPanel
+        title={activeTabConfig.label}
+        description={activeTabConfig.description}
+        action={
+          typeof tabCounts[activeTab] === "number" ? (
+            <div className="rounded-md border border-white/10 bg-white/[0.035] px-3 py-1.5 text-xs text-zinc-400">
               {tabCounts[activeTab]} item{tabCounts[activeTab] === 1 ? "" : "s"}
             </div>
-          )}
-        </div>
-
+          ) : null
+        }
+        contentClassName="p-5"
+      >
         {activeTab === "prep" && (
           <EnrichmentWorkspace
             leads={prepLeads}
@@ -340,7 +325,7 @@ export function OutreachHub({
         )}
 
         {activeTab === "log" && <EmailLogTable />}
-      </div>
+      </OperatorPanel>
 
       {sendingLeadIds && (
         <EmailComposer
