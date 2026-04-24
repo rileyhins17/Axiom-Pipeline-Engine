@@ -5,6 +5,10 @@
   "main": "worker.mjs",
   "compatibility_date": "2026-03-15",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "build": {
+    "command": "npm run build:cloudflare",
+    "cwd": "."
+  },
   "minify": true,
   "observability": {
     "enabled": true
