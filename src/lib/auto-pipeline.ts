@@ -31,6 +31,11 @@ export type AutoPipelineResult = {
  * Find leads that need enrichment: have email, have score, but no enrichmentData yet.
  */
 async function findLeadsNeedingEnrichment(prisma: ReturnType<typeof getPrisma>, limit = 5): Promise<LeadRecord[]> {
+  // Over-fetch so in-memory `hasValidPipelineEmail` filtering still leaves us
+  // with a full batch. Earlier version fetched `limit` exactly which meant
+  // that when the top-N by score were all generic/low-confidence emails the
+  // enricher would silently receive zero work.
+  const overfetch = Math.max(limit * 5, 100);
   const leads = (await prisma.lead.findMany({
     where: {
       enrichedAt: null,
@@ -45,11 +50,11 @@ async function findLeadsNeedingEnrichment(prisma: ReturnType<typeof getPrisma>, 
       ],
     },
     orderBy: { axiomScore: "desc" },
-    take: limit,
+    take: overfetch,
   })) as LeadRecord[];
 
-  // Only enrich leads with valid pipeline emails
-  return leads.filter((lead) => hasValidPipelineEmail(lead));
+  // Final qualification + cap at the requested batch size.
+  return leads.filter((lead) => hasValidPipelineEmail(lead)).slice(0, limit);
 }
 
 /**

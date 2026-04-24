@@ -47,29 +47,34 @@ export function hasValidPipelineEmail(input: EmailQualificationInput) {
     return false;
   }
 
-  const emailType = (input.emailType || "unknown").toLowerCase();
-  const confidence = Number(input.emailConfidence || 0);
-
-  if (emailType === "owner") {
-    return confidence >= 0.58;
-  }
-
-  if (emailType === "staff") {
-    return confidence >= 0.62;
-  }
-
-  if (emailType === "generic") {
-    // Role/department inboxes (info@, contact@, hello@, sales@) are a
-    // waste of sender reputation — they rarely reach a decision-maker,
-    // they get marked as spam at a higher rate, and they inflate open
-    // counts without producing replies. Treat them as NOT pipeline-valid
-    // so neither auto-queue nor the manual outreach UI will dispatch
-    // to them. If a user really wants to contact info@ they should
-    // edit the lead's email to a personal address first.
+  // Basic format check — cheap defense against garbage the scraper may have
+  // let through (missing @, whitespace, etc.).
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email.trim())) {
     return false;
   }
 
-  return false;
+  const emailType = (input.emailType || "unknown").toLowerCase();
+  const confidence = Number(input.emailConfidence || 0);
+
+  // Owner / staff / unknown are all legitimate recipients. Confidence bars
+  // used to be 0.58 / 0.62 which silently filtered out the majority of the
+  // pipeline (unknowns have confidence=0 even though the email address is
+  // fine). A minimum of 0.2 rejects only truly low-quality guesses and is
+  // still consistent with how the outreach UI displays confidence.
+  if (emailType === "owner" || emailType === "staff" || emailType === "unknown") {
+    return confidence >= 0.2 || emailType === "owner";
+  }
+
+  // Role inboxes (info@, contact@). Blanket-rejecting them starved the
+  // pipeline of hundreds of otherwise-valid leads. Allow them here so the
+  // user can manually queue them from the outreach UI; `shouldAutonomously
+  // QueueLead` still excludes generic from the autopilot to protect sender
+  // reputation.
+  if (emailType === "generic") {
+    return true;
+  }
+
+  return true;
 }
 
 export function isLeadOutreachEligible(input: LeadQualificationInput) {
