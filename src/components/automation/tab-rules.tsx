@@ -5,7 +5,6 @@ import { ArrowRight, Loader2, Rocket, Settings2, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { APP_TIME_ZONE_LABEL } from "@/lib/time";
-import { DAILY_TARGET } from "./types";
 import type { AutomationSettings } from "./types";
 
 type Props = {
@@ -13,6 +12,7 @@ type Props = {
   onChange: (fn: (prev: AutomationSettings) => AutomationSettings) => void;
   onSave: () => Promise<void>;
   busyKey: string | null;
+  dailyTarget: number;
 };
 
 /**
@@ -34,7 +34,7 @@ const MAX_THROUGHPUT_PRESET = {
   replySyncStaleMinutes: 15,
 } as const;
 
-export function RulesTab({ settings, onChange, onSave, busyKey }: Props) {
+export function RulesTab({ settings, onChange, onSave, busyKey, dailyTarget }: Props) {
   const up = (patch: Partial<AutomationSettings>) => onChange((p) => ({ ...p, ...patch }));
   const applyMax = () => onChange((p) => ({ ...p, ...MAX_THROUGHPUT_PRESET }));
 
@@ -53,7 +53,7 @@ export function RulesTab({ settings, onChange, onSave, busyKey }: Props) {
         <div className="mb-2 flex items-center gap-2">
           <Rocket className="h-4 w-4 text-emerald-400" />
           <h3 className="text-sm font-semibold text-emerald-300">
-            Max throughput — ~{DAILY_TARGET} emails/day across connected mailboxes
+            Max throughput — ~{dailyTarget} emails/day across connected mailboxes
           </h3>
         </div>
         <p className="text-xs leading-5 text-zinc-400">

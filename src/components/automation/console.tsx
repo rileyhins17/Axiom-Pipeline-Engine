@@ -9,7 +9,7 @@ import { useToast, ToastProvider } from "@/components/ui/toast-provider";
 import { cn } from "@/lib/utils";
 
 import type { AutomationOverview, TabId } from "./types";
-import { DAILY_TARGET } from "./types";
+import { getDailyTarget } from "./types";
 import { fmtCountdown } from "./helpers";
 import { StatusDot, Chip } from "./shared";
 
@@ -181,11 +181,12 @@ function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview
   );
 
   const sentToday = overview.stats.scheduledToday;
-  const progress = Math.min(sentToday / DAILY_TARGET, 1);
+  const dailyTarget = useMemo(() => getDailyTarget(overview.mailboxes), [overview.mailboxes]);
+  const progress = Math.min(sentToday / dailyTarget, 1);
   const isActive = overview.engine.mode === "ACTIVE" && !overview.settings.globalPaused;
 
   const paceStatus = useMemo(() => {
-    if (sentToday >= DAILY_TARGET) return "complete" as const;
+    if (sentToday >= dailyTarget) return "complete" as const;
     const now = new Date();
     const hourOfDay = now.getHours() + now.getMinutes() / 60;
     const windowStart =
@@ -195,10 +196,10 @@ function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview
     const windowHours = Math.max(windowEnd - windowStart, 0);
     const elapsedHours = Math.max(0, Math.min(hourOfDay - windowStart, windowHours));
     const expectedByNow =
-      windowHours > 0 ? Math.round((elapsedHours / windowHours) * DAILY_TARGET) : 0;
+      windowHours > 0 ? Math.round((elapsedHours / windowHours) * dailyTarget) : 0;
     if (sentToday >= expectedByNow) return "on-track" as const;
     return { kind: "behind" as const, gap: expectedByNow - sentToday };
-  }, [overview.settings, sentToday]);
+  }, [dailyTarget, overview.settings, sentToday]);
 
   const tabs: { id: TabId; label: string; count?: number }[] = [
     { id: "overview", label: "Overview" },
@@ -213,12 +214,17 @@ function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview
       {/* Header */}
       <header className="flex flex-col gap-5 pb-6 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-center gap-5">
-          <ProgressRing progress={progress} sentToday={sentToday} paceStatus={paceStatus} />
+          <ProgressRing
+            progress={progress}
+            sentToday={sentToday}
+            dailyTarget={dailyTarget}
+            paceStatus={paceStatus}
+          />
 
           <div className="min-w-0">
             <h1 className="text-2xl font-semibold tracking-tight text-white">Automation</h1>
             <p className="mt-0.5 text-sm text-zinc-400">
-              Outreach engine — target {DAILY_TARGET} emails/day
+              Outreach engine — target {dailyTarget} emails/day
             </p>
             <div className="mt-2.5 flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
               <Chip tone={isActive ? "emerald" : "amber"}>
@@ -303,6 +309,7 @@ function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview
             onRun={handleRun}
             onPause={handleTogglePause}
             busyKey={busyKey}
+            dailyTarget={dailyTarget}
           />
         )}
         {tab === "queue" && (
@@ -324,6 +331,7 @@ function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview
             onChange={setSettingsDraft}
             onSave={saveSettings}
             busyKey={busyKey}
+            dailyTarget={dailyTarget}
           />
         )}
       </div>
@@ -335,10 +343,12 @@ function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview
 function ProgressRing({
   progress,
   sentToday,
+  dailyTarget,
   paceStatus,
 }: {
   progress: number;
   sentToday: number;
+  dailyTarget: number;
   paceStatus: "complete" | "on-track" | { kind: "behind"; gap: number };
 }) {
   const radius = 34;
@@ -354,7 +364,7 @@ function ProgressRing({
     <div
       className="relative flex h-20 w-20 shrink-0 items-center justify-center"
       role="img"
-      aria-label={`${sentToday} of ${DAILY_TARGET} daily emails sent`}
+      aria-label={`${sentToday} of ${dailyTarget} daily emails sent`}
     >
       <svg viewBox="0 0 80 80" className="h-20 w-20 -rotate-90">
         <circle
@@ -379,7 +389,7 @@ function ProgressRing({
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center leading-none">
         <span className="text-lg font-semibold tabular-nums text-white">{sentToday}</span>
-        <span className="mt-0.5 text-[10px] font-medium text-zinc-500">/{DAILY_TARGET}</span>
+        <span className="mt-0.5 text-[10px] font-medium text-zinc-500">/{dailyTarget}</span>
       </div>
     </div>
   );

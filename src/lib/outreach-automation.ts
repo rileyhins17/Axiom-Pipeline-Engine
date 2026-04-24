@@ -12,6 +12,7 @@ import {
 } from "@/lib/automation-policy";
 import { hasValidPipelineEmail, isLeadOutreachEligible } from "@/lib/lead-qualification";
 import { resolveLeadEnrichment } from "@/lib/outreach-enrichment";
+import { getDatabase } from "@/lib/cloudflare";
 import { getPrisma } from "@/lib/prisma";
 import { READY_FOR_FIRST_TOUCH_STATUS } from "@/lib/outreach";
 import type {
@@ -202,9 +203,40 @@ type AutomationBlockerReason =
 
 const ACTIVE_SEQUENCE_STATUSES = ["QUEUED", "ACTIVE", "PAUSED", "SENDING"] as const;
 const MAILBOX_SENDABLE_STATUSES = ["ACTIVE", "WARMING"] as const;
+const MAILBOX_MUTABLE_STATUSES = ["ACTIVE", "WARMING", "PAUSED", "DISABLED"] as const;
+const SCHEDULER_LEASE_ID = "outreach-automation";
+const SCHEDULER_LEASE_TTL_MS = 10 * 60_000;
 
 function normalizeEmail(email: string | null | undefined) {
   return (email || "").trim().toLowerCase();
+}
+
+function coerceFiniteNumber(value: unknown) {
+  const numberValue = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+  return Number.isFinite(numberValue) ? numberValue : null;
+}
+
+function coerceInt(value: unknown, fallback: number, min: number, max: number) {
+  const numberValue = coerceFiniteNumber(value);
+  if (numberValue === null) return fallback;
+  return Math.max(min, Math.min(max, Math.trunc(numberValue)));
+}
+
+function coerceBool(value: unknown, fallback: boolean) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["true", "1", "yes", "on"].includes(normalized)) return true;
+    if (["false", "0", "no", "off"].includes(normalized)) return false;
+  }
+  return fallback;
+}
+
+function cleanShortText(value: unknown, maxLength: number) {
+  if (typeof value !== "string") return undefined;
+  const cleaned = value.replace(/\s+/g, " ").trim();
+  return cleaned ? cleaned.slice(0, maxLength) : null;
 }
 
 function getLocalDateParts(date: Date, timeZone: string) {
@@ -480,24 +512,28 @@ function getStepType(stepNumber: number): OutreachSequenceStepType {
 
 function normalizeAutomationSettings(settings: OutreachAutomationSettingRecord) {
   // DB is the source of truth; only fill in missing/invalid values from defaults.
-  const pickNumber = (value: unknown, fallback: number) =>
-    typeof value === "number" && Number.isFinite(value) ? value : fallback;
-  const pickBool = (value: unknown, fallback: boolean) =>
-    typeof value === "boolean" ? value : fallback;
-  return {
+  const normalized = {
     ...settings,
-    weekdaysOnly: pickBool(settings.weekdaysOnly, AUTOMATION_SETTINGS_DEFAULTS.weekdaysOnly),
-    sendWindowStartHour: pickNumber(settings.sendWindowStartHour, AUTOMATION_SETTINGS_DEFAULTS.sendWindowStartHour),
-    sendWindowStartMinute: pickNumber(settings.sendWindowStartMinute, AUTOMATION_SETTINGS_DEFAULTS.sendWindowStartMinute),
-    sendWindowEndHour: pickNumber(settings.sendWindowEndHour, AUTOMATION_SETTINGS_DEFAULTS.sendWindowEndHour),
-    sendWindowEndMinute: pickNumber(settings.sendWindowEndMinute, AUTOMATION_SETTINGS_DEFAULTS.sendWindowEndMinute),
-    initialDelayMinMinutes: pickNumber(settings.initialDelayMinMinutes, AUTOMATION_SETTINGS_DEFAULTS.initialDelayMinMinutes),
-    initialDelayMaxMinutes: pickNumber(settings.initialDelayMaxMinutes, AUTOMATION_SETTINGS_DEFAULTS.initialDelayMaxMinutes),
-    followUp1BusinessDays: pickNumber(settings.followUp1BusinessDays, AUTOMATION_SETTINGS_DEFAULTS.followUp1BusinessDays),
-    followUp2BusinessDays: pickNumber(settings.followUp2BusinessDays, AUTOMATION_SETTINGS_DEFAULTS.followUp2BusinessDays),
-    schedulerClaimBatch: pickNumber(settings.schedulerClaimBatch, AUTOMATION_SETTINGS_DEFAULTS.schedulerClaimBatch),
-    replySyncStaleMinutes: pickNumber(settings.replySyncStaleMinutes, AUTOMATION_SETTINGS_DEFAULTS.replySyncStaleMinutes),
+    enabled: coerceBool(settings.enabled, AUTOMATION_SETTINGS_DEFAULTS.enabled),
+    globalPaused: coerceBool(settings.globalPaused, AUTOMATION_SETTINGS_DEFAULTS.globalPaused),
+    weekdaysOnly: coerceBool(settings.weekdaysOnly, AUTOMATION_SETTINGS_DEFAULTS.weekdaysOnly),
+    sendWindowStartHour: coerceInt(settings.sendWindowStartHour, AUTOMATION_SETTINGS_DEFAULTS.sendWindowStartHour, 0, 23),
+    sendWindowStartMinute: coerceInt(settings.sendWindowStartMinute, AUTOMATION_SETTINGS_DEFAULTS.sendWindowStartMinute, 0, 59),
+    sendWindowEndHour: coerceInt(settings.sendWindowEndHour, AUTOMATION_SETTINGS_DEFAULTS.sendWindowEndHour, 0, 23),
+    sendWindowEndMinute: coerceInt(settings.sendWindowEndMinute, AUTOMATION_SETTINGS_DEFAULTS.sendWindowEndMinute, 0, 59),
+    initialDelayMinMinutes: coerceInt(settings.initialDelayMinMinutes, AUTOMATION_SETTINGS_DEFAULTS.initialDelayMinMinutes, 0, 240),
+    initialDelayMaxMinutes: coerceInt(settings.initialDelayMaxMinutes, AUTOMATION_SETTINGS_DEFAULTS.initialDelayMaxMinutes, 0, 240),
+    followUp1BusinessDays: coerceInt(settings.followUp1BusinessDays, AUTOMATION_SETTINGS_DEFAULTS.followUp1BusinessDays, 1, 30),
+    followUp2BusinessDays: coerceInt(settings.followUp2BusinessDays, AUTOMATION_SETTINGS_DEFAULTS.followUp2BusinessDays, 1, 30),
+    schedulerClaimBatch: coerceInt(settings.schedulerClaimBatch, AUTOMATION_SETTINGS_DEFAULTS.schedulerClaimBatch, 1, 100),
+    replySyncStaleMinutes: coerceInt(settings.replySyncStaleMinutes, AUTOMATION_SETTINGS_DEFAULTS.replySyncStaleMinutes, 1, 240),
   };
+
+  if (normalized.initialDelayMaxMinutes < normalized.initialDelayMinMinutes) {
+    normalized.initialDelayMaxMinutes = normalized.initialDelayMinMinutes;
+  }
+
+  return normalized;
 }
 
 async function getSettings(prisma: PrismaLike) {
@@ -1225,20 +1261,116 @@ export async function listAutomationOverview() {
   } satisfies AutomationOverview;
 }
 
+function sanitizeAutomationSettingsPatch(
+  data: Partial<OutreachAutomationSettingRecord>,
+  current: OutreachAutomationSettingRecord,
+): Partial<OutreachAutomationSettingRecord> {
+  const patch: Partial<OutreachAutomationSettingRecord> = {};
+
+  if ("enabled" in data) patch.enabled = coerceBool(data.enabled, current.enabled);
+  if ("globalPaused" in data) patch.globalPaused = coerceBool(data.globalPaused, current.globalPaused);
+  if ("weekdaysOnly" in data) patch.weekdaysOnly = coerceBool(data.weekdaysOnly, current.weekdaysOnly);
+  if ("sendWindowStartHour" in data) patch.sendWindowStartHour = coerceInt(data.sendWindowStartHour, current.sendWindowStartHour, 0, 23);
+  if ("sendWindowStartMinute" in data) patch.sendWindowStartMinute = coerceInt(data.sendWindowStartMinute, current.sendWindowStartMinute, 0, 59);
+  if ("sendWindowEndHour" in data) patch.sendWindowEndHour = coerceInt(data.sendWindowEndHour, current.sendWindowEndHour, 0, 23);
+  if ("sendWindowEndMinute" in data) patch.sendWindowEndMinute = coerceInt(data.sendWindowEndMinute, current.sendWindowEndMinute, 0, 59);
+  if ("initialDelayMinMinutes" in data) patch.initialDelayMinMinutes = coerceInt(data.initialDelayMinMinutes, current.initialDelayMinMinutes, 0, 240);
+  if ("initialDelayMaxMinutes" in data) patch.initialDelayMaxMinutes = coerceInt(data.initialDelayMaxMinutes, current.initialDelayMaxMinutes, 0, 240);
+  if ("followUp1BusinessDays" in data) patch.followUp1BusinessDays = coerceInt(data.followUp1BusinessDays, current.followUp1BusinessDays, 1, 30);
+  if ("followUp2BusinessDays" in data) patch.followUp2BusinessDays = coerceInt(data.followUp2BusinessDays, current.followUp2BusinessDays, 1, 30);
+  if ("schedulerClaimBatch" in data) patch.schedulerClaimBatch = coerceInt(data.schedulerClaimBatch, current.schedulerClaimBatch, 1, 100);
+  if ("replySyncStaleMinutes" in data) patch.replySyncStaleMinutes = coerceInt(data.replySyncStaleMinutes, current.replySyncStaleMinutes, 1, 240);
+
+  const minDelay = patch.initialDelayMinMinutes ?? current.initialDelayMinMinutes;
+  const maxDelay = patch.initialDelayMaxMinutes ?? current.initialDelayMaxMinutes;
+  if (maxDelay < minDelay) {
+    patch.initialDelayMaxMinutes = minDelay;
+  }
+
+  return patch;
+}
+
+function sanitizeMailboxPatch(
+  data: Partial<OutreachMailboxRecord>,
+  current?: OutreachMailboxRecord,
+): Partial<OutreachMailboxRecord> {
+  const patch: Partial<OutreachMailboxRecord> = {};
+
+  if ("label" in data) {
+    patch.label = cleanShortText(data.label, 80);
+  }
+
+  if ("status" in data && typeof data.status === "string") {
+    const status = data.status.trim().toUpperCase();
+    if (MAILBOX_MUTABLE_STATUSES.includes(status as (typeof MAILBOX_MUTABLE_STATUSES)[number])) {
+      patch.status = status;
+    }
+  }
+
+  if ("timezone" in data && typeof data.timezone === "string") {
+    const timezone = data.timezone.trim();
+    if (/^[A-Za-z]+\/[A-Za-z0-9_+\-]+(?:\/[A-Za-z0-9_+\-]+)?$/.test(timezone)) {
+      patch.timezone = timezone.slice(0, 64);
+    }
+  }
+
+  if ("dailyLimit" in data) {
+    patch.dailyLimit = coerceInt(data.dailyLimit, current?.dailyLimit ?? MAILBOX_DAILY_SEND_TARGET, 0, 500);
+  }
+  if ("hourlyLimit" in data) {
+    patch.hourlyLimit = coerceInt(data.hourlyLimit, current?.hourlyLimit ?? MAILBOX_HOURLY_SEND_TARGET, 0, 100);
+  }
+  if ("minDelaySeconds" in data) {
+    patch.minDelaySeconds = coerceInt(data.minDelaySeconds, current?.minDelaySeconds ?? MAILBOX_MIN_DELAY_SECONDS, 0, 86_400);
+  }
+  if ("maxDelaySeconds" in data) {
+    patch.maxDelaySeconds = coerceInt(data.maxDelaySeconds, current?.maxDelaySeconds ?? MAILBOX_MAX_DELAY_SECONDS, 0, 86_400);
+  }
+  if ("warmupLevel" in data) {
+    patch.warmupLevel = coerceInt(data.warmupLevel, current?.warmupLevel ?? 0, 0, 10);
+  }
+
+  const dailyLimit = patch.dailyLimit ?? current?.dailyLimit;
+  const hourlyLimit = patch.hourlyLimit ?? current?.hourlyLimit;
+  if (dailyLimit !== undefined && hourlyLimit !== undefined && hourlyLimit > dailyLimit) {
+    patch.hourlyLimit = dailyLimit;
+  }
+
+  const minDelay = patch.minDelaySeconds ?? current?.minDelaySeconds;
+  const maxDelay = patch.maxDelaySeconds ?? current?.maxDelaySeconds;
+  if (minDelay !== undefined && maxDelay !== undefined && maxDelay < minDelay) {
+    patch.maxDelaySeconds = minDelay;
+  }
+
+  return patch;
+}
+
 export async function updateAutomationSettings(data: Partial<OutreachAutomationSettingRecord>) {
   const prisma = getPrisma();
   const settings = await getSettings(prisma);
-  return prisma.outreachAutomationSetting.update({
+  const patch = sanitizeAutomationSettingsPatch(data, settings);
+  if (Object.keys(patch).length === 0) {
+    return settings;
+  }
+  const updated = await prisma.outreachAutomationSetting.update({
     where: { id: settings.id },
-    data,
+    data: patch,
   });
+  return normalizeAutomationSettings(updated);
 }
 
 export async function updateMailbox(mailboxId: string, data: Partial<OutreachMailboxRecord>) {
   const prisma = getPrisma();
+  const existing = await prisma.outreachMailbox.findUnique({ where: { id: mailboxId } });
+  if (!existing) throw new Error("Mailbox not found");
+
+  const patch = sanitizeMailboxPatch(data, existing);
+  if (Object.keys(patch).length === 0) {
+    return existing;
+  }
   return prisma.outreachMailbox.update({
     where: { id: mailboxId },
-    data,
+    data: patch,
   });
 }
 
@@ -1351,6 +1483,81 @@ async function canMailboxSend(prisma: PrismaLike, mailbox: OutreachMailboxRecord
   }
 
   return { allowed: true as const };
+}
+
+export async function getManualMailboxSendGate(
+  mailbox: OutreachMailboxRecord,
+  requestedCount = 1,
+) {
+  const prisma = getPrisma();
+  const now = new Date();
+
+  if (!MAILBOX_SENDABLE_STATUSES.includes(mailbox.status as (typeof MAILBOX_SENDABLE_STATUSES)[number])) {
+    return {
+      allowed: false,
+      reason: "Mailbox is not active for sending.",
+      remainingDaily: 0,
+      remainingHourly: 0,
+    };
+  }
+
+  const { sentToday, sentThisHour } = await getMailboxLoad(prisma, mailbox.id, now);
+  const remainingDaily = Math.max(0, mailbox.dailyLimit - sentToday);
+  const remainingHourly = Math.max(0, mailbox.hourlyLimit - sentThisHour);
+  const available = Math.min(remainingDaily, remainingHourly);
+
+  if (requestedCount > available) {
+    return {
+      allowed: false,
+      reason: `Mailbox capacity is ${available} right now (${remainingDaily}/day, ${remainingHourly}/hour remaining).`,
+      remainingDaily,
+      remainingHourly,
+    };
+  }
+
+  return {
+    allowed: true,
+    remainingDaily,
+    remainingHourly,
+  };
+}
+
+export async function stopUnsentAutomationSequencesForManualSend(leadId: number) {
+  const prisma = getPrisma();
+  const sequences = await prisma.outreachSequence.findMany({
+    where: {
+      leadId,
+      status: { in: ["QUEUED", "ACTIVE", "PAUSED", "SENDING"] },
+      lastSentAt: null,
+    },
+    select: { id: true },
+  });
+  const sequenceIds = sequences.map((sequence) => sequence.id);
+  if (sequenceIds.length === 0) return 0;
+
+  await prisma.outreachSequenceStep.updateMany({
+    where: {
+      sequenceId: { in: sequenceIds },
+      status: { in: ["SCHEDULED", "CLAIMED", "SENDING"] },
+    },
+    data: {
+      status: "SKIPPED",
+      claimedAt: null,
+      claimedByRunId: null,
+      errorMessage: "manual_send_override",
+    },
+  });
+
+  await prisma.outreachSequence.updateMany({
+    where: { id: { in: sequenceIds } },
+    data: {
+      status: "STOPPED",
+      stopReason: "MANUAL_SEND",
+      nextScheduledAt: null,
+    },
+  });
+
+  return sequenceIds.length;
 }
 
 async function markReplyStop(
@@ -2037,11 +2244,58 @@ async function setSequenceBlocked(
   }).catch(() => null);
 }
 
+async function tryAcquireSchedulerLease(holder: string, now = new Date()) {
+  const db = getDatabase();
+  const expiredAt = now.toISOString();
+  const leaseExpiresAt = new Date(now.getTime() + SCHEDULER_LEASE_TTL_MS).toISOString();
+
+  await db.prepare(
+    `INSERT OR IGNORE INTO "SchedulerLease" ("id", "holder", "expiresAt", "acquiredAt", "updatedAt")
+     VALUES (?, NULL, '1970-01-01T00:00:00.000Z', ?, ?)`,
+  ).bind(SCHEDULER_LEASE_ID, expiredAt, expiredAt).run();
+
+  const result = await db.prepare(
+    `UPDATE "SchedulerLease"
+     SET "holder" = ?, "expiresAt" = ?, "acquiredAt" = ?, "updatedAt" = ?
+     WHERE "id" = ?
+       AND ("holder" IS NULL OR "expiresAt" <= ? OR "holder" = ?)`,
+  )
+    .bind(holder, leaseExpiresAt, expiredAt, expiredAt, SCHEDULER_LEASE_ID, expiredAt, holder)
+    .run();
+
+  return Number(result.meta?.changes ?? 0) > 0;
+}
+
+async function releaseSchedulerLease(holder: string) {
+  const now = new Date().toISOString();
+  await getDatabase().prepare(
+    `UPDATE "SchedulerLease"
+     SET "holder" = NULL, "expiresAt" = ?, "updatedAt" = ?
+     WHERE "id" = ? AND "holder" = ?`,
+  ).bind(now, now, SCHEDULER_LEASE_ID, holder).run();
+}
+
 export async function runAutomationScheduler() {
   const { runAutoPipeline } = await import("@/lib/auto-pipeline");
   const prisma = getPrisma();
   const settings = await getSettings(prisma);
   const now = new Date();
+  const leaseHolder = crypto.randomUUID();
+
+  const leaseAcquired = await tryAcquireSchedulerLease(leaseHolder, now);
+  if (!leaseAcquired) {
+    console.log("[scheduler] Another automation scheduler run is already active; skipping this tick.");
+    return {
+      runId: null,
+      claimed: 0,
+      sent: 0,
+      failed: 0,
+      skipped: 0,
+      skippedReason: "scheduler_locked",
+      pipeline: { enriched: 0, enrichFailed: 0, qualified: 0, queued: 0, queueSkipped: 0 },
+      replySync: { checked: 0, stopped: 0 },
+    };
+  }
 
   console.log(`[scheduler] Run starting at ${now.toISOString()} | enabled=${settings.enabled} paused=${settings.globalPaused}`);
 
@@ -2201,5 +2455,17 @@ export async function runAutomationScheduler() {
       },
     }).catch(() => null);
     throw error;
+  } finally {
+    await releaseSchedulerLease(leaseHolder).catch((error) => {
+      console.error("[scheduler] Failed to release scheduler lease:", error);
+    });
   }
 }
+
+export const __automationTestUtils = {
+  normalizeAutomationSettings,
+  releaseSchedulerLease,
+  sanitizeAutomationSettingsPatch,
+  sanitizeMailboxPatch,
+  tryAcquireSchedulerLease,
+};

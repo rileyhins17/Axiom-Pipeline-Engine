@@ -19,7 +19,6 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 import type { AutomationOverview, AutomationSequence } from "./types";
-import { DAILY_TARGET } from "./types";
 import {
   fmtCountdown,
   fmtDt,
@@ -48,11 +47,13 @@ export function OverviewTab({
   onRun,
   onPause,
   busyKey,
+  dailyTarget,
 }: {
   overview: AutomationOverview;
   onRun: () => void;
   onPause: () => void;
   busyKey: string | null;
+  dailyTarget: number;
 }) {
   const allSeqs = overview.sequences;
   const queued = useMemo(() => allSeqs.filter((s) => s.state === "QUEUED"), [allSeqs]);
@@ -103,9 +104,10 @@ export function OverviewTab({
   const elapsed = Math.max(0, Math.min(h - ws, windowHrs));
   const hoursRemaining = Math.max(0, we - h);
   const emailsPerHour = elapsed > 0 ? (sentToday / elapsed).toFixed(1) : "0";
+  const remainingTarget = Math.max(0, dailyTarget - sentToday);
   const neededPerHour =
-    hoursRemaining > 0 ? ((DAILY_TARGET - sentToday) / hoursRemaining).toFixed(1) : "—";
-  const expectedByNow = windowHrs > 0 ? Math.round((elapsed / windowHrs) * DAILY_TARGET) : 0;
+    hoursRemaining > 0 ? (remainingTarget / hoursRemaining).toFixed(1) : "—";
+  const expectedByNow = windowHrs > 0 ? Math.round((elapsed / windowHrs) * dailyTarget) : 0;
 
   const stats: {
     label: string;
@@ -120,8 +122,8 @@ export function OverviewTab({
     },
     {
       label: "Sent today",
-      value: `${sentToday} / ${DAILY_TARGET}`,
-      tone: sentToday >= DAILY_TARGET ? "success" : "default",
+      value: `${sentToday} / ${dailyTarget}`,
+      tone: sentToday >= dailyTarget ? "success" : "default",
       emphasis: true,
     },
     { label: "Emails/hour", value: emailsPerHour },
@@ -134,12 +136,12 @@ export function OverviewTab({
       label: "Queue depth",
       value: `${queued.length + sending.length}`,
       tone:
-        queued.length + sending.length === 0 && sentToday < DAILY_TARGET ? "warn" : "default",
+        queued.length + sending.length === 0 && sentToday < dailyTarget ? "warn" : "default",
     },
     {
       label: "Capacity left",
       value: `${remainingCapacity}`,
-      tone: remainingCapacity < DAILY_TARGET - sentToday ? "warn" : "default",
+      tone: remainingCapacity < remainingTarget ? "warn" : "default",
     },
     {
       label: "Issues",
@@ -237,7 +239,7 @@ export function OverviewTab({
               title="Daily progress"
               action={
                 <span className="text-xs tabular-nums text-zinc-400">
-                  {Math.round((sentToday / DAILY_TARGET) * 100)}%
+                  {Math.round((sentToday / dailyTarget) * 100)}%
                 </span>
               }
             />
@@ -245,28 +247,28 @@ export function OverviewTab({
               <div
                 className={cn(
                   "h-full rounded-full transition-[width] duration-700 ease-out",
-                  sentToday >= DAILY_TARGET
+                  sentToday >= dailyTarget
                     ? "bg-emerald-500"
-                    : sentToday >= DAILY_TARGET * 0.6
+                    : sentToday >= dailyTarget * 0.6
                     ? "bg-cyan-500"
-                    : sentToday >= DAILY_TARGET * 0.3
+                    : sentToday >= dailyTarget * 0.3
                     ? "bg-blue-500"
                     : "bg-amber-500",
                 )}
-                style={{ width: `${Math.min(100, (sentToday / DAILY_TARGET) * 100)}%` }}
+                style={{ width: `${Math.min(100, (sentToday / dailyTarget) * 100)}%` }}
                 role="progressbar"
                 aria-valuenow={sentToday}
                 aria-valuemin={0}
-                aria-valuemax={DAILY_TARGET}
+                aria-valuemax={dailyTarget}
                 aria-label="Daily send progress"
               />
             </div>
             <div className="mt-2 flex justify-between text-[10px] text-zinc-500">
               <span>0</span>
-              <span>{Math.round(DAILY_TARGET * 0.25)}</span>
-              <span>{Math.round(DAILY_TARGET * 0.5)}</span>
-              <span>{Math.round(DAILY_TARGET * 0.75)}</span>
-              <span>{DAILY_TARGET}</span>
+              <span>{Math.round(dailyTarget * 0.25)}</span>
+              <span>{Math.round(dailyTarget * 0.5)}</span>
+              <span>{Math.round(dailyTarget * 0.75)}</span>
+              <span>{dailyTarget}</span>
             </div>
           </Panel>
 
@@ -321,7 +323,7 @@ export function OverviewTab({
               <div className="flex items-start gap-3 border-t border-amber-400/15 bg-amber-500/[0.03] px-5 py-5 text-sm text-amber-200">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
                 <div className="leading-5">
-                  No outreach is queued. Queue more leads to hit the {DAILY_TARGET}/day target.{" "}
+                  No outreach is queued. Queue more leads to hit the {dailyTarget}/day target.{" "}
                   <Link
                     href="/outreach"
                     className="cursor-pointer font-medium text-amber-200 underline underline-offset-2 transition-colors hover:text-amber-100"
@@ -487,7 +489,7 @@ export function OverviewTab({
                     </span>
                   </li>
                 )}
-                {sentToday < expectedByNow && sentToday < DAILY_TARGET && (
+                {sentToday < expectedByNow && sentToday < dailyTarget && (
                   <li className="flex gap-2 text-amber-300">
                     <span>·</span>
                     <span>

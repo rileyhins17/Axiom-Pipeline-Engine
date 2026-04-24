@@ -97,8 +97,8 @@ export function EmailComposer({ leadIds, onClose, onComplete }: EmailComposerPro
                       Send personalized emails to {leadIds.length} lead{leadIds.length !== 1 ? "s" : ""}?
                     </div>
                     <div className="mt-1 text-xs text-zinc-400">
-                      AI will generate a unique, personalized cold email for each lead using their enrichment data,
-                      then send it from your connected Gmail account. This action cannot be undone.
+                      AI will generate a unique email for each selected lead using enrichment or fallback context,
+                      then send it from your connected Gmail account. This manual send bypasses automation queue rules.
                     </div>
                   </div>
                 </div>
@@ -119,8 +119,8 @@ export function EmailComposer({ leadIds, onClose, onComplete }: EmailComposerPro
                     <span className="text-emerald-400">Gmail API</span>
                   </div>
                   <div className="flex justify-between">
-                    <span>Dedup protection</span>
-                    <span className="text-cyan-400">30-day window</span>
+                    <span>Automation blocks</span>
+                    <span className="text-amber-400">Manual override</span>
                   </div>
                 </div>
               </div>

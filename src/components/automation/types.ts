@@ -73,6 +73,7 @@ export type RecentSend = {
 export type AutomationSettings = {
   enabled: boolean;
   globalPaused: boolean;
+  weekdaysOnly: boolean;
   sendWindowStartHour: number;
   sendWindowStartMinute: number;
   sendWindowEndHour: number;
@@ -132,6 +133,14 @@ export type AutomationOverview = {
  * Assumes 2 active mailboxes × 40/day cap each. Actual caps are per-mailbox
  * (see MAILBOX_DAILY_SEND_TARGET in src/lib/automation-policy.ts).
  */
-export const DAILY_TARGET = 80;
+export const FALLBACK_DAILY_TARGET = 80;
+
+export function getDailyTarget(mailboxes: AutomationMailbox[]) {
+  const activeCapacity = mailboxes
+    .filter((mailbox) => mailbox.status === "ACTIVE" || mailbox.status === "WARMING")
+    .reduce((total, mailbox) => total + Math.max(0, mailbox.dailyLimit || 0), 0);
+
+  return activeCapacity > 0 ? activeCapacity : FALLBACK_DAILY_TARGET;
+}
 
 export type TabId = "overview" | "queue" | "mailboxes" | "blocked" | "rules";

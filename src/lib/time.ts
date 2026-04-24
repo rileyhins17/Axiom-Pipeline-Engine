@@ -64,9 +64,9 @@ export function formatAppTime(
 }
 
 export function formatAppClock(hour: number, minute: number) {
-  return new Date(Date.UTC(2026, 0, 1, hour, minute)).toLocaleTimeString("en-CA", {
-    timeZone: APP_TIME_ZONE,
-    hour: "numeric",
-    minute: "2-digit",
-  });
+  const safeHour = Math.max(0, Math.min(23, Math.trunc(Number(hour) || 0)));
+  const safeMinute = Math.max(0, Math.min(59, Math.trunc(Number(minute) || 0)));
+  const hour12 = safeHour % 12 || 12;
+  const period = safeHour < 12 ? "a.m." : "p.m.";
+  return `${hour12}:${String(safeMinute).padStart(2, "0")} ${period}`;
 }

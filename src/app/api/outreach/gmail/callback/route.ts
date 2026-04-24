@@ -36,6 +36,12 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    if (!state || state !== session.session.id) {
+      return NextResponse.redirect(
+        `${baseUrl}/outreach?gmail_error=invalid_state`,
+      );
+    }
+
     // Exchange code for tokens
     const tokens = await exchangeCodeForTokens(code);
 
@@ -68,7 +74,7 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    let connectionId = existing?.id || crypto.randomUUID();
+    const connectionId = existing?.id || crypto.randomUUID();
     if (existing) {
       await prisma.gmailConnection.update({
         where: { id: existing.id },
@@ -107,12 +113,13 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.redirect(`${baseUrl}/outreach?gmail_connected=true`);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Gmail callback error:", error);
     const env = getServerEnv();
     const baseUrl = env.APP_BASE_URL.replace(/\/$/, "");
+    const message = error instanceof Error ? error.message : "callback_failed";
     return NextResponse.redirect(
-      `${baseUrl}/outreach?gmail_error=${encodeURIComponent(error.message || "callback_failed")}`,
+      `${baseUrl}/outreach?gmail_error=${encodeURIComponent(message)}`,
     );
   }
 }
