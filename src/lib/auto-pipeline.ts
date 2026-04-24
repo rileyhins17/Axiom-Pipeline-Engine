@@ -74,21 +74,66 @@ async function findLeadsNeedingQualification(prisma: ReturnType<typeof getPrisma
 }
 
 /**
- * Auto-enrich leads using OpenRouter/DeepSeek.
+ * Reset leads stuck in ENRICHING for too long (worker died mid-enrichment).
+ * Without this, the "OR ENRICHING" branch of findLeadsNeedingEnrichment keeps
+ * re-picking them but they may block forever if enrichLead always times out.
  */
-async function autoEnrich(prisma: ReturnType<typeof getPrisma>, limit = 3): Promise<{ enriched: number; failed: number }> {
+async function resetStuckEnriching(prisma: ReturnType<typeof getPrisma>): Promise<number> {
+  const cutoff = new Date(Date.now() - 10 * 60 * 1000);
+  const stuck = (await prisma.lead.findMany({
+    where: {
+      outreachStatus: "ENRICHING",
+      enrichedAt: null,
+      isArchived: false,
+      updatedAt: { lt: cutoff },
+    },
+    select: { id: true },
+    take: 200,
+  })) as Array<{ id: number }>;
+
+  if (stuck.length === 0) return 0;
+
+  await Promise.all(
+    stuck.map((s) =>
+      prisma.lead
+        .update({ where: { id: s.id }, data: { outreachStatus: "NOT_CONTACTED" } })
+        .catch(() => null),
+    ),
+  );
+
+  return stuck.length;
+}
+
+/**
+ * Auto-enrich leads using OpenRouter/DeepSeek.
+ *
+ * Parallelized in small chunks so a single cron tick can drain meaningful
+ * backlogs (sequential x 10 was topping out ~150s which blows the worker
+ * CPU budget and leaves leads stuck ENRICHING).
+ */
+async function autoEnrich(
+  prisma: ReturnType<typeof getPrisma>,
+  limit = 30,
+  concurrency = 6,
+): Promise<{ enriched: number; failed: number }> {
   const leads = await findLeadsNeedingEnrichment(prisma, limit);
+  if (leads.length === 0) return { enriched: 0, failed: 0 };
+
+  // Claim all leads as ENRICHING up-front so concurrent cron ticks don't
+  // double-process the same ones.
+  await Promise.all(
+    leads.map((l) =>
+      prisma.lead
+        .update({ where: { id: l.id }, data: { outreachStatus: "ENRICHING" } })
+        .catch(() => null),
+    ),
+  );
+
   let enriched = 0;
   let failed = 0;
 
-  for (const lead of leads) {
+  const runOne = async (lead: LeadRecord) => {
     try {
-      // Mark as enriching
-      await prisma.lead.update({
-        where: { id: lead.id },
-        data: { outreachStatus: "ENRICHING" },
-      });
-
       const result = await enrichLead(lead);
       await prisma.lead.update({
         where: { id: lead.id },
@@ -101,13 +146,18 @@ async function autoEnrich(prisma: ReturnType<typeof getPrisma>, limit = 3): Prom
       enriched++;
     } catch (error) {
       console.error(`[auto-pipeline] Failed to enrich lead ${lead.id}:`, error);
-      // Revert status on failure
       await prisma.lead.update({
         where: { id: lead.id },
         data: { outreachStatus: "NOT_CONTACTED" },
       }).catch(() => null);
       failed++;
     }
+  };
+
+  // Process in windows so we respect rate limits but still push volume
+  for (let i = 0; i < leads.length; i += concurrency) {
+    const window = leads.slice(i, i + concurrency);
+    await Promise.allSettled(window.map(runOne));
   }
 
   return { enriched, failed };
@@ -179,10 +229,16 @@ async function autoQueue(systemUserId: string): Promise<{ queued: number; skippe
 export async function runAutoPipeline(systemUserId: string): Promise<AutoPipelineResult> {
   const prisma = getPrisma();
 
-  // Step 1: Auto-enrich (limit to 10 per run so the funnel keeps pace with
-  // send throughput — old limit of 3 left NOT_CONTACTED leads backed up for
-  // hours once the queue grew past a few dozen).
-  const { enriched, failed: enrichFailed } = await autoEnrich(prisma, 10);
+  // Step 0: Reset leads that got stuck in ENRICHING from a prior tick that
+  // died mid-call (worker CPU timeout, transient upstream failure, etc.).
+  const recovered = await resetStuckEnriching(prisma).catch(() => 0);
+  if (recovered > 0) {
+    console.log(`[auto-pipeline] Recovered ${recovered} stuck ENRICHING leads`);
+  }
+
+  // Step 1: Auto-enrich. Processed 6-wide × 30 per tick so a single minute of
+  // cron drains up to ~30 leads. A 200-lead backlog clears in ~7 min.
+  const { enriched, failed: enrichFailed } = await autoEnrich(prisma, 30, 6);
 
   // Step 2: Auto-qualify enriched leads
   const qualified = await autoQualify(prisma);

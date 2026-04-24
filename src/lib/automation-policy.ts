@@ -36,9 +36,10 @@ export const AUTOMATION_SETTINGS_DEFAULTS = {
   initialDelayMaxMinutes: 5,
   followUp1BusinessDays: 2,
   followUp2BusinessDays: 3,
-  /** Steps claimed per scheduler tick. Raised from 10 → 25 so a single tick
-   *  can drain a big backlog instead of trickling 10 at a time. */
-  schedulerClaimBatch: 25,
+  /** Steps claimed per scheduler tick. Raised to 60 so a single tick can
+   *  drain a larger backlog once the enrichment funnel catches up. Per-mailbox
+   *  caps still throttle any one account; this only lifts the per-tick ceiling. */
+  schedulerClaimBatch: 60,
   replySyncStaleMinutes: 15,
 } satisfies Omit<OutreachAutomationSettingRecord, "id" | "createdAt" | "updatedAt">;
 

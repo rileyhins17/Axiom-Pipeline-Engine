@@ -1,9 +1,11 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 
 import { isValidJobId, normalizeAgentName, validateAgentLeadPayload } from "@/lib/agent-protocol";
 import { appendScrapeJobEvent } from "@/lib/scrape-jobs";
 import { requireAgentAuth } from "@/lib/agent-auth";
 import { extractDomain } from "@/lib/dedupe";
+import { hasValidPipelineEmail } from "@/lib/lead-qualification";
+import { enrichLead } from "@/lib/outreach-enrichment";
 import { getPrisma } from "@/lib/prisma";
 import { getScrapeJob } from "@/lib/scrape-jobs";
 
@@ -165,6 +167,41 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     city: createdLead.city,
     message: `[LEAD] Saved ${createdLead.businessName} — ${createdLead.city}`,
   });
+
+  // Fire-and-forget enrichment so fresh leads don't sit waiting for the next
+  // cron tick. Gated on having a valid email + score so we don't waste calls.
+  if (
+    createdLead.email &&
+    typeof createdLead.axiomScore === "number" &&
+    !createdLead.isArchived &&
+    hasValidPipelineEmail(createdLead)
+  ) {
+    after(async () => {
+      try {
+        await prisma.lead.update({
+          where: { id: createdLead.id },
+          data: { outreachStatus: "ENRICHING" },
+        });
+        const enrichment = await enrichLead(createdLead);
+        await prisma.lead.update({
+          where: { id: createdLead.id },
+          data: {
+            enrichedAt: new Date(),
+            enrichmentData: JSON.stringify(enrichment),
+            outreachStatus: "ENRICHED",
+          },
+        });
+      } catch (error) {
+        console.error(`[agent.results] Inline enrichment failed for lead ${createdLead.id}:`, error);
+        await prisma.lead
+          .update({
+            where: { id: createdLead.id },
+            data: { outreachStatus: "NOT_CONTACTED" },
+          })
+          .catch(() => null);
+      }
+    });
+  }
 
   return NextResponse.json({ ok: true, leadId: createdLead.id });
 }
