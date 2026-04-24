@@ -1,19 +1,118 @@
 "use client";
 
+import {
+  Bell,
+  CheckCircle2,
+  ChevronDown,
+  CircleHelp,
+  Menu,
+  Plus,
+  RefreshCw,
+  Search,
+  Settings,
+  Zap,
+} from "lucide-react";
 import { usePathname } from "next/navigation";
 
 import { AppSidebar } from "@/components/app-sidebar";
-import { AppWorkflowRail } from "@/components/app-workflow-rail";
-import { LayoutBreadcrumb } from "@/components/layout-breadcrumb";
-import { EngineStatusBar } from "@/components/system/engine-status-bar";
-import { SearchTrigger } from "@/components/system/search-trigger";
 import { HotkeyProvider } from "@/components/system/hotkey-provider";
-import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { SidebarProvider } from "@/components/ui/sidebar";
 
 const PUBLIC_PATH_PREFIXES = ["/sign-in", "/sign-up"];
 
 function isPublicPath(pathname: string) {
   return PUBLIC_PATH_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+}
+
+function TopBar() {
+  return (
+    <header className="sticky top-0 z-40 h-[70px] border-b border-[#24313c] bg-[#071018]">
+      <div className="flex h-full items-center gap-7 px-6">
+        <button className="text-[#b9c2cd] transition-colors hover:text-white" type="button" aria-label="Open navigation">
+          <Menu className="h-5 w-5" />
+        </button>
+
+        <button
+          className="flex h-9 min-w-[145px] items-center justify-between rounded-md border border-[#2a3644] bg-[#111b27] px-3 text-sm font-medium text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+          type="button"
+        >
+          All Workspaces
+          <ChevronDown className="h-4 w-4 text-[#8d98a5]" />
+        </button>
+
+        <button
+          className="flex h-9 min-w-[420px] max-w-[620px] flex-1 items-center gap-3 rounded-md border border-[#2a3644] bg-[#111b27] px-3 text-left text-sm text-[#99a4b0] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+          type="button"
+        >
+          <Search className="h-4 w-4" />
+          <span className="flex-1">Search leads, companies, and more...</span>
+          <kbd className="rounded border border-[#2a3644] bg-[#182331] px-1.5 py-0.5 font-mono text-[11px] text-[#8d98a5]">
+            ⌘K
+          </kbd>
+        </button>
+
+        <div className="ml-auto flex items-center gap-4">
+          <button
+            className="flex h-9 items-center gap-2 rounded-md border border-[#17473d] bg-[#0b211f] px-4 text-sm font-medium text-[#62e79f]"
+            type="button"
+          >
+            <Plus className="h-4 w-4" />
+            New
+          </button>
+          <div className="h-7 w-px bg-[#24313c]" />
+          <button className="relative flex h-9 w-9 items-center justify-center rounded-md border border-[#24313c] bg-[#111b27] text-[#c7ced7]" type="button" aria-label="Notifications">
+            <Bell className="h-4 w-4" />
+            <span className="absolute -right-1 -top-1 rounded-full bg-[#ef4444] px-1.5 text-[10px] font-semibold text-white">12</span>
+          </button>
+          <button className="flex h-9 w-9 items-center justify-center rounded-md border border-[#24313c] bg-[#111b27] text-[#c7ced7]" type="button" aria-label="Help">
+            <CircleHelp className="h-4 w-4" />
+          </button>
+          <button className="flex h-9 w-9 items-center justify-center rounded-md border border-[#24313c] bg-[#111b27] text-[#c7ced7]" type="button" aria-label="Settings">
+            <Settings className="h-4 w-4" />
+          </button>
+          <div className="flex items-center gap-3 pl-3">
+            <div className="text-right">
+              <div className="text-sm font-semibold text-white">Alex Morgan</div>
+              <div className="text-[12px] text-[#8f9aa6]">Admin</div>
+            </div>
+            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#172334] text-sm font-medium text-[#9fb0c7]">
+              AM
+            </div>
+            <ChevronDown className="h-4 w-4 text-[#8994a1]" />
+          </div>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function BottomStatusBar() {
+  return (
+    <footer className="fixed bottom-0 left-[251px] right-0 z-30 h-[73px] border-t border-[#24313c] bg-[#071018]">
+      <div className="grid h-full grid-cols-3 items-center px-9 text-sm">
+        <div className="flex items-center gap-3 text-[#9aa5b1]">
+          <Settings className="h-4 w-4 text-[#a4afbb]" />
+          <span>System Status</span>
+          <span className="h-2 w-2 rounded-full bg-[#62e79f]" />
+          <span className="text-[#62e79f]">All Systems Operational</span>
+        </div>
+        <div className="flex items-center justify-center gap-4 text-[#9aa5b1]">
+          <Zap className="h-4 w-4 text-[#59c8df]" />
+          <span>API Usage</span>
+          <span className="text-[#d7dde5]">2,450 / 10,000 calls</span>
+          <div className="h-1.5 w-[286px] overflow-hidden rounded-full bg-[#202b37]">
+            <div className="h-full w-[14%] rounded-full bg-[#62e79f]" />
+          </div>
+        </div>
+        <div className="flex items-center justify-end gap-3 text-[#9aa5b1]">
+          <RefreshCw className="h-4 w-4" />
+          <span>Data Sync</span>
+          <span className="text-[#d7dde5]">Last sync: 2 min ago</span>
+          <CheckCircle2 className="h-4 w-4 text-[#62e79f]" />
+        </div>
+      </div>
+    </footer>
+  );
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -30,26 +129,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <SidebarProvider>
       <AppSidebar />
-      <main className="min-h-screen w-full flex-1">
-        <div className="sticky top-0 z-40 border-b border-white/[0.08] bg-[#0b0d12]/88 backdrop-blur-2xl">
-          <div className="flex min-h-16 items-center gap-3 px-4 py-2 md:px-6">
-            <SidebarTrigger className="text-muted-foreground transition-colors hover:text-white" />
-            <div className="min-w-0">
-              <LayoutBreadcrumb />
-              <div className="mt-0.5 hidden text-[11px] text-zinc-600 sm:block">
-                Connected lead sourcing, qualification, outreach, and follow-up.
-              </div>
-            </div>
-            <div className="ml-auto flex items-center gap-3">
-              <EngineStatusBar />
-              <AppWorkflowRail />
-              <SearchTrigger />
-            </div>
-          </div>
-        </div>
-        <div className="px-4 py-6 md:px-6 lg:px-8">
+      <main className="min-h-screen w-full flex-1 bg-[#0a1119] pb-[73px]">
+        <TopBar />
+        <div className="px-7 py-5">
           <HotkeyProvider>{children}</HotkeyProvider>
         </div>
+        <BottomStatusBar />
       </main>
     </SidebarProvider>
   );
