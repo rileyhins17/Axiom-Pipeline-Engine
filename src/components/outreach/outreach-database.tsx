@@ -547,24 +547,6 @@ export function OutreachDatabase({
             />
           </div>
         </div>
-        <div className="mt-5 grid gap-3 md:grid-cols-4">
-          <div className="app-panel-quiet rounded-2xl p-4">
-            <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">Total leads</div>
-            <div className="mt-2 text-2xl font-semibold text-white">{stats.total.toLocaleString()}</div>
-          </div>
-          <div className="app-panel-quiet rounded-2xl p-4">
-            <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">Needs prep</div>
-            <div className="mt-2 text-2xl font-semibold text-violet-200">{(stats.notContacted + stats.enriching).toLocaleString()}</div>
-          </div>
-          <div className="app-panel-quiet rounded-2xl p-4">
-            <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">Ready</div>
-            <div className="mt-2 text-2xl font-semibold text-emerald-200">{stats.readyForTouch.toLocaleString()}</div>
-          </div>
-          <div className="app-panel-quiet rounded-2xl p-4">
-            <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">Follow-ups</div>
-            <div className="mt-2 text-2xl font-semibold text-amber-200">{stats.followUp.toLocaleString()}</div>
-          </div>
-        </div>
       </div>
 
       {/* Stage funnel — the main visual landmark of the page. Each column is a

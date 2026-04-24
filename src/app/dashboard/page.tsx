@@ -1,3 +1,5 @@
+import Link from "next/link";
+import type { ReactNode } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -18,78 +20,13 @@ import { Button } from "@/components/ui/button";
 import { AUTOMATION_SETTINGS_DEFAULTS } from "@/lib/automation-policy";
 import { partitionPreSendLeads } from "@/lib/pipeline-lifecycle";
 import { listAutomationOverview } from "@/lib/outreach-automation";
-import { isContactedOutreachStatus, READY_FOR_FIRST_TOUCH_STATUS } from "@/lib/outreach";
-import { partitionPreSendLeads } from "@/lib/pipeline-lifecycle";
 import { getPrisma } from "@/lib/prisma";
 import { listScrapeJobs } from "@/lib/scrape-jobs";
+import { isContactedOutreachStatus, READY_FOR_FIRST_TOUCH_STATUS } from "@/lib/outreach";
 import { requireSession } from "@/lib/session";
+import { formatAppDateTime } from "@/lib/time";
 
-export const dynamic = "force-dynamic";
-
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
-
-type Tone = "green" | "blue" | "cyan" | "amber";
-type PriorityLevel = "High" | "Medium" | "Low";
-
-type Kpi = {
-  color: string;
-  delta: string;
-  deltaTone: "good" | "bad" | "neutral";
-  label: string;
-  period: string;
-  points: string;
-  value: string;
-};
-
-type ActionRow = {
-  action: string;
-  count: number;
-  detail: string;
-  due: string;
-  item: string;
-  priority: PriorityLevel;
-};
-
-type ActivityRow = {
-  date: Date;
-  detail: string;
-  icon: typeof UserRoundPlus;
-  time: string;
-  title: string;
-  tone: Tone;
-};
-
-function formatNumber(value: number) {
-  return Math.round(value).toLocaleString("en-US");
-}
-
-function formatPercent(numerator: number, denominator: number, decimals = 0) {
-  if (denominator <= 0) return decimals === 0 ? "0%" : "0.0%";
-  return `${((numerator / denominator) * 100).toFixed(decimals)}%`;
-}
-
-function startOfDay(date: Date) {
-  const next = new Date(date);
-  next.setHours(0, 0, 0, 0);
-  return next;
-}
-
-function daysAgo(days: number) {
-  const date = startOfDay(new Date());
-  date.setDate(date.getDate() - days);
-  return date;
-}
-
-function isBetween(date: Date | string | null | undefined, start: Date, end: Date) {
-  if (!date) return false;
-  const time = new Date(date).getTime();
-  return time >= start.getTime() && time < end.getTime();
-}
-
-function calcDelta(current: number, previous: number, suffix = "%") {
-  if (previous === 0 && current === 0) return { label: `0${suffix}`, tone: "neutral" as const };
-  if (previous === 0) return { label: `+${current}${suffix}`, tone: "good" as const };
-  const change = ((current - previous) / previous) * 100;
+function emptyAutomationOverview() {
   return {
     settings: { ...AUTOMATION_SETTINGS_DEFAULTS },
     mailboxes: [],
@@ -152,42 +89,27 @@ export default async function DashboardPage() {
   await requireSession();
 
   const prisma = getPrisma();
-  const now = new Date();
-  const thisWeekStart = daysAgo(7);
-  const previousWeekStart = daysAgo(14);
-  const period = `vs ${shortDate(previousWeekStart)} - ${shortDate(thisWeekStart)}`;
-
-  const [automationOverview, scrapeJobs, leads, sentEmails, sentTotal] = await Promise.all([
-    listAutomationOverview().catch(() => null),
-    listScrapeJobs(8).catch(() => []),
-    prisma.lead.findMany({
-      where: { isArchived: false },
-      select: {
-        id: true,
-        businessName: true,
-        city: true,
-        createdAt: true,
-        dedupeKey: true,
-        email: true,
-        emailConfidence: true,
-        emailFlags: true,
-        emailType: true,
-        enrichedAt: true,
-        enrichmentData: true,
-        axiomScore: true,
-        outreachStatus: true,
-        source: true,
-        lastContactedAt: true,
-      },
-      orderBy: { createdAt: "desc" },
-    }),
-    prisma.outreachEmail.findMany({
-      where: { status: "sent" },
-      orderBy: { sentAt: "desc" },
-      take: 500,
-    }).catch(() => []),
-    prisma.outreachEmail.count({ where: { status: "sent" } }).catch(() => 0),
-  ]);
+  const automationOverview = await listAutomationOverview().catch(() => emptyAutomationOverview());
+  const scrapeJobs = await listScrapeJobs(8).catch(() => []);
+  const leads = await prisma.lead.findMany({
+    where: { isArchived: false },
+    select: {
+      id: true,
+      businessName: true,
+      city: true,
+      email: true,
+      emailConfidence: true,
+      emailFlags: true,
+      emailType: true,
+      axiomScore: true,
+      enrichedAt: true,
+      enrichmentData: true,
+      source: true,
+      outreachStatus: true,
+      lastContactedAt: true,
+    },
+    orderBy: { createdAt: "desc" },
+  });
 
   const preSendStages = partitionPreSendLeads(
     leads.filter((lead) => {
@@ -264,74 +186,6 @@ export default async function DashboardPage() {
       accent: "text-amber-300",
       glow: "from-amber-500/30 via-amber-500/0 to-amber-500/0",
     },
-    {
-      action: "Data Quality",
-      count: duplicates,
-      detail: `${formatNumber(duplicates)} duplicates detected`,
-      item: "Data Quality",
-      priority: priorityFor(duplicates),
-      due: dueFor(duplicates),
-    },
-  ].filter((row) => row.count > 0);
-
-  const visibleActions =
-    actionQueue.length > 0
-      ? actionQueue.slice(0, 5)
-      : [{
-          action: "No Action Required",
-          count: 0,
-          detail: "Live pipeline checks are clean",
-          due: "-",
-          item: "System",
-          priority: "Low" as PriorityLevel,
-        }];
-
-  const recentLeadActivities: ActivityRow[] = leads.slice(0, 2).map((lead) => ({
-    date: lead.createdAt,
-    detail: `${lead.city || "Unknown city"} - ${lead.source || "lead source"}`,
-    icon: UserRoundPlus,
-    time: formatTime(lead.createdAt),
-    title: `${lead.businessName} added`,
-    tone: "green",
-  }));
-  const recentSentActivities: ActivityRow[] = (automationOverview?.recentSent ?? []).slice(0, 2).map((email) => ({
-    date: email.sentAt,
-    detail: email.lead?.businessName || email.recipientEmail,
-    icon: Send,
-    time: formatTime(email.sentAt),
-    title: "Outreach email sent",
-    tone: "cyan",
-  }));
-  const recentRunActivities: ActivityRow[] = scrapeJobs.slice(0, 1).map((job) => ({
-    date: job.updatedAt,
-    detail: `${job.niche} in ${job.city}`,
-    icon: Cog,
-    time: formatTime(job.updatedAt),
-    title: `Lead Generator ${job.status}`,
-    tone: job.status === "failed" ? "amber" : "blue",
-  }));
-  const recentResponseActivities: ActivityRow[] = leads
-    .filter((lead) => lead.outreachStatus === "REPLIED" || lead.outreachStatus === "INTERESTED")
-    .slice(0, 2)
-    .map((lead) => ({
-      date: lead.lastContactedAt || lead.createdAt,
-      detail: lead.businessName,
-      icon: Database,
-      time: formatTime(lead.lastContactedAt || lead.createdAt),
-      title: lead.outreachStatus === "INTERESTED" ? "Interested response received" : "Reply received",
-      tone: "green",
-    }));
-
-  const activity = [...recentLeadActivities, ...recentSentActivities, ...recentResponseActivities, ...recentRunActivities]
-    .sort((a, b) => b.date.getTime() - a.date.getTime())
-    .slice(0, 5);
-
-  const campaignRows = [
-    ["Ready First Touch", formatNumber(automationOverview?.stats.ready ?? 0), formatPercent(automationOverview?.stats.ready ?? 0, Math.max(activeWorkflows, 1), 1), formatNumber(interested)],
-    ["Queued Automation", formatNumber(automationOverview?.stats.queued ?? 0), formatPercent(automationOverview?.stats.queued ?? 0, Math.max(activeWorkflows, 1), 1), formatNumber(automationOverview?.stats.sending ?? 0)],
-    ["Active Follow Up", formatNumber(automationOverview?.stats.active ?? 0), formatPercent(responses, Math.max(activeOutreach, 1), 1), formatNumber(responses)],
-    ["Completed Sequences", formatNumber(automationOverview?.stats.completed ?? 0), formatPercent(automationOverview?.stats.completed ?? 0, Math.max(activeWorkflows, 1), 1), formatNumber(automationOverview?.stats.replied ?? 0)],
-    ["Blocked Workflows", formatNumber(automationOverview?.stats.blocked ?? 0), formatPercent(automationOverview?.stats.blocked ?? 0, Math.max(activeWorkflows, 1), 1), "0"],
   ];
 
   return (
@@ -460,7 +314,6 @@ export default async function DashboardPage() {
             <div className="rounded-full border border-white/[0.06] bg-white/[0.02] px-3 py-1 text-[10px] font-mono text-zinc-500">
               live
             </div>
-            <button className="text-sm text-[#55a7ff]" type="button">View All</button>
           </div>
 
           <div className="mt-6 grid gap-3 md:grid-cols-2">
@@ -537,33 +390,6 @@ export default async function DashboardPage() {
                 ))}
               </>
             )}
-          </div>
-        </div>
-
-        <div className="rounded-md border border-[#24313c] bg-[#121b25]">
-          <div className="flex h-[59px] items-center justify-between border-b border-[#24313c] px-5">
-            <h2 className="text-base font-semibold text-white">Top Performing Campaigns</h2>
-            <button className="text-sm text-[#55a7ff]" type="button">View All</button>
-          </div>
-          <div className="grid grid-cols-[1.35fr_0.6fr_0.55fr_0.55fr] border-b border-[#24313c] px-5 py-3 text-[12px] text-[#9aa5b1]">
-            <span>Campaign</span>
-            <span>Responses</span>
-            <span>Rate</span>
-            <span>Meetings</span>
-          </div>
-          {campaignRows.map((row) => (
-            <div key={row[0]} className="grid grid-cols-[1.35fr_0.6fr_0.55fr_0.55fr] border-b border-[#24313c] px-5 py-[15px] text-sm">
-              <span className="font-medium text-white">{row[0]}</span>
-              <span className="text-[#d9e0e8]">{row[1]}</span>
-              <span className="text-[#d9e0e8]">{row[2]}</span>
-              <span className="text-[#d9e0e8]">{row[3]}</span>
-            </div>
-          ))}
-          <div className="p-4">
-            <button className="flex h-9 w-full items-center justify-between rounded-md border border-[#2a3644] bg-[#151f2b] px-3 text-sm font-medium text-white" type="button">
-              View All Campaigns
-              <span className="text-lg leading-none">-&gt;</span>
-            </button>
           </div>
         </div>
       </section>
