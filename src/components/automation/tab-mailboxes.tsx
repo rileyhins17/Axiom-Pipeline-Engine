@@ -29,9 +29,14 @@ export function MailboxesTab({
         title="No mailboxes connected."
         detail="Connect a Gmail sender before automation can schedule outbound mail."
         action={
-          <Link className="text-sm font-medium text-emerald-300 underline underline-offset-4 hover:text-emerald-200" href="/outreach">
-            Open outreach
-          </Link>
+          <div className="flex gap-3">
+            <a
+              href="/api/outreach/gmail/connect"
+              className="text-sm font-medium text-emerald-300 underline underline-offset-4 hover:text-emerald-200"
+            >
+              Connect Gmail
+            </a>
+          </div>
         }
       />
     );

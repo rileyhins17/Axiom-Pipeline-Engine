@@ -2,7 +2,7 @@
 
 import { useState, type ComponentType, type FormEvent, type ReactNode } from "react";
 
-import { AlertTriangle, KeyRound, LockKeyhole, Monitor, ShieldCheck, TimerReset, Trash2, Zap } from "lucide-react";
+import { AlertTriangle, KeyRound, LockKeyhole, Mail, Monitor, ShieldCheck, TimerReset, Trash2, Zap } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -263,6 +263,25 @@ export function SettingsClient({ runtimeStatus }: { runtimeStatus: RuntimeStatus
               </Button>
             </div>
           </form>
+        </Panel>
+      </section>
+
+      <section>
+        <Panel>
+          <SectionTitle icon={Mail} title="Gmail integration" detail="Connect your Gmail account to send emails from the automation engine." />
+          <div className="flex items-center justify-between gap-4 rounded-xl border border-white/10 bg-black/20 p-4">
+            <div className="flex flex-col gap-2">
+              <p className="text-sm text-zinc-100">Connect a Gmail sender account</p>
+              <p className="text-xs text-zinc-500">You can connect multiple Gmail accounts to spread sends across inboxes.</p>
+            </div>
+            <a
+              href="/api/outreach/gmail/connect"
+              className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-950 hover:bg-emerald-400 cursor-pointer whitespace-nowrap"
+            >
+              <Mail className="h-4 w-4" />
+              Connect Gmail
+            </a>
+          </div>
         </Panel>
       </section>
 
