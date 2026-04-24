@@ -71,7 +71,7 @@ export function OperationalHistory({ leadId }: OperationalHistoryProps) {
     const currentDisp = disposition ? DISPOSITION_OPTIONS.find(o => o.value === disposition.type) : null;
 
     return (
-        <div className="glass-ultra rounded-xl p-6 space-y-5">
+        <div className="space-y-5 rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
             {/* Current Disposition Banner */}
             {currentDisp && disposition && (
                 <div className={cn(
@@ -128,7 +128,7 @@ export function OperationalHistory({ leadId }: OperationalHistoryProps) {
                         value={noteText}
                         onChange={e => setNoteText(e.target.value)}
                         onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); handleAddNote(); } }}
-                        placeholder="Add a note... (⌘+Enter to save)"
+                        placeholder="Add a note... (Cmd/Ctrl+Enter to save)"
                         rows={2}
                         className="flex-1 bg-black/30 border border-white/[0.06] rounded-lg px-3 py-2 text-xs text-white placeholder:text-zinc-600 resize-none outline-none focus:border-emerald-500/30 transition-colors"
                     />
@@ -168,7 +168,7 @@ export function OperationalHistory({ leadId }: OperationalHistoryProps) {
                         <p className="text-[11px] text-zinc-600 text-center py-3">No notes matching &ldquo;{noteSearch}&rdquo;</p>
                     )}
                     {filteredNotes.map(note => (
-                        <div key={note.id} className="glass rounded-lg p-3 group">
+                        <div key={note.id} className="group rounded-lg border border-white/[0.05] bg-black/20 p-3">
                             <div className="flex items-start justify-between gap-2">
                                 <p className="text-[11px] text-zinc-300 leading-relaxed flex-1">{note.text}</p>
                                 <button

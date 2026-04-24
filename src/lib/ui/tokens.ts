@@ -60,19 +60,19 @@ export function getSignalConfig(type: string) {
 // GLASS PRESETS  (use these class strings for consistent glass styling)
 // ═══════════════════════════════════════════════
 export const GLASS = {
-    base: "glass rounded-xl",
-    strong: "glass-strong rounded-xl",
-    ultra: "glass-ultra rounded-xl",
-    holo: "glass-strong holo-card rounded-xl",
+    base: "app-panel rounded-md",
+    strong: "app-section rounded-md",
+    ultra: "app-section-flat rounded-md",
+    holo: "app-section rounded-md",
 } as const;
 
 // ═══════════════════════════════════════════════
 // COMMON CLASS COMPOSITES
 // ═══════════════════════════════════════════════
 export const CARD_STYLES = {
-    stat: "glass-strong rounded-xl p-4 transition-all duration-300 hover:translate-y-[-2px] hover:shadow-lg hover:shadow-emerald-500/5",
-    panel: "glass-strong rounded-xl overflow-hidden",
-    section: "glass-ultra rounded-xl",
+    stat: "app-section rounded-md p-4 transition-colors duration-200 hover:bg-white/[0.04]",
+    panel: "app-section rounded-md overflow-hidden",
+    section: "app-section-flat rounded-md",
 } as const;
 
 // ═══════════════════════════════════════════════

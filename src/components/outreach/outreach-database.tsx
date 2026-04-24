@@ -12,7 +12,6 @@ import {
   Loader2,
   Mail,
   MailCheck,
-  MessageSquare,
   Search,
   Send,
   Sparkles,
@@ -82,8 +81,7 @@ type StageDef = {
   description: string;
 };
 
-// Ordered left-to-right as leads move through the funnel. "All" and the two
-// terminal states (Replied / Declined) sit outside the main funnel as chips.
+// Ordered left-to-right as leads move through the funnel.
 const FUNNEL_STAGES: StageDef[] = [
   {
     id: "not_contacted",
@@ -91,10 +89,10 @@ const FUNNEL_STAGES: StageDef[] = [
     shortLabel: "New",
     statKey: "notContacted",
     icon: CircleDashed,
-    accentFrom: "from-zinc-500/30",
+    accentFrom: "from-zinc-500/35",
     accentTo: "to-zinc-600/10",
     accentText: "text-zinc-300",
-    description: "Sourced — awaiting enrichment",
+    description: "Sourced, awaiting enrichment",
   },
   {
     id: "enriching",
@@ -102,10 +100,10 @@ const FUNNEL_STAGES: StageDef[] = [
     shortLabel: "Enriching",
     statKey: "enriching",
     icon: Wand2,
-    accentFrom: "from-violet-500/40",
-    accentTo: "to-violet-600/10",
-    accentText: "text-violet-300",
-    description: "AI is filling in contact + signals",
+    accentFrom: "from-amber-500/40",
+    accentTo: "to-amber-600/10",
+    accentText: "text-amber-300",
+    description: "Contact and signals in progress",
   },
   {
     id: "enriched",
@@ -113,10 +111,10 @@ const FUNNEL_STAGES: StageDef[] = [
     shortLabel: "Enriched",
     statKey: "enriched",
     icon: Sparkles,
-    accentFrom: "from-blue-500/40",
-    accentTo: "to-blue-600/10",
-    accentText: "text-blue-300",
-    description: "Data complete — ready to qualify",
+    accentFrom: "from-cyan-500/40",
+    accentTo: "to-cyan-600/10",
+    accentText: "text-cyan-300",
+    description: "Data complete, ready to qualify",
   },
   {
     id: "ready",
@@ -138,7 +136,7 @@ const FUNNEL_STAGES: StageDef[] = [
     accentFrom: "from-cyan-500/40",
     accentTo: "to-cyan-600/10",
     accentText: "text-cyan-300",
-    description: "First email landed — awaiting reply",
+    description: "First email sent, awaiting reply",
   },
   {
     id: "follow_up",
@@ -149,7 +147,7 @@ const FUNNEL_STAGES: StageDef[] = [
     accentFrom: "from-amber-500/40",
     accentTo: "to-amber-600/10",
     accentText: "text-amber-300",
-    description: "Automated follow-up due",
+    description: "Follow-up is due",
   },
 ];
 
@@ -164,7 +162,7 @@ const TERMINAL_CHIPS: { id: FilterId; label: string; statKey: keyof Stats; tone:
     id: "not_interested",
     label: "Declined",
     statKey: "notInterested",
-    tone: "border-red-500/30 bg-red-500/10 text-red-300",
+    tone: "border-amber-500/30 bg-amber-500/10 text-amber-300",
   },
 ];
 
@@ -235,22 +233,22 @@ function statusDotColor(status: string): string {
     case "READY_FOR_FIRST_TOUCH":
       return "bg-emerald-400";
     case "ENRICHING":
-      return "bg-violet-400";
+      return "bg-amber-400";
     case "ENRICHED":
-      return "bg-blue-400";
+      return "bg-cyan-400";
     case "FOLLOW_UP_DUE":
       return "bg-amber-400";
     case "NOT_INTERESTED":
-      return "bg-red-400";
+      return "bg-amber-500";
     default:
       return "bg-zinc-500";
   }
 }
 
 function fmtDate(d: string | null): string {
-  if (!d) return "—";
+  if (!d) return "-";
   const dt = new Date(d);
-  if (Number.isNaN(dt.getTime())) return "—";
+  if (Number.isNaN(dt.getTime())) return "-";
   const diff = Date.now() - dt.getTime();
   const day = 86400000;
   if (diff < day) return "today";
@@ -276,7 +274,7 @@ function tierColor(tier: string | null): string {
     case "C":
       return "border-amber-500/40 bg-amber-500/15 text-amber-200";
     case "D":
-      return "border-red-500/40 bg-red-500/15 text-red-200";
+      return "border-amber-500/40 bg-amber-500/15 text-amber-200";
     default:
       return "border-white/[0.08] bg-white/[0.04] text-zinc-400";
   }
@@ -507,11 +505,16 @@ export function OutreachDatabase({
 
   // Compute max stage count for proportional bar heights in the funnel.
   const maxStageValue = Math.max(1, ...FUNNEL_STAGES.map((s) => stats[s.statKey]));
+  const activeFilterLabel =
+    filter === "all"
+      ? "All stages"
+      : FUNNEL_STAGES.find((stage) => stage.id === filter)?.label ??
+        TERMINAL_CHIPS.find((chip) => chip.id === filter)?.label ??
+        "Filtered";
 
   return (
-    <div className="space-y-6 pb-28">
-      {/* Hero: page title + total + primary action */}
-      <div className="overflow-hidden rounded-3xl border border-white/[0.06] bg-[radial-gradient(ellipse_at_top_left,rgba(16,185,129,0.10),transparent_50%),radial-gradient(ellipse_at_top_right,rgba(59,130,246,0.08),transparent_50%)] px-6 py-7 md:px-8 md:py-9">
+    <div className="space-y-5 pb-28">
+      <div className="overflow-hidden rounded-lg border border-white/[0.06] bg-[radial-gradient(ellipse_at_top_left,rgba(16,185,129,0.10),transparent_50%),radial-gradient(ellipse_at_top_right,rgba(34,211,238,0.08),transparent_50%)] px-5 py-6 md:px-7 md:py-7">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.28em] text-emerald-400/80">
@@ -519,21 +522,17 @@ export function OutreachDatabase({
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
               </span>
-              Outreach Pipeline
+              Outreach Command
             </div>
-            <h1 className="mt-3 text-4xl font-semibold tracking-tight text-white md:text-5xl">
+            <h1 className="mt-3 text-3xl font-semibold tracking-tight text-white md:text-5xl">
               {stats.total.toLocaleString()}
               <span className="ml-3 text-lg font-normal text-zinc-500">
                 lead{stats.total === 1 ? "" : "s"} across {FUNNEL_STAGES.length} stages
               </span>
             </h1>
             <p className="mt-2 max-w-2xl text-sm text-zinc-400">
-              Move leads from sourced to sent. Click any stage to filter, select rows to enrich or
-              dispatch, or hit{" "}
-              <span className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 font-mono text-[11px] text-amber-200">
-                Send now
-              </span>{" "}
-              to fast-forward the queue.
+              Filter the funnel, select rows, and move qualified leads through enrichment, manual send,
+              or automation without leaving the queue.
             </p>
           </div>
           <div className="relative">
@@ -542,21 +541,36 @@ export function OutreachDatabase({
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search business, city, email, contact…"
-              className="h-11 w-full rounded-xl border border-white/[0.08] bg-black/40 pl-11 pr-4 text-sm text-zinc-100 placeholder:text-zinc-600 backdrop-blur-xl focus:border-emerald-500/40 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 lg:w-96"
+              placeholder="Search business, city, email, contact..."
+              className="h-10 w-full rounded-lg border border-white/[0.08] bg-black/40 pl-11 pr-4 text-sm text-zinc-100 placeholder:text-zinc-600 backdrop-blur-xl focus:border-emerald-500/40 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 lg:w-96"
             />
+          </div>
+        </div>
+        <div className="mt-5 grid gap-3 border-t border-white/[0.06] pt-4 sm:grid-cols-4">
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">View</div>
+            <div className="mt-1 text-sm font-medium text-white">{activeFilterLabel}</div>
+          </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">Ready</div>
+            <div className="mt-1 text-sm font-medium text-emerald-300">{stats.readyForTouch.toLocaleString()} first-touch</div>
+          </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">Follow-up</div>
+            <div className="mt-1 text-sm font-medium text-amber-300">{stats.followUp.toLocaleString()} due</div>
+          </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">Selected</div>
+            <div className="mt-1 text-sm font-medium text-cyan-300">{selection.count.toLocaleString()} active</div>
           </div>
         </div>
       </div>
 
-      {/* Stage funnel — the main visual landmark of the page. Each column is a
-          click-to-filter button with a proportional height bar, a big count,
-          and a caption. Terminal chips (Replied / Declined) + All sit below. */}
-      <div className="rounded-3xl border border-white/[0.06] bg-white/[0.02] p-4 md:p-6">
+      <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-4 md:p-5">
         <div className="mb-4 flex items-center justify-between">
           <div>
             <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Funnel</div>
-            <div className="mt-0.5 text-sm font-medium text-white">Click a stage to filter</div>
+            <div className="mt-0.5 text-sm font-medium text-white">Click a stage to focus the queue</div>
           </div>
           <button
             onClick={() => setFilter("all")}
@@ -566,7 +580,7 @@ export function OutreachDatabase({
                 : "border-white/[0.08] bg-white/[0.02] text-zinc-400 hover:bg-white/[0.04] hover:text-white"
             }`}
           >
-            All · {stats.total.toLocaleString()}
+            All | {stats.total.toLocaleString()}
           </button>
         </div>
         <div className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-6">
@@ -579,13 +593,12 @@ export function OutreachDatabase({
               <button
                 key={stage.id}
                 onClick={() => setFilter(stage.id)}
-                className={`group relative overflow-hidden rounded-2xl border p-4 text-left transition-all ${
+                className={`group relative overflow-hidden rounded-lg border p-4 text-left transition-all ${
                   isActive
                     ? "border-white/20 bg-white/[0.06] shadow-[0_0_40px_rgba(255,255,255,0.04)]"
                     : "border-white/[0.06] bg-white/[0.01] hover:border-white/[0.12] hover:bg-white/[0.03]"
                 } cursor-pointer`}
               >
-                {/* Background bar representing proportional volume. */}
                 <div
                   className={`absolute inset-x-0 bottom-0 bg-gradient-to-t ${stage.accentFrom} ${stage.accentTo} transition-all duration-500`}
                   style={{ height: `${heightPct}%` }}
@@ -609,8 +622,8 @@ export function OutreachDatabase({
                   <div className="text-[11px] leading-4 text-zinc-500">{stage.description}</div>
                 </div>
                 {isActive && (
-                  <div className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-400 text-[10px] font-bold text-black">
-                    ✓
+                  <div className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-lg bg-emerald-400 text-[10px] font-bold text-black">
+                    OK
                   </div>
                 )}
               </button>
@@ -628,7 +641,7 @@ export function OutreachDatabase({
               <button
                 key={chip.id}
                 onClick={() => setFilter(chip.id)}
-                className={`cursor-pointer rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                className={`cursor-pointer rounded-lg border px-3 py-1 text-xs font-medium transition-colors ${
                   isActive
                     ? chip.tone
                     : "border-white/[0.06] bg-white/[0.02] text-zinc-400 hover:bg-white/[0.04] hover:text-white"
@@ -642,9 +655,7 @@ export function OutreachDatabase({
         </div>
       </div>
 
-      {/* Leads list — card-style rows with avatar, contact stack, score ring,
-          and status ribbon. More scannable than a dense table. */}
-      <div className="rounded-3xl border border-white/[0.06] bg-white/[0.02]">
+      <div className="rounded-lg border border-white/[0.06] bg-white/[0.02]">
         <div className="flex items-center justify-between border-b border-white/[0.06] px-5 py-3">
           <div className="flex items-center gap-3">
             <input
@@ -658,7 +669,7 @@ export function OutreachDatabase({
             <span className="text-xs text-zinc-500">
               {filtered.length.toLocaleString()} shown
               {selection.count > 0 && (
-                <span className="ml-2 text-emerald-300">· {selection.count} selected</span>
+                <span className="ml-2 text-emerald-300">| {selection.count} selected</span>
               )}
             </span>
           </div>
@@ -671,7 +682,7 @@ export function OutreachDatabase({
 
         {filtered.length === 0 ? (
           <div className="px-6 py-20 text-center">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.02]">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.02]">
               <Search className="h-5 w-5 text-zinc-600" />
             </div>
             <div className="mt-4 text-sm text-zinc-400">
@@ -697,9 +708,8 @@ export function OutreachDatabase({
                     isSelected ? "bg-emerald-500/[0.06]" : "hover:bg-white/[0.02]"
                   }`}
                 >
-                  {/* Left rail: vertical accent strip when selected */}
                   {isSelected && (
-                    <span className="absolute inset-y-2 left-0 w-[3px] rounded-r-full bg-emerald-400" />
+                    <span className="absolute inset-y-2 left-0 w-[3px] rounded-r bg-emerald-400" />
                   )}
 
                   <input
@@ -710,15 +720,13 @@ export function OutreachDatabase({
                     className="h-4 w-4 shrink-0 cursor-pointer rounded border-white/20 bg-transparent accent-emerald-400"
                   />
 
-                  {/* Avatar initial */}
                   <div
-                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border text-xs font-semibold tracking-wide ${tierColor(lead.axiomTier)}`}
+                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border text-xs font-semibold tracking-wide ${tierColor(lead.axiomTier)}`}
                     title={lead.axiomTier ? `Tier ${lead.axiomTier}` : "No tier"}
                   >
                     {initials(lead.businessName)}
                   </div>
 
-                  {/* Business + niche */}
                   <div className="min-w-0 flex-1">
                     <Link
                       href={`/lead/${lead.id}`}
@@ -729,12 +737,11 @@ export function OutreachDatabase({
                     <div className="mt-0.5 flex items-center gap-2 text-[11px] text-zinc-500">
                       <Globe className="h-3 w-3" />
                       <span className="truncate">
-                        {lead.niche} · {lead.city || "—"}
+                        {lead.niche} | {lead.city || "-"}
                       </span>
                     </div>
                   </div>
 
-                  {/* Contact */}
                   <div className="hidden min-w-0 flex-1 md:block">
                     {lead.email ? (
                       <>
@@ -755,15 +762,13 @@ export function OutreachDatabase({
                     )}
                   </div>
 
-                  {/* Score */}
                   <div className="hidden shrink-0 text-right md:block">
                     <div className={`text-xl font-bold tabular-nums ${scoreColor(lead.axiomScore)}`}>
-                      {lead.axiomScore ?? "—"}
+                      {lead.axiomScore ?? "-"}
                     </div>
                     <div className="text-[10px] uppercase tracking-wider text-zinc-600">score</div>
                   </div>
 
-                  {/* Status */}
                   <div className="hidden shrink-0 items-center gap-2 md:flex">
                     <span className={`h-1.5 w-1.5 rounded-full ${statusDotColor(lead.outreachStatus)}`} />
                     <span className="text-xs font-medium text-zinc-300">
@@ -771,7 +776,6 @@ export function OutreachDatabase({
                     </span>
                   </div>
 
-                  {/* Last contact */}
                   <div className="hidden w-20 shrink-0 text-right text-[11px] text-zinc-500 lg:block">
                     {fmtDate(lead.lastContactedAt)}
                   </div>
@@ -784,10 +788,9 @@ export function OutreachDatabase({
         )}
       </div>
 
-      {/* Sticky bulk-action bar */}
       {selection.count > 0 && (
         <div className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center px-4">
-          <div className="pointer-events-auto flex w-full max-w-4xl flex-wrap items-center gap-3 rounded-2xl border border-white/[0.08] bg-zinc-950/95 px-4 py-3 shadow-2xl shadow-black/60 backdrop-blur">
+          <div className="pointer-events-auto flex w-full max-w-4xl flex-wrap items-center gap-3 rounded-lg border border-white/[0.08] bg-zinc-950/95 px-4 py-3 shadow-2xl shadow-black/60 backdrop-blur">
             <button
               type="button"
               onClick={clearSelection}
@@ -800,7 +803,7 @@ export function OutreachDatabase({
               <span className="font-semibold tabular-nums text-white">{selection.count}</span>{" "}
               selected
               <span className="ml-2 text-zinc-600">
-                · {selection.sendable.length} sendable · {selection.queueable.length} queueable ·{" "}
+                | {selection.sendable.length} sendable | {selection.queueable.length} queueable |{" "}
                 {selection.enrichable.length} enrichable
               </span>
             </div>
@@ -810,7 +813,7 @@ export function OutreachDatabase({
                 onClick={() => void enrichSelected()}
                 disabled={busy !== null || selection.enrichable.length === 0}
                 title="Run AI enrichment on New / Enriching leads"
-                className="h-8 cursor-pointer gap-1.5 rounded-lg border border-violet-500/30 bg-violet-500/10 px-3 text-xs text-violet-200 hover:bg-violet-500/20 disabled:opacity-40"
+                className="h-8 cursor-pointer gap-1.5 rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 text-xs text-cyan-200 hover:bg-cyan-500/20 disabled:opacity-40"
               >
                 {busy === "enrich" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
                 Enrich
@@ -842,8 +845,8 @@ export function OutreachDatabase({
                 type="button"
                 onClick={() => void queueForAutomation(true)}
                 disabled={busy !== null || selection.queueable.length === 0}
-                title="Queue and fast-forward step 1 — dispatches on the next cron tick (within 60s)"
-                className="h-8 cursor-pointer gap-1.5 rounded-lg border border-amber-500/30 bg-gradient-to-r from-amber-400 to-orange-500 px-3 text-xs font-semibold text-black hover:from-amber-300 hover:to-orange-400 disabled:opacity-40"
+                title="Queue and fast-forward step 1; dispatches on the next cron tick (within 60s)"
+                className="h-8 cursor-pointer gap-1.5 rounded-lg border border-amber-500/30 bg-amber-400 px-3 text-xs font-semibold text-black hover:bg-amber-300 disabled:opacity-40"
               >
                 {busy === "send-now" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
                 Send now

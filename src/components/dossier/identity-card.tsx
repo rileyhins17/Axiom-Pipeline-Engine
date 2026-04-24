@@ -24,20 +24,17 @@ export function IdentityCard({
     const tierConfig = getTierConfig(axiomTier);
 
     return (
-        <div className={cn("glass-ultra rounded-xl p-5 space-y-4 relative overflow-hidden", tierConfig.glow)}>
-            {/* Tier accent line */}
+        <div className={cn("relative space-y-4 overflow-hidden rounded-lg border border-white/[0.06] bg-white/[0.02] p-4", tierConfig.glow)}>
             <div className={cn("absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r", tierConfig.gradient)} />
 
-            {/* Business name */}
             <div>
-                <h2 className="text-lg font-bold text-white leading-tight">{businessName}</h2>
+                <h2 className="text-base font-semibold leading-tight text-white">{businessName}</h2>
                 <div className="flex items-center gap-1.5 mt-1">
                     <Building className="w-3 h-3 text-purple-400/60" />
                     <span className="text-[11px] text-purple-400/80 font-mono">{niche}</span>
                 </div>
             </div>
 
-            {/* Location */}
             <div className="flex items-start gap-2 text-xs text-zinc-400">
                 <MapPin className="w-3.5 h-3.5 text-emerald-400/60 mt-0.5 flex-shrink-0" />
                 <div>
@@ -46,7 +43,6 @@ export function IdentityCard({
                 </div>
             </div>
 
-            {/* Badges row */}
             <div className="flex flex-wrap gap-2">
                 <TierBadge tier={axiomTier} score={axiomScore} size="sm" />
 
@@ -70,7 +66,6 @@ export function IdentityCard({
                 )}
             </div>
 
-            {/* Rating + Reviews */}
             {(rating || reviewCount) && (
                 <div className="flex items-center gap-4 pt-1 border-t border-white/[0.04]">
                     {rating != null && (

@@ -1,5 +1,4 @@
 "use client";
-import { cn } from "@/lib/utils";
 import { AlertOctagon, XCircle } from "lucide-react";
 
 interface DisqualifiersPanelProps {
@@ -11,15 +10,15 @@ export function DisqualifiersPanel({ disqualifiers, disqualifyReason }: Disquali
     if ((!disqualifiers || disqualifiers.length === 0) && !disqualifyReason) return null;
 
     return (
-        <div className="glass-ultra rounded-xl p-6 border border-red-500/10">
+        <div className="rounded-lg border border-red-500/15 bg-red-500/[0.025] p-5">
             <h3 className="text-sm font-bold text-red-400 flex items-center gap-2 mb-4">
                 <AlertOctagon className="w-4 h-4" />
                 Disqualifiers
             </h3>
 
             {disqualifyReason && (
-                <div className="glass rounded-lg p-3 mb-3 border border-red-500/10">
-                    <div className="text-[10px] uppercase tracking-widest text-red-400/60 mb-1">Primary Reason</div>
+                <div className="mb-3 rounded-lg border border-red-500/10 bg-black/20 p-3">
+                    <div className="text-[10px] uppercase tracking-widest text-red-400/60 mb-1">Primary reason</div>
                     <p className="text-xs text-red-300">{disqualifyReason}</p>
                 </div>
             )}

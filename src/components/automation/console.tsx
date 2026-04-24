@@ -1,28 +1,26 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type KeyboardEvent } from "react";
 import Link from "next/link";
-import { ArrowRight, RefreshCw } from "lucide-react";
+import { ArrowRight, CircleAlert, DatabaseZap, Mail, RefreshCw, Settings2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { useToast, ToastProvider } from "@/components/ui/toast-provider";
+import { ToastProvider, useToast } from "@/components/ui/toast-provider";
 import { cn } from "@/lib/utils";
 
+import { fmtCountdown } from "./helpers";
+import { Chip, OperatorLabel, StatusDot } from "./shared";
 import type { AutomationOverview, TabId } from "./types";
 import { DAILY_TARGET } from "./types";
-import { fmtCountdown } from "./helpers";
-import { StatusDot, Chip } from "./shared";
 
+import { IssuesTab } from "./tab-blocked";
+import { MailboxesTab } from "./tab-mailboxes";
 import { OverviewTab } from "./tab-overview";
 import { QueueTab } from "./tab-queue";
-import { MailboxesTab } from "./tab-mailboxes";
-import { IssuesTab } from "./tab-blocked";
 import { RulesTab } from "./tab-rules";
 
-/** Data refresh interval. 30s keeps the console fresh without spamming the API. */
 const REFRESH_INTERVAL_MS = 30_000;
 
-/** Transient blockers that don't require human attention — system will clear them. */
 const TRANSIENT_BLOCKERS = new Set([
   "outside_send_window",
   "awaiting_follow_up_window",
@@ -56,7 +54,7 @@ function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview
       const r = await fetch("/api/outreach/automation/overview");
       if (r.ok) setOverview(await r.json());
     } catch {
-      /* silent — 30s poll retries automatically */
+      // The 30s poll will retry without interrupting the operator.
     }
   }, []);
 
@@ -87,10 +85,9 @@ function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview
   };
 
   const handleRun = async () => {
-    const d = await exec<RunResponse>("run", () =>
-      fetch("/api/outreach/automation/run", { method: "POST" }),
-    );
+    const d = await exec<RunResponse>("run", () => fetch("/api/outreach/automation/run", { method: "POST" }));
     if (!d) return;
+
     const parts: string[] = [];
     const enriched = d.pipeline?.enriched ?? 0;
     const qualified = d.pipeline?.qualified ?? 0;
@@ -100,7 +97,8 @@ function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview
     if (qualified > 0) parts.push(`${qualified} qualified`);
     if (queued > 0) parts.push(`${queued} queued`);
     if (sent > 0) parts.push(`${sent} sent`);
-    toast(parts.length > 0 ? parts.join(", ") : "Check complete — nothing to do.", {
+
+    toast(parts.length > 0 ? parts.join(", ") : "Check complete. Nothing to send.", {
       type: "success",
       icon: "note",
     });
@@ -145,10 +143,7 @@ function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview
       }),
     );
     if (d) {
-      toast(status === "PAUSED" ? "Mailbox paused" : "Mailbox resumed", {
-        type: "success",
-        icon: "note",
-      });
+      toast(status === "PAUSED" ? "Mailbox paused" : "Mailbox resumed", { type: "success", icon: "note" });
       await refresh();
     }
   };
@@ -162,17 +157,13 @@ function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview
       }),
     );
     if (d) {
-      toast("Settings saved", { type: "success", icon: "note" });
+      toast("Rules saved", { type: "success", icon: "note" });
       await refresh();
     }
   };
 
-  // Derived values
   const issuesCount = useMemo(
-    () =>
-      overview.sequences.filter(
-        (s) => s.state === "BLOCKED" && !TRANSIENT_BLOCKERS.has(s.blockerReason || ""),
-      ).length,
+    () => overview.sequences.filter((s) => s.state === "BLOCKED" && !TRANSIENT_BLOCKERS.has(s.blockerReason || "")).length,
     [overview.sequences],
   );
   const queueCount = useMemo(
@@ -188,159 +179,127 @@ function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview
     if (sentToday >= DAILY_TARGET) return "complete" as const;
     const now = new Date();
     const hourOfDay = now.getHours() + now.getMinutes() / 60;
-    const windowStart =
-      overview.settings.sendWindowStartHour + overview.settings.sendWindowStartMinute / 60;
-    const windowEnd =
-      overview.settings.sendWindowEndHour + overview.settings.sendWindowEndMinute / 60;
+    const windowStart = overview.settings.sendWindowStartHour + overview.settings.sendWindowStartMinute / 60;
+    const windowEnd = overview.settings.sendWindowEndHour + overview.settings.sendWindowEndMinute / 60;
     const windowHours = Math.max(windowEnd - windowStart, 0);
     const elapsedHours = Math.max(0, Math.min(hourOfDay - windowStart, windowHours));
-    const expectedByNow =
-      windowHours > 0 ? Math.round((elapsedHours / windowHours) * DAILY_TARGET) : 0;
+    const expectedByNow = windowHours > 0 ? Math.round((elapsedHours / windowHours) * DAILY_TARGET) : 0;
     if (sentToday >= expectedByNow) return "on-track" as const;
     return { kind: "behind" as const, gap: expectedByNow - sentToday };
   }, [overview.settings, sentToday]);
 
-  const tabs: { id: TabId; label: string; count?: number }[] = [
-    { id: "overview", label: "Overview" },
-    { id: "queue", label: "Queue", count: queueCount },
-    { id: "mailboxes", label: "Mailboxes", count: overview.mailboxes.length },
-    { id: "blocked", label: "Issues", count: issuesCount },
-    { id: "rules", label: "Rules" },
+  const tabs: { id: TabId; label: string; count?: number; icon: ComponentType<{ className?: string }> }[] = [
+    { id: "overview", label: "Overview", icon: DatabaseZap },
+    { id: "queue", label: "Queue", count: queueCount, icon: ArrowRight },
+    { id: "mailboxes", label: "Mailboxes", count: overview.mailboxes.length, icon: Mail },
+    { id: "blocked", label: "Issues", count: issuesCount, icon: CircleAlert },
+    { id: "rules", label: "Rules", icon: Settings2 },
   ];
 
   return (
-    <div className="animate-slide-up space-y-6">
-      {/* Hero header — matches dashboard / outreach treatment */}
-      <header className="relative overflow-hidden rounded-3xl border border-white/[0.06] bg-[radial-gradient(ellipse_900px_300px_at_top_left,rgba(139,92,246,0.10),transparent_60%),radial-gradient(ellipse_700px_250px_at_top_right,rgba(16,185,129,0.06),transparent_60%),linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.005))] p-6 md:p-8">
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex items-center gap-5">
-          <ProgressRing progress={progress} sentToday={sentToday} paceStatus={paceStatus} />
-
-          <div className="min-w-0">
-            <div className="inline-flex items-center gap-2 rounded-full border border-violet-500/20 bg-violet-500/[0.08] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-violet-300">
-              <span className="relative flex h-1.5 w-1.5">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-violet-400 opacity-60" />
-                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-violet-400" />
-              </span>
-              Automation Engine
+    <div className="animate-slide-up space-y-5">
+      <header className="overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/70 shadow-[0_22px_80px_rgba(0,0,0,0.22)]">
+        <div className="border-b border-white/10 px-5 py-4">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex min-w-0 items-center gap-4">
+              <ProgressRing progress={progress} sentToday={sentToday} paceStatus={paceStatus} />
+              <div className="min-w-0">
+                <OperatorLabel className="text-emerald-300">Axiom command center</OperatorLabel>
+                <h1 className="mt-1 text-2xl font-semibold tracking-tight text-white md:text-3xl">Automation</h1>
+                <p className="mt-1 max-w-2xl text-sm leading-6 text-zinc-400">
+                  Queue health, sender capacity, issue review, and rules in one operator surface.
+                </p>
+              </div>
             </div>
-            <h1 className="mt-3 text-3xl font-semibold tracking-tight text-white md:text-4xl">Automation</h1>
-            <p className="mt-1 text-sm text-zinc-400">
-              Target {DAILY_TARGET} emails/day · runs every minute
-            </p>
-            <div className="mt-2.5 flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
-              <Chip tone={isActive ? "emerald" : "amber"}>
-                <StatusDot tone={isActive ? "emerald" : "amber"} pulse={isActive} />
-                {overview.settings.globalPaused ? "Paused" : overview.engine.mode}
-              </Chip>
-              <Chip
-                tone={
-                  paceStatus === "complete"
-                    ? "emerald"
-                    : paceStatus === "on-track"
-                    ? "cyan"
-                    : "amber"
-                }
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                asChild
+                size="sm"
+                variant="outline"
+                className="cursor-pointer border-white/10 bg-white/[0.02] text-zinc-300 hover:bg-white/[0.06] hover:text-white"
               >
-                {paceStatus === "complete"
-                  ? "Target hit"
-                  : paceStatus === "on-track"
-                  ? "On pace"
-                  : `Behind by ${paceStatus.gap}`}
-              </Chip>
-              <span className="text-xs text-zinc-500">
-                Next:{" "}
-                <span className="font-medium text-zinc-300">
-                  {fmtCountdown(overview.engine.nextSendAt)}
-                </span>
-              </span>
-              <span className="hidden text-zinc-700 sm:inline">·</span>
-              <span className="hidden text-xs text-zinc-500 sm:inline">
-                Runs every minute via Cloudflare cron
-              </span>
-              {issuesCount > 0 && (
-                <>
-                  <span className="text-zinc-700">·</span>
-                  <span className="text-xs font-medium text-amber-300">
-                    {issuesCount} issue{issuesCount !== 1 ? "s" : ""}
-                  </span>
-                </>
-              )}
+                <Link href="/outreach" aria-label="Open outreach console">
+                  Outreach
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </Link>
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void refresh()}
+                aria-label="Refresh data"
+                className="cursor-pointer border-white/10 bg-white/[0.02] text-zinc-300 hover:bg-white/[0.06] hover:text-white"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                Refresh
+              </Button>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <Button
-            asChild
-            size="sm"
-            variant="outline"
-            className="cursor-pointer border-white/10 bg-white/[0.02] text-zinc-300 hover:bg-white/[0.06] hover:text-white"
-          >
-            <Link href="/outreach" aria-label="Open outreach console">
-              Outreach
-              <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => void refresh()}
-            aria-label="Refresh data"
-            className="cursor-pointer border-white/10 bg-white/[0.02] text-zinc-300 hover:bg-white/[0.06] hover:text-white"
-          >
-            <RefreshCw className="h-3.5 w-3.5" />
-            Refresh
-          </Button>
-        </div>
+        <div className="grid gap-0 divide-y divide-white/10 px-5 py-3 text-xs sm:grid-cols-2 sm:divide-x sm:divide-y-0 lg:grid-cols-4">
+          <StatusCell
+            label="Engine"
+            value={overview.settings.globalPaused ? "Paused" : overview.engine.mode}
+            tone={isActive ? "emerald" : "amber"}
+            pulse={isActive}
+          />
+          <StatusCell
+            label="Pace"
+            value={
+              paceStatus === "complete" ? "Target hit" : paceStatus === "on-track" ? "On pace" : `Behind by ${paceStatus.gap}`
+            }
+            tone={paceStatus === "complete" ? "emerald" : paceStatus === "on-track" ? "cyan" : "amber"}
+          />
+          <StatusCell label="Next send" value={fmtCountdown(overview.engine.nextSendAt)} tone="zinc" />
+          <StatusCell
+            label="Issues"
+            value={issuesCount > 0 ? `${issuesCount} open` : "Clear"}
+            tone={issuesCount > 0 ? "amber" : "emerald"}
+          />
         </div>
       </header>
 
-      {/* Tab bar — proper ARIA tablist for keyboard users */}
       <TabBar tabs={tabs} activeTab={tab} onSelect={setTab} />
 
-      {/* Tab panel */}
-      <div
-        id={`panel-${tab}`}
-        role="tabpanel"
-        aria-labelledby={`tab-${tab}`}
-        className="pt-6"
-      >
-        {tab === "overview" && (
-          <OverviewTab
-            overview={overview}
-            onRun={handleRun}
-            onPause={handleTogglePause}
-            busyKey={busyKey}
-          />
-        )}
-        {tab === "queue" && (
-          <QueueTab overview={overview} busyKey={busyKey} onUpdateSeq={updateSeq} />
-        )}
+      <div id={`panel-${tab}`} role="tabpanel" aria-labelledby={`tab-${tab}`} className="pt-1">
+        {tab === "overview" && <OverviewTab overview={overview} onRun={handleRun} onPause={handleTogglePause} busyKey={busyKey} />}
+        {tab === "queue" && <QueueTab overview={overview} busyKey={busyKey} onUpdateSeq={updateSeq} />}
         {tab === "mailboxes" && (
-          <MailboxesTab
-            mailboxes={overview.mailboxes}
-            busyKey={busyKey}
-            onUpdateMailbox={updateMailbox}
-          />
+          <MailboxesTab mailboxes={overview.mailboxes} busyKey={busyKey} onUpdateMailbox={updateMailbox} />
         )}
-        {tab === "blocked" && (
-          <IssuesTab sequences={overview.sequences} busyKey={busyKey} onUpdateSeq={updateSeq} />
-        )}
+        {tab === "blocked" && <IssuesTab sequences={overview.sequences} busyKey={busyKey} onUpdateSeq={updateSeq} />}
         {tab === "rules" && (
-          <RulesTab
-            settings={settingsDraft}
-            onChange={setSettingsDraft}
-            onSave={saveSettings}
-            busyKey={busyKey}
-          />
+          <RulesTab settings={settingsDraft} onChange={setSettingsDraft} onSave={saveSettings} busyKey={busyKey} />
         )}
       </div>
     </div>
   );
 }
 
-/** Daily progress ring. Uses stroke-dashoffset for smoother animation. */
+function StatusCell({
+  label,
+  value,
+  tone,
+  pulse,
+}: {
+  label: string;
+  value: string;
+  tone: "emerald" | "amber" | "cyan" | "zinc";
+  pulse?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 px-0 py-2 sm:px-4 sm:first:pl-0 sm:last:pr-0">
+      <OperatorLabel>{label}</OperatorLabel>
+      <Chip tone={tone}>
+        <StatusDot tone={tone} pulse={pulse} />
+        {value}
+      </Chip>
+    </div>
+  );
+}
+
 function ProgressRing({
   progress,
   sentToday,
@@ -354,26 +313,16 @@ function ProgressRing({
   const circumference = 2 * Math.PI * radius;
   const offset = circumference * (1 - progress);
   const stroke =
-    paceStatus === "complete"
-      ? "stroke-emerald-400"
-      : paceStatus === "on-track"
-      ? "stroke-cyan-400"
-      : "stroke-amber-400";
+    paceStatus === "complete" ? "stroke-emerald-400" : paceStatus === "on-track" ? "stroke-cyan-400" : "stroke-amber-400";
+
   return (
     <div
-      className="relative flex h-20 w-20 shrink-0 items-center justify-center"
+      className="relative flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-black/20"
       role="img"
       aria-label={`${sentToday} of ${DAILY_TARGET} daily emails sent`}
     >
-      <svg viewBox="0 0 80 80" className="h-20 w-20 -rotate-90">
-        <circle
-          cx="40"
-          cy="40"
-          r={radius}
-          fill="none"
-          strokeWidth="5"
-          className="stroke-white/[0.08]"
-        />
+      <svg viewBox="0 0 80 80" className="h-16 w-16 -rotate-90">
+        <circle cx="40" cy="40" r={radius} fill="none" strokeWidth="5" className="stroke-white/[0.08]" />
         <circle
           cx="40"
           cy="40"
@@ -394,34 +343,38 @@ function ProgressRing({
   );
 }
 
-/** Tab bar with ARIA tablist + left/right keyboard nav. */
 function TabBar({
   tabs,
   activeTab,
   onSelect,
 }: {
-  tabs: { id: TabId; label: string; count?: number }[];
+  tabs: { id: TabId; label: string; count?: number; icon: ComponentType<{ className?: string }> }[];
   activeTab: TabId;
   onSelect: (id: TabId) => void;
 }) {
   const listRef = useRef<HTMLDivElement>(null);
 
-  const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
     e.preventDefault();
     const idx = tabs.findIndex((t) => t.id === activeTab);
-    const next =
-      e.key === "ArrowRight" ? (idx + 1) % tabs.length : (idx - 1 + tabs.length) % tabs.length;
+    const next = e.key === "ArrowRight" ? (idx + 1) % tabs.length : (idx - 1 + tabs.length) % tabs.length;
     onSelect(tabs[next].id);
     const el = listRef.current?.querySelector<HTMLButtonElement>(`#tab-${tabs[next].id}`);
     el?.focus();
   };
 
   return (
-    <div role="tablist" aria-label="Automation sections" ref={listRef} onKeyDown={onKeyDown}
-      className="flex overflow-x-auto border-b border-white/10">
+    <div
+      role="tablist"
+      aria-label="Automation sections"
+      ref={listRef}
+      onKeyDown={onKeyDown}
+      className="flex gap-1 overflow-x-auto rounded-xl border border-white/10 bg-zinc-950/55 p-1"
+    >
       {tabs.map((t) => {
         const selected = activeTab === t.id;
+        const Icon = t.icon;
         return (
           <button
             key={t.id}
@@ -433,24 +386,23 @@ function TabBar({
             tabIndex={selected ? 0 : -1}
             onClick={() => onSelect(t.id)}
             className={cn(
-              "relative shrink-0 cursor-pointer px-4 py-2.5 text-sm font-medium transition-colors duration-200",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/50 focus-visible:ring-offset-0 rounded-t-md",
-              selected
-                ? "text-white after:absolute after:inset-x-3 after:-bottom-px after:h-[2px] after:rounded-full after:bg-emerald-400"
-                : "text-zinc-400 hover:text-zinc-100",
+              "inline-flex h-10 shrink-0 cursor-pointer items-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60",
+              selected ? "bg-white text-zinc-950" : "text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-100",
             )}
           >
+            <Icon className="h-4 w-4" />
             <span>{t.label}</span>
-            {t.count !== undefined && t.count > 0 && (
+            {t.count !== undefined ? (
               <span
                 className={cn(
-                  "ml-1.5 rounded-md px-1.5 py-0.5 text-[10px] font-medium tabular-nums transition-colors",
-                  selected ? "bg-emerald-500/15 text-emerald-300" : "bg-white/[0.06] text-zinc-400",
+                  "rounded-md px-1.5 py-0.5 text-[10px] tabular-nums",
+                  selected ? "bg-zinc-950/10 text-zinc-700" : "bg-white/[0.06] text-zinc-500",
                 )}
               >
                 {t.count}
               </span>
-            )}
+            ) : null}
           </button>
         );
       })}

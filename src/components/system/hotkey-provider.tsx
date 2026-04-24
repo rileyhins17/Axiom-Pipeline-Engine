@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 
 import { CommandPalette } from "./command-palette";
 import { ShortcutsModal } from "./shortcuts-modal";
+import { APP_NAV_ITEMS } from "@/lib/navigation";
 
 export function HotkeyProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -38,14 +39,10 @@ export function HotkeyProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (event.metaKey || event.ctrlKey) {
-        const routes: Record<string, Route> = {
-          "1": "/dashboard",
-          "2": "/hunt",
-          "3": "/vault",
-          "4": "/automation",
-          "5": "/outreach",
-          "6": "/settings",
-        };
+        const routes = APP_NAV_ITEMS.reduce<Record<string, Route>>((acc, item) => {
+          acc[item.shortcut.replace("⌘", "")] = item.url;
+          return acc;
+        }, {});
         if (routes[event.key]) {
           event.preventDefault();
           router.push(routes[event.key]);

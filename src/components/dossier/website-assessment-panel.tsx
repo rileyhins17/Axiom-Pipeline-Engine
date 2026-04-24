@@ -1,6 +1,6 @@
 "use client";
 import { cn } from "@/lib/utils";
-import { Gauge, AlertTriangle, Wrench } from "lucide-react";
+import { Gauge, Wrench } from "lucide-react";
 
 interface WebsiteAssessment {
     speedRisk: number;
@@ -44,10 +44,10 @@ function RiskMeter({ label, value, max = 5 }: { label: string; value: number; ma
 export function WebsiteAssessmentPanel({ assessment }: WebsiteAssessmentPanelProps) {
     if (!assessment) {
         return (
-            <div className="glass-ultra rounded-xl p-6">
+            <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
                 <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-3">
                     <Gauge className="w-4 h-4 text-cyan-400" />
-                    Website Assessment
+                    Website assessment
                 </h3>
                 <p className="text-[11px] text-zinc-600 italic text-center py-4">No website assessment data available.</p>
             </div>
@@ -57,10 +57,10 @@ export function WebsiteAssessmentPanel({ assessment }: WebsiteAssessmentPanelPro
     const gradeStyle = GRADE_COLORS[assessment.overallGrade] || GRADE_COLORS.F;
 
     return (
-        <div className="glass-ultra rounded-xl p-6">
+        <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
             <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-4">
                 <Gauge className="w-4 h-4 text-cyan-400" />
-                Website Assessment
+                Website assessment
             </h3>
 
             {/* Overall grade */}
@@ -69,7 +69,7 @@ export function WebsiteAssessmentPanel({ assessment }: WebsiteAssessmentPanelPro
                     {assessment.overallGrade}
                 </div>
                 <div>
-                    <div className="text-xs text-zinc-400">Overall Grade</div>
+                    <div className="text-xs text-zinc-400">Overall grade</div>
                     <div className={cn("text-sm font-bold", gradeStyle.text)}>
                         {assessment.overallGrade === "A" ? "Excellent" :
                             assessment.overallGrade === "B" ? "Good" :
@@ -91,7 +91,7 @@ export function WebsiteAssessmentPanel({ assessment }: WebsiteAssessmentPanelPro
             {assessment.topFixes && assessment.topFixes.length > 0 && (
                 <div className="border-t border-white/[0.04] pt-4">
                     <h4 className="text-[10px] uppercase tracking-widest text-muted-foreground/40 flex items-center gap-1.5 mb-2">
-                        <Wrench className="w-3 h-3" /> Top Fixes
+                        <Wrench className="w-3 h-3" /> Top fixes
                     </h4>
                     <ul className="space-y-1.5">
                         {assessment.topFixes.slice(0, 3).map((fix, i) => (

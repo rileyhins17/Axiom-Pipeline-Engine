@@ -232,8 +232,8 @@ function HuntInner({ initialIntakeLeads }: { initialIntakeLeads: IntakeLead[] })
   }, [pendingReplacement, store, toast]);
 
   return (
-    <div className="mx-auto max-w-7xl space-y-8">
-      <section className="relative overflow-hidden rounded-3xl border border-white/[0.06] bg-[radial-gradient(ellipse_900px_350px_at_top_right,rgba(34,197,94,0.10),transparent_60%),radial-gradient(ellipse_700px_250px_at_top_left,rgba(34,211,238,0.08),transparent_60%),linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.005))] px-6 py-8 md:px-10 md:py-10">
+    <div className="mx-auto max-w-7xl space-y-6">
+      <section className="relative overflow-hidden rounded-lg border border-white/[0.06] bg-[radial-gradient(ellipse_900px_350px_at_top_right,rgba(16,185,129,0.10),transparent_60%),radial-gradient(ellipse_700px_250px_at_top_left,rgba(34,211,238,0.08),transparent_60%),linear-gradient(180deg,rgba(255,255,255,0.025),rgba(255,255,255,0.006))] px-5 py-6 md:px-8 md:py-8">
         <div
           className="pointer-events-none absolute inset-0 opacity-[0.025]"
           style={{
@@ -247,51 +247,51 @@ function HuntInner({ initialIntakeLeads }: { initialIntakeLeads: IntakeLead[] })
           <div className="min-w-0">
             <div className="inline-flex items-center gap-2 rounded-full border border-cyan-500/20 bg-cyan-500/[0.08] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-cyan-300">
               <Target className="h-3 w-3" />
-              Lead Generator
+              Source Command
             </div>
-            <h1 className="mt-4 max-w-4xl text-4xl font-semibold tracking-tight text-white md:text-5xl">
-              Source markets in real time.
+            <h1 className="mt-4 max-w-4xl text-3xl font-semibold tracking-tight text-white md:text-5xl">
+              Launch local scans and route qualified leads.
             </h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-400 md:text-base">
-              Pick a niche + city, hit launch, and watch the Axiom score update live as the worker
-              streams results.
+              Set a market, launch the worker, and keep the live score, scrape trace, and Outreach
+              handoff visible from one command surface.
             </p>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-3 xl:min-w-[430px]">
-            <div className="rounded-2xl border border-white/[0.06] bg-black/25 px-4 py-3">
-              <div className="text-[11px] font-medium text-zinc-500">Run state</div>
+            <div className="rounded-lg border border-white/[0.06] bg-black/25 px-4 py-3">
+              <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-zinc-500">Run state</div>
               <div className="mt-2 text-lg font-semibold text-white">{runState}</div>
             </div>
-            <div className="rounded-2xl border border-white/[0.06] bg-black/25 px-4 py-3">
-              <div className="text-[11px] font-medium text-zinc-500">Leads found</div>
+            <div className="rounded-lg border border-white/[0.06] bg-black/25 px-4 py-3">
+              <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-zinc-500">Leads found</div>
               <div className="mt-2 text-lg font-semibold text-cyan-300">{store.totalStats.leadsFound}</div>
             </div>
-            <div className="rounded-2xl border border-white/[0.06] bg-black/25 px-4 py-3">
-              <div className="text-[11px] font-medium text-zinc-500">Vetted email</div>
+            <div className="rounded-lg border border-white/[0.06] bg-black/25 px-4 py-3">
+              <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-zinc-500">Vetted email</div>
               <div className="mt-2 text-lg font-semibold text-emerald-300">{store.totalStats.withEmail}</div>
             </div>
           </div>
         </div>
 
         <div className="mt-5 grid gap-3 md:grid-cols-[1.15fr_0.85fr]">
-          <div className="rounded-[22px] border border-cyan-500/10 bg-cyan-500/[0.04] px-4 py-4">
+          <div className="rounded-lg border border-cyan-500/10 bg-cyan-500/[0.04] px-4 py-4">
             <div className="text-[11px] uppercase tracking-[0.22em] text-cyan-300/80">Next handoff</div>
             <div className="mt-2 text-lg font-semibold text-white">
               {intakeLeads.length > 0 ? `${intakeLeads.length} sourced leads waiting for Outreach` : "No intake backlog right now"}
             </div>
             <div className="mt-2 text-sm text-zinc-400">
-              Lead Generator owns sourcing. Outreach takes over once these records need prep and qualification.
+              Sourcing stays here. Outreach takes over enrichment, prep, and first touch.
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-3 rounded-[22px] border border-white/[0.06] bg-black/20 px-4 py-4">
-            <Button asChild className="rounded-full bg-white px-4 text-sm text-black hover:bg-zinc-200">
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-white/[0.06] bg-black/20 px-4 py-4">
+            <Button asChild className="rounded-lg bg-white px-4 text-sm text-black hover:bg-zinc-200">
               <Link href="/outreach?stage=enrichment">
                 Open Outreach Intake
                 <ArrowRight className="h-4 w-4" />
               </Link>
             </Button>
-            <Button asChild variant="ghost" className="rounded-full border border-white/10 px-4 text-sm text-white hover:bg-white/[0.04]">
+            <Button asChild variant="ghost" className="rounded-lg border border-white/10 px-4 text-sm text-white hover:bg-white/[0.04]">
               <Link href="/vault">
                 Open Vault
                 <Database className="h-4 w-4" />
@@ -302,16 +302,16 @@ function HuntInner({ initialIntakeLeads }: { initialIntakeLeads: IntakeLead[] })
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[1.06fr_0.94fr] xl:items-start">
-        <Card className="overflow-hidden rounded-[28px] border-white/[0.06] bg-[linear-gradient(180deg,rgba(255,255,255,0.025),rgba(255,255,255,0.01))]">
+        <Card className="overflow-hidden rounded-lg border-white/[0.06] bg-[linear-gradient(180deg,rgba(255,255,255,0.025),rgba(255,255,255,0.01))]">
           <div className="h-px bg-[linear-gradient(90deg,rgba(16,185,129,0.8),rgba(34,211,238,0.8),rgba(255,255,255,0))]" />
           <CardHeader className="space-y-3 pb-4">
             <CardTitle className="flex items-center gap-2 text-xl text-white">
               <Target className="h-5 w-5 text-emerald-400" />
-              Launch target
+              Launch Target
             </CardTitle>
             <CardDescription className="max-w-2xl text-sm leading-6 text-zinc-400">
-              Define one local market, set the sweep depth, and launch immediately. If something is already running, we
-              will warn you before replacing it and keep any partial results already written.
+              Define one local market, choose scan depth, and launch. If a run is active, replacement
+              is confirmed before the worker changes target.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -325,7 +325,7 @@ function HuntInner({ initialIntakeLeads }: { initialIntakeLeads: IntakeLead[] })
                     placeholder="Roofers, med spas, landscapers..."
                     value={niche}
                     onChange={(event) => setNiche(event.target.value)}
-                    className="h-12 rounded-2xl border-white/10 bg-black/30 pl-10 text-sm text-white placeholder:text-zinc-500 focus:border-emerald-500/50"
+                    className="h-11 rounded-lg border-white/10 bg-black/30 pl-10 text-sm text-white placeholder:text-zinc-500 focus:border-emerald-500/50"
                     disabled={store.loading}
                   />
                 </div>
@@ -337,7 +337,7 @@ function HuntInner({ initialIntakeLeads }: { initialIntakeLeads: IntakeLead[] })
                       onClick={() => setNiche(preset)}
                       disabled={store.loading}
                       className={cn(
-                        "rounded-full border px-3 py-1.5 text-xs transition-colors",
+                        "rounded-lg border px-3 py-1.5 text-xs transition-colors",
                         niche === preset
                           ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
                           : "border-white/10 bg-white/[0.02] text-zinc-400 hover:border-white/20 hover:text-white",
@@ -358,7 +358,7 @@ function HuntInner({ initialIntakeLeads }: { initialIntakeLeads: IntakeLead[] })
                     placeholder="Waterloo"
                     value={city}
                     onChange={(event) => setCity(event.target.value)}
-                    className="h-12 rounded-2xl border-white/10 bg-black/30 pl-10 text-sm text-white placeholder:text-zinc-500 focus:border-cyan-500/50"
+                    className="h-11 rounded-lg border-white/10 bg-black/30 pl-10 text-sm text-white placeholder:text-zinc-500 focus:border-cyan-500/50"
                     disabled={store.loading}
                   />
                 </div>
@@ -370,7 +370,7 @@ function HuntInner({ initialIntakeLeads }: { initialIntakeLeads: IntakeLead[] })
                       onClick={() => setCity(preset)}
                       disabled={store.loading}
                       className={cn(
-                        "rounded-full border px-3 py-1.5 text-xs transition-colors",
+                        "rounded-lg border px-3 py-1.5 text-xs transition-colors",
                         city === preset
                           ? "border-cyan-500/30 bg-cyan-500/10 text-cyan-200"
                           : "border-white/10 bg-white/[0.02] text-zinc-400 hover:border-white/20 hover:text-white",
@@ -394,7 +394,7 @@ function HuntInner({ initialIntakeLeads }: { initialIntakeLeads: IntakeLead[] })
                   }}
                   disabled={store.loading}
                   className={cn(
-                    "rounded-[22px] border p-4 text-left transition-all",
+                    "rounded-lg border p-4 text-left transition-all",
                     activePreset?.label === preset.label
                       ? "border-emerald-500/30 bg-emerald-500/[0.08] shadow-[0_0_40px_rgba(16,185,129,0.08)]"
                       : "border-white/[0.06] bg-black/20 hover:border-white/12",
@@ -417,15 +417,15 @@ function HuntInner({ initialIntakeLeads }: { initialIntakeLeads: IntakeLead[] })
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="radius" className="text-sm font-medium text-white">Radius (km)</Label>
-                <Input id="radius" value={radius} onChange={(event) => setRadius(event.target.value)} className="h-12 rounded-2xl border-white/10 bg-black/30 text-white" disabled={store.loading} />
+                <Input id="radius" value={radius} onChange={(event) => setRadius(event.target.value)} className="h-11 rounded-lg border-white/10 bg-black/30 text-white" disabled={store.loading} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="depth" className="text-sm font-medium text-white">Scroll depth</Label>
-                <Input id="depth" value={maxDepth} onChange={(event) => setMaxDepth(event.target.value)} className="h-12 rounded-2xl border-white/10 bg-black/30 text-white" disabled={store.loading} />
+                <Input id="depth" value={maxDepth} onChange={(event) => setMaxDepth(event.target.value)} className="h-11 rounded-lg border-white/10 bg-black/30 text-white" disabled={store.loading} />
               </div>
             </div>
 
-            <div className="rounded-[24px] border border-white/[0.06] bg-black/20 p-5">
+            <div className="rounded-lg border border-white/[0.06] bg-black/20 p-4">
               <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div className="space-y-2">
                   <div className="text-[11px] font-mono uppercase tracking-[0.24em] text-zinc-500">Launch summary</div>
@@ -433,22 +433,22 @@ function HuntInner({ initialIntakeLeads }: { initialIntakeLeads: IntakeLead[] })
                     {builderReady ? `${niche.trim()} in ${city.trim()}` : "Choose a market and city"}
                   </div>
                   <div className="text-sm text-zinc-400">
-                    Radius {radius} km · Depth {maxDepth}{activePreset ? ` · ${activePreset.label}` : " · Custom"}
+                    Radius {radius} km | Depth {maxDepth}{activePreset ? ` | ${activePreset.label}` : " | Custom"}
                   </div>
                 </div>
 
                 {(store.loading || store.session.status === "paused") ? (
                   <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
                     {store.session.status === "paused" ? (
-                      <Button type="button" onClick={store.handleResume} className="h-11 rounded-full bg-white px-5 text-sm text-black hover:bg-zinc-200">
+                      <Button type="button" onClick={store.handleResume} className="h-10 rounded-lg bg-white px-5 text-sm text-black hover:bg-zinc-200">
                         <Play className="mr-2 h-4 w-4" /> Resume
                       </Button>
                     ) : (
-                      <Button type="button" onClick={store.handlePause} className="h-11 rounded-full bg-white px-5 text-sm text-black hover:bg-zinc-200">
+                      <Button type="button" onClick={store.handlePause} className="h-10 rounded-lg bg-white px-5 text-sm text-black hover:bg-zinc-200">
                         <Pause className="mr-2 h-4 w-4" /> Pause
                       </Button>
                     )}
-                    <Button type="button" variant="ghost" onClick={() => void store.handleCancel()} className="h-11 rounded-full border border-white/10 px-5 text-sm text-white hover:bg-white/[0.04]">
+                    <Button type="button" variant="ghost" onClick={() => void store.handleCancel()} className="h-10 rounded-lg border border-white/10 px-5 text-sm text-white hover:bg-white/[0.04]">
                       <XCircle className="mr-2 h-4 w-4" /> Cancel
                     </Button>
                   </div>
@@ -457,7 +457,7 @@ function HuntInner({ initialIntakeLeads }: { initialIntakeLeads: IntakeLead[] })
                     type="button"
                     onClick={() => void launchTarget()}
                     disabled={!builderReady}
-                    className={cn("h-11 rounded-full px-5 text-sm font-medium", builderReady ? "bg-white text-black hover:bg-zinc-200" : "bg-zinc-900 text-zinc-500")}
+                    className={cn("h-10 rounded-lg px-5 text-sm font-medium", builderReady ? "bg-white text-black hover:bg-zinc-200" : "bg-zinc-900 text-zinc-500")}
                   >
                     <Play className="mr-2 h-4 w-4" /> Launch
                   </Button>
@@ -478,84 +478,82 @@ function HuntInner({ initialIntakeLeads }: { initialIntakeLeads: IntakeLead[] })
             websiteLabel={scoreWebsiteLabel}
           />
 
-          <Card className="rounded-[28px] border-white/[0.06] bg-white/[0.02]">
+          <Card className="rounded-lg border-white/[0.06] bg-white/[0.02]">
             <CardHeader className="pb-4">
               <div className="flex items-center justify-between gap-4">
                 <div>
-                  <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Run Status</div>
+                  <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Live Run</div>
                   <CardTitle className="mt-2 text-2xl text-white">{runState}</CardTitle>
                 </div>
-                <Badge variant="outline" className={cn("rounded-full border px-3 py-1 font-mono text-[10px] uppercase tracking-[0.22em]", store.loading ? "border-cyan-500/20 bg-cyan-500/10 text-cyan-200" : store.session.status === "completed" ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-200" : "border-white/10 bg-white/[0.04] text-zinc-300")}>
+                <Badge variant="outline" className={cn("rounded-lg border px-3 py-1 font-mono text-[10px] uppercase tracking-[0.22em]", store.loading ? "border-cyan-500/20 bg-cyan-500/10 text-cyan-200" : store.session.status === "completed" ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-200" : "border-white/10 bg-white/[0.04] text-zinc-300")}>
                   {runState}
                 </Badge>
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-4 sm:grid-cols-2">
-                <div className="rounded-2xl border border-white/[0.06] bg-black/20 p-4">
-                  <div className="text-[11px] text-zinc-500">Current target</div>
+                <div className="rounded-lg border border-white/[0.06] bg-black/20 p-4">
+                  <div className="text-[11px] uppercase tracking-[0.16em] text-zinc-500">Current target</div>
                   <div className="mt-2 text-sm font-medium text-white">
                     {currentTarget ? `${currentTarget.niche} in ${currentTarget.city}` : "No active target"}
                   </div>
                   <div className="mt-2 text-xs text-zinc-500">{currentTarget ? `Runtime ${formatDuration(store.elapsed)}` : "Ready for launch"}</div>
                 </div>
-              <div className="rounded-2xl border border-white/[0.06] bg-black/20 p-4">
-                <div className="text-[11px] text-zinc-500">Currently scraping</div>
-                <div className="mt-2 truncate text-sm font-medium text-white">{currentScrapeLead}</div>
-                <div className="mt-2 truncate text-xs text-zinc-500">{currentScrapeSite}</div>
-              </div>
+                <div className="rounded-lg border border-white/[0.06] bg-black/20 p-4">
+                  <div className="text-[11px] uppercase tracking-[0.16em] text-zinc-500">Currently scraping</div>
+                  <div className="mt-2 truncate text-sm font-medium text-white">{currentScrapeLead}</div>
+                  <div className="mt-2 truncate text-xs text-zinc-500">{currentScrapeSite}</div>
+                </div>
               </div>
 
-              <div className="rounded-2xl border border-white/[0.06] bg-black/20 p-4">
+              <div className="rounded-lg border border-white/[0.06] bg-black/20 p-4">
                 <div className="flex items-center gap-2 text-sm font-medium text-white">
                   <Radar className="h-4 w-4 text-cyan-400" />
-                  What is happening right now
+                  Current operation
                 </div>
                 <div className="mt-3 text-sm leading-6 text-zinc-400">
                   {store.loading
                     ? scorePulse
-                      ? "A lead was just scored. The dial is showing the newest Axiom-fit result from the active worker."
-                      : "The worker is still analyzing the current target. Diagnostics and the live feed stay available below if you want the deeper trace."
+                      ? "A lead was just scored. The dial is showing the newest Axiom-fit result."
+                      : "The worker is analyzing the target. Diagnostics and the live feed remain available below."
                     : store.session.status === "interrupted"
-                      ? "The previous run was interrupted and the partial discoveries were preserved. You can move directly into Vault or launch a new target."
+                      ? "The previous run was interrupted and partial discoveries were preserved."
                       : store.session.status === "completed"
-                        ? "The last run is complete. The strongest scored records are already downstream for review in Vault and Outreach."
-                        : "Nothing is running yet. Pick a target, launch it, and the live score dial will become the main signal."}
+                        ? "The last run is complete. Strong scored records are ready for Vault and Outreach review."
+                        : "Nothing is running. Pick a target and launch to start live scoring."}
+                </div>
+              </div>
+
+              <div className="border-t border-white/[0.06] pt-4">
+                <div className="flex items-center gap-2 text-sm font-medium text-white">
+                  <Sparkles className="h-4 w-4 text-emerald-400" />
+                  Score rationale
+                </div>
+                <div className="mt-3 grid gap-2">
+                  {store.latestScore?.reasonSummary?.length ? store.latestScore.reasonSummary.map((reason) => (
+                    <div key={reason} className="rounded-lg border border-white/[0.06] bg-black/20 px-3 py-2 text-sm leading-6 text-zinc-300">{reason}</div>
+                  )) : (
+                    <div className="rounded-lg border border-white/[0.06] bg-black/20 px-3 py-2 text-sm text-zinc-400">
+                      Score rationale appears after the first evaluated lead.
+                    </div>
+                  )}
                 </div>
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2">
-                <Button asChild variant="ghost" className="h-11 rounded-full border border-white/10 text-white hover:bg-white/[0.04]">
+                <Button asChild variant="ghost" className="h-10 rounded-lg border border-white/10 text-white hover:bg-white/[0.04]">
                   <Link href="/vault"><Database className="mr-2 h-4 w-4" /> Open Vault</Link>
                 </Button>
-                <Button asChild variant="ghost" className="h-11 rounded-full border border-white/10 text-white hover:bg-white/[0.04]">
+                <Button asChild variant="ghost" className="h-10 rounded-lg border border-white/10 text-white hover:bg-white/[0.04]">
                   <Link href="/outreach"><Mail className="mr-2 h-4 w-4" /> Open Outreach</Link>
                 </Button>
               </div>
             </CardContent>
           </Card>
-
-          <Card className="rounded-[28px] border-white/[0.06] bg-white/[0.02]">
-            <CardHeader className="pb-4">
-              <CardTitle className="flex items-center gap-2 text-xl text-white">
-                <Sparkles className="h-5 w-5 text-emerald-400" />
-                Why the current score landed here
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {store.latestScore?.reasonSummary?.length ? store.latestScore.reasonSummary.map((reason) => (
-                <div key={reason} className="rounded-2xl border border-white/[0.06] bg-black/20 px-4 py-3 text-sm leading-6 text-zinc-300">{reason}</div>
-              )) : (
-                <div className="rounded-2xl border border-white/[0.06] bg-black/20 px-4 py-3 text-sm text-zinc-400">
-                  Structured score reasons will appear here as live leads are scored.
-                </div>
-              )}
-            </CardContent>
-          </Card>
         </div>
       </section>
 
-      <section className="rounded-[28px] border border-white/[0.06] bg-white/[0.02]">
+      <section className="rounded-lg border border-white/[0.06] bg-white/[0.02]">
         <button type="button" onClick={() => setDiagnosticsOpen((value) => !value)} className="flex w-full items-center justify-between gap-4 px-6 py-5 text-left">
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-white">
@@ -563,11 +561,11 @@ function HuntInner({ initialIntakeLeads }: { initialIntakeLeads: IntakeLead[] })
               <span className="text-base font-semibold">Diagnostics</span>
             </div>
             <div className="mt-2 text-sm text-zinc-400">
-              Worker health, remote jobs, live logs, and scrape issues stay here when you want the deeper technical trace.
+              Worker health, remote jobs, live logs, and scrape issues are grouped behind this trace.
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <div className="hidden items-center gap-2 rounded-full border border-white/10 bg-black/20 px-3 py-1.5 text-[10px] font-mono uppercase tracking-[0.22em] text-zinc-400 sm:flex">
+            <div className="hidden items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-[10px] font-mono uppercase tracking-[0.22em] text-zinc-400 sm:flex">
               <span>{store.logs.length} lines</span>
               <span className="h-3 w-px bg-white/[0.06]" />
               <span>{unresolvedIssues} issues</span>
@@ -594,7 +592,7 @@ function HuntInner({ initialIntakeLeads }: { initialIntakeLeads: IntakeLead[] })
                     onRetryJob={(jobContext) => toast(`Retry from diagnostics is still available from Remote Jobs for ${jobContext}.`, { type: "info" })}
                   />
                 ) : (
-                  <div className="rounded-[24px] border border-white/[0.06] bg-black/20 p-5">
+                  <div className="rounded-lg border border-white/[0.06] bg-black/20 p-5">
                     <div className="flex items-center gap-2 text-white">
                       <AlertTriangle className="h-4 w-4 text-zinc-500" />
                       <span className="text-sm font-medium">Diagnostics are clean</span>
@@ -610,18 +608,18 @@ function HuntInner({ initialIntakeLeads }: { initialIntakeLeads: IntakeLead[] })
         )}
       </section>
 
-      <section className="rounded-[28px] border border-white/[0.06] bg-white/[0.02] p-5">
+      <section className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
         <div className="flex flex-col gap-4 border-b border-white/[0.06] pb-4 md:flex-row md:items-end md:justify-between">
           <div>
             <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Intake handoff</div>
-            <h2 className="mt-2 text-2xl font-semibold text-white">Batch output waiting for Outreach</h2>
+            <h2 className="mt-2 text-2xl font-semibold text-white">Sourced Leads Waiting for Outreach</h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">
-              Lead Generator owns sourcing and batch creation. Outreach owns the preparation pipeline once these records need enrichment.
+              Review the latest source output and jump directly into the enrichment queue.
             </p>
           </div>
-          <Button asChild className="rounded-full bg-white px-4 text-sm text-black hover:bg-zinc-200">
+          <Button asChild className="rounded-lg bg-white px-4 text-sm text-black hover:bg-zinc-200">
             <Link href="/outreach?stage=enrichment">
-              Send intake batch to Outreach
+              Open Outreach Queue
               <ArrowRight className="h-4 w-4" />
             </Link>
           </Button>
@@ -629,21 +627,21 @@ function HuntInner({ initialIntakeLeads }: { initialIntakeLeads: IntakeLead[] })
 
         <div className="mt-5 grid gap-3 lg:grid-cols-3">
           {intakeLeads.length === 0 ? (
-            <div className="rounded-[22px] border border-white/[0.06] bg-black/20 px-4 py-10 text-sm text-zinc-500 lg:col-span-3">
+            <div className="rounded-lg border border-white/[0.06] bg-black/20 px-4 py-10 text-sm text-zinc-500 lg:col-span-3">
               No sourced leads are waiting in intake right now.
             </div>
           ) : (
             intakeLeads.map((lead) => (
-              <div key={lead.id} className="rounded-[22px] border border-white/[0.06] bg-black/20 px-4 py-4">
+              <div key={lead.id} className="rounded-lg border border-white/[0.06] bg-black/20 px-4 py-4">
                 <div className="text-sm font-semibold text-white">{lead.businessName}</div>
                 <div className="mt-1 text-xs text-zinc-500">
-                  {lead.city} · {lead.niche}
+                  {lead.city} | {lead.niche}
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-zinc-400">
-                  <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-1">
+                  <span className="rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1">
                     {lead.email ? "Email found" : "Needs enrichment"}
                   </span>
-                  <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-1">
+                  <span className="rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1">
                     {lead.source || "Source"}
                   </span>
                 </div>
@@ -655,24 +653,24 @@ function HuntInner({ initialIntakeLeads }: { initialIntakeLeads: IntakeLead[] })
 
       {showReplaceConfirm && pendingReplacement && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm">
-          <div className="w-full max-w-lg rounded-[28px] border border-white/[0.08] bg-zinc-950 p-6 shadow-[0_30px_120px_rgba(0,0,0,0.55)]">
+          <div className="w-full max-w-lg rounded-lg border border-white/[0.08] bg-zinc-950 p-6 shadow-[0_30px_120px_rgba(0,0,0,0.55)]">
             <div className="flex items-start gap-4">
-              <div className="mt-1 flex h-11 w-11 items-center justify-center rounded-2xl border border-amber-500/20 bg-amber-500/10 text-amber-300">
+              <div className="mt-1 flex h-11 w-11 items-center justify-center rounded-lg border border-amber-500/20 bg-amber-500/10 text-amber-300">
                 <AlertTriangle className="h-5 w-5" />
               </div>
               <div className="space-y-3">
                 <h2 className="text-xl font-semibold text-white">Replace the active run?</h2>
                 <p className="text-sm leading-6 text-zinc-400">
-                  The current scrape will be interrupted, but anything already gathered stays written in Vault. Once you confirm, Lead Generator will stop the live target and launch{" "}
+                  The current scrape will be interrupted, but gathered records stay written in Vault. Confirm to stop the live target and launch{" "}
                   <span className="text-white">{pendingReplacement.niche} in {pendingReplacement.city}</span>.
                 </p>
               </div>
             </div>
             <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
-              <Button type="button" variant="ghost" onClick={() => { setShowReplaceConfirm(false); setPendingReplacement(null); }} className="h-11 rounded-full border border-white/10 px-5 text-white hover:bg-white/[0.04]">
+              <Button type="button" variant="ghost" onClick={() => { setShowReplaceConfirm(false); setPendingReplacement(null); }} className="h-10 rounded-lg border border-white/10 px-5 text-white hover:bg-white/[0.04]">
                 Keep current run
               </Button>
-              <Button type="button" onClick={() => void confirmReplacement()} className="h-11 rounded-full bg-white px-5 text-black hover:bg-zinc-200">
+              <Button type="button" onClick={() => void confirmReplacement()} className="h-10 rounded-lg bg-white px-5 text-black hover:bg-zinc-200">
                 Replace and launch <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             </div>

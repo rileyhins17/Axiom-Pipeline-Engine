@@ -2,6 +2,7 @@
 
 import { Keyboard, X } from "lucide-react";
 
+import { APP_NAV_ITEMS } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 
 interface ShortcutsModalProps {
@@ -12,14 +13,10 @@ interface ShortcutsModalProps {
 const SHORTCUT_GROUPS = [
   {
     title: "Navigation",
-    shortcuts: [
-      { keys: ["Cmd", "1"], description: "Go to Dashboard" },
-      { keys: ["Cmd", "2"], description: "Go to Lead Generator" },
-      { keys: ["Cmd", "3"], description: "Go to Vault" },
-      { keys: ["Cmd", "4"], description: "Go to Automation" },
-      { keys: ["Cmd", "5"], description: "Go to Outreach" },
-      { keys: ["Cmd", "6"], description: "Go to Settings" },
-    ],
+    shortcuts: APP_NAV_ITEMS.map((item) => ({
+      keys: ["Cmd", item.shortcut.replace("⌘", "")],
+      description: `Go to ${item.label}`,
+    })),
   },
   {
     title: "Command Palette",

@@ -1,51 +1,75 @@
-"use client"
-import React, { useState, useMemo, useCallback, useRef } from "react"
-import { useRouter } from "next/navigation"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
-import { Label } from "@/components/ui/label"
-import { OutreachEditorSheet } from "@/components/outreach/outreach-editor-sheet"
-import { OutreachStatusBadge } from "@/components/outreach/outreach-status-badge"
-import { formatOutreachDate, getOutreachChannelLabel, isContactedOutreachStatus } from "@/lib/outreach"
-import { formatAppDate } from "@/lib/time"
+"use client";
+
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
-    Search, Download, Trash2, ChevronDown, ChevronUp, ChevronLeft, ChevronRight,
-    ArrowUpDown, ExternalLink, Phone, Mail, User, MapPin, Globe, Filter, X,
-    FileSpreadsheet, SlidersHorizontal, Star, MessageSquare, Building, Tag,
-    Calendar, CheckCircle2, XCircle, AtSign, Share2, FileText
-} from "lucide-react"
+    ArrowUpDown,
+    CheckCircle2,
+    ChevronDown,
+    ChevronLeft,
+    ChevronRight,
+    ChevronUp,
+    Circle,
+    CopyCheck,
+    Download,
+    ExternalLink,
+    FileSpreadsheet,
+    FileText,
+    Filter,
+    Globe,
+    Mail,
+    Phone,
+    Search,
+    Share2,
+    SlidersHorizontal,
+    Star,
+    Trash2,
+    User,
+    X,
+    XCircle,
+} from "lucide-react";
+
+import { OutreachEditorSheet } from "@/components/outreach/outreach-editor-sheet";
+import { OutreachStatusBadge } from "@/components/outreach/outreach-status-badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { formatOutreachDate, getOutreachChannelLabel, isContactedOutreachStatus } from "@/lib/outreach";
+import { formatAppDate } from "@/lib/time";
 
 type Lead = {
-    id: number
-    businessName: string
-    niche: string
-    city: string
-    category: string | null
-    address: string | null
-    phone: string | null
-    email: string | null
-    socialLink: string | null
-    rating: number | null
-    reviewCount: number | null
-    websiteStatus: string | null
-    contactName: string | null
-    tacticalNote: string | null
-    outreachStatus: string | null
-    outreachChannel: string | null
-    firstContactedAt: string | Date | null
-    lastContactedAt: string | Date | null
-    nextFollowUpDue: string | Date | null
-    outreachNotes: string | null
-    createdAt: string
-}
+    id: number;
+    businessName: string;
+    niche: string;
+    city: string;
+    category: string | null;
+    address: string | null;
+    phone: string | null;
+    email: string | null;
+    socialLink: string | null;
+    rating: number | null;
+    reviewCount: number | null;
+    websiteStatus: string | null;
+    contactName: string | null;
+    tacticalNote: string | null;
+    outreachStatus: string | null;
+    outreachChannel: string | null;
+    firstContactedAt: string | Date | null;
+    lastContactedAt: string | Date | null;
+    nextFollowUpDue: string | Date | null;
+    outreachNotes: string | null;
+    createdAt: string;
+};
 
-type SortKey = "businessName" | "city" | "rating" | "reviewCount" | "createdAt" | "niche"
-type SortDir = "asc" | "desc"
+type SortKey = "businessName" | "city" | "rating" | "reviewCount" | "createdAt" | "niche";
+type SortDir = "asc" | "desc";
+type ContactFilter = "ALL" | "YES" | "NO";
+type ExportScope = "filtered" | "all" | "page";
+type ExportFormat = "csv" | "tsv";
 
-const PAGE_OPTIONS = [10, 25, 50, 100]
+const PAGE_OPTIONS = [10, 25, 50, 100];
 
-// Export column options
 const EXPORT_COLUMNS = [
     { key: "businessName", label: "Business Name", default: true },
     { key: "niche", label: "Niche", default: true },
@@ -61,1194 +85,999 @@ const EXPORT_COLUMNS = [
     { key: "websiteStatus", label: "Website Status", default: true },
     { key: "tacticalNote", label: "AI Tactical Note", default: false },
     { key: "createdAt", label: "Date Added", default: false },
-] as const
+] as const;
+
+type ExportColumnKey = typeof EXPORT_COLUMNS[number]["key"];
+
+const defaultExportColumns = () =>
+    Object.fromEntries(EXPORT_COLUMNS.map((column) => [column.key, column.default])) as Record<ExportColumnKey, boolean>;
+
+function hasText(value: string | null) {
+    return Boolean(value && value.trim());
+}
+
+function getWebsiteLabel(status: string | null) {
+    return status === "MISSING" ? "No site" : "Verified";
+}
+
+function StatusBadge({ status }: { status: string | null }) {
+    const missing = status === "MISSING";
+
+    return (
+        <span
+            className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[10px] font-medium ${
+                missing
+                    ? "border-red-500/20 bg-red-500/[0.07] text-red-300"
+                    : "border-emerald-500/20 bg-emerald-500/[0.07] text-emerald-300"
+            }`}
+        >
+            {missing ? <XCircle className="h-3 w-3" /> : <CheckCircle2 className="h-3 w-3" />}
+            {getWebsiteLabel(status)}
+        </span>
+    );
+}
+
+function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
+    if (!active) return <ArrowUpDown className="ml-1 h-3 w-3 text-zinc-700" />;
+    return dir === "asc" ? (
+        <ChevronUp className="ml-1 h-3 w-3 text-emerald-400" />
+    ) : (
+        <ChevronDown className="ml-1 h-3 w-3 text-emerald-400" />
+    );
+}
+
+function ContactIndicators({ lead }: { lead: Lead }) {
+    const contacts = [
+        { label: "email", active: hasText(lead.email), icon: Mail, activeClass: "text-cyan-300" },
+        { label: "phone", active: hasText(lead.phone), icon: Phone, activeClass: "text-emerald-300" },
+        { label: "contact", active: hasText(lead.contactName), icon: User, activeClass: "text-amber-300" },
+        { label: "social", active: hasText(lead.socialLink), icon: Share2, activeClass: "text-blue-300" },
+    ];
+
+    if (!contacts.some((contact) => contact.active)) {
+        return <span className="text-[11px] text-zinc-700">No contact data</span>;
+    }
+
+    return (
+        <div className="flex items-center gap-1.5" aria-label="Contact coverage">
+            {contacts.map(({ label, active, icon: Icon, activeClass }) => (
+                <span
+                    key={label}
+                    className={`inline-flex h-6 w-6 items-center justify-center rounded-md border ${
+                        active ? `border-white/10 bg-white/[0.04] ${activeClass}` : "border-white/[0.04] text-zinc-800"
+                    }`}
+                    title={active ? `Has ${label}` : `Missing ${label}`}
+                >
+                    <Icon className="h-3.5 w-3.5" />
+                </span>
+            ))}
+        </div>
+    );
+}
+
+function FieldValue({ label, value, mono = false }: { label: string; value: React.ReactNode; mono?: boolean }) {
+    return (
+        <div className="min-w-0">
+            <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-600">{label}</div>
+            <div className={`mt-1 min-w-0 break-words text-xs text-zinc-300 ${mono ? "font-mono" : ""}`}>{value}</div>
+        </div>
+    );
+}
+
+function LeadDetails({ lead }: { lead: Lead }) {
+    return (
+        <div className="grid min-w-0 grid-cols-1 gap-5 text-xs md:grid-cols-[1fr_1fr_1.35fr]">
+            <div className="min-w-0 space-y-3">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Verification</div>
+                <FieldValue label="Contact" value={lead.contactName || "No named contact"} />
+                <FieldValue label="Phone" value={lead.phone || "Missing"} mono />
+                <FieldValue label="Email" value={lead.email || "Missing"} mono />
+                {lead.socialLink ? (
+                    <a
+                        href={lead.socialLink}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex max-w-full items-center gap-1.5 text-xs text-blue-300 hover:text-blue-200"
+                    >
+                        <ExternalLink className="h-3 w-3 flex-none" />
+                        <span className="truncate">{lead.socialLink.replace(/https?:\/\//, "")}</span>
+                    </a>
+                ) : null}
+            </div>
+
+            <div className="min-w-0 space-y-3">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Market</div>
+                <FieldValue label="City" value={lead.city || "Unknown"} />
+                <FieldValue label="Address" value={lead.address || "No address captured"} />
+                <FieldValue label="Category" value={lead.category || "Uncategorized"} />
+                <FieldValue label="Added" value={formatAppDate(lead.createdAt)} mono />
+            </div>
+
+            <div className="min-w-0 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Notes</div>
+                    {isContactedOutreachStatus(lead.outreachStatus) ? <OutreachStatusBadge status={lead.outreachStatus} /> : null}
+                </div>
+                <p className="min-w-0 whitespace-pre-wrap break-words text-xs leading-5 text-zinc-300">
+                    {lead.tacticalNote || "No tactical note generated."}
+                </p>
+                {isContactedOutreachStatus(lead.outreachStatus) ? (
+                    <div className="grid grid-cols-2 gap-2 border-t border-white/[0.06] pt-3 text-[11px] text-zinc-500">
+                        <FieldValue label="Channel" value={getOutreachChannelLabel(lead.outreachChannel)} />
+                        <FieldValue label="First" value={formatOutreachDate(lead.firstContactedAt, true)} />
+                        <FieldValue label="Last" value={formatOutreachDate(lead.lastContactedAt, true)} />
+                        <FieldValue label="Due" value={formatOutreachDate(lead.nextFollowUpDue)} />
+                        {lead.outreachNotes ? (
+                            <div className="col-span-2">
+                                <FieldValue label="Outreach note" value={lead.outreachNotes} />
+                            </div>
+                        ) : null}
+                    </div>
+                ) : null}
+            </div>
+        </div>
+    );
+}
+
+function TriFilter({
+    label,
+    value,
+    onChange,
+}: {
+    label: string;
+    value: ContactFilter;
+    onChange: (value: ContactFilter) => void;
+}) {
+    return (
+        <div className="space-y-1.5">
+            <Label className="text-[10px] uppercase tracking-[0.18em] text-zinc-600">{label}</Label>
+            <div className="grid grid-cols-3 rounded-lg border border-white/[0.07] bg-black/20 p-0.5">
+                {[
+                    { key: "ALL" as const, label: "Any" },
+                    { key: "YES" as const, label: "Has" },
+                    { key: "NO" as const, label: "Missing" },
+                ].map((option) => (
+                    <button
+                        key={option.key}
+                        type="button"
+                        onClick={() => onChange(option.key)}
+                        className={`rounded-md px-2 py-1 text-[11px] transition-colors ${
+                            value === option.key ? "bg-white/[0.08] text-white" : "text-zinc-600 hover:text-zinc-300"
+                        }`}
+                    >
+                        {option.label}
+                    </button>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+function ActiveFilter({
+    label,
+    onClear,
+}: {
+    label: string;
+    onClear: () => void;
+}) {
+    return (
+        <span className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-[11px] text-zinc-400">
+            {label}
+            <button type="button" onClick={onClear} className="text-zinc-600 hover:text-white" aria-label={`Clear ${label}`}>
+                <X className="h-3 w-3" />
+            </button>
+        </span>
+    );
+}
 
 export default function VaultDataTable({ initialLeads }: { initialLeads: Lead[] }) {
-    const router = useRouter()
-    const [leads, setLeads] = useState<Lead[]>(initialLeads)
+    const router = useRouter();
+    const [leads, setLeads] = useState<Lead[]>(initialLeads);
+    const [search, setSearch] = useState("");
+    const [showFilters, setShowFilters] = useState(false);
+    const [statusFilter, setStatusFilter] = useState("ALL");
+    const [hasEmailFilter, setHasEmailFilter] = useState<ContactFilter>("ALL");
+    const [hasPhoneFilter, setHasPhoneFilter] = useState<ContactFilter>("ALL");
+    const [hasContactFilter, setHasContactFilter] = useState<ContactFilter>("ALL");
+    const [hasSocialFilter, setHasSocialFilter] = useState<ContactFilter>("ALL");
+    const [nicheFilter, setNicheFilter] = useState("ALL");
+    const [cityFilter, setCityFilter] = useState("ALL");
+    const [minRating, setMinRating] = useState("");
+    const [maxRating, setMaxRating] = useState("");
+    const [minReviews, setMinReviews] = useState("");
+    const [maxReviews, setMaxReviews] = useState("");
+    const [dateFrom, setDateFrom] = useState("");
+    const [dateTo, setDateTo] = useState("");
+    const [sortKey, setSortKey] = useState<SortKey>("createdAt");
+    const [sortDir, setSortDir] = useState<SortDir>("desc");
+    const [page, setPage] = useState(0);
+    const [perPage, setPerPage] = useState(25);
+    const [expandedId, setExpandedId] = useState<number | null>(null);
+    const [deleting, setDeleting] = useState<number | null>(null);
+    const [showExport, setShowExport] = useState(false);
+    const [exportColumns, setExportColumns] = useState<Record<ExportColumnKey, boolean>>(defaultExportColumns);
+    const [exportFormat, setExportFormat] = useState<ExportFormat>("csv");
+    const [exportScope, setExportScope] = useState<ExportScope>("filtered");
 
-    // Search
-    const [search, setSearch] = useState("")
+    const uniqueNiches = useMemo(() => [...new Set(leads.map((lead) => lead.niche).filter(Boolean))].sort(), [leads]);
+    const uniqueCities = useMemo(() => [...new Set(leads.map((lead) => lead.city).filter(Boolean))].sort(), [leads]);
 
-    // Filters
-    const [showFilters, setShowFilters] = useState(false)
-    const [statusFilter, setStatusFilter] = useState("ALL")
-    const [hasEmailFilter, setHasEmailFilter] = useState("ALL") // ALL | YES | NO
-    const [hasPhoneFilter, setHasPhoneFilter] = useState("ALL")
-    const [hasContactFilter, setHasContactFilter] = useState("ALL")
-    const [hasSocialFilter, setHasSocialFilter] = useState("ALL")
-    const [nicheFilter, setNicheFilter] = useState("ALL")
-    const [cityFilter, setCityFilter] = useState("ALL")
-    const [minRating, setMinRating] = useState("")
-    const [maxRating, setMaxRating] = useState("")
-    const [minReviews, setMinReviews] = useState("")
-    const [maxReviews, setMaxReviews] = useState("")
-    const [dateFrom, setDateFrom] = useState("")
-    const [dateTo, setDateTo] = useState("")
+    const statusCounts = useMemo(
+        () => ({
+            all: leads.length,
+            missing: leads.filter((lead) => lead.websiteStatus === "MISSING").length,
+            active: leads.filter((lead) => lead.websiteStatus === "ACTIVE").length,
+            email: leads.filter((lead) => hasText(lead.email)).length,
+            phone: leads.filter((lead) => hasText(lead.phone)).length,
+        }),
+        [leads],
+    );
 
-    // Sort & Pagination
-    const [sortKey, setSortKey] = useState<SortKey>("createdAt")
-    const [sortDir, setSortDir] = useState<SortDir>("desc")
-    const [page, setPage] = useState(0)
-    const [perPage, setPerPage] = useState(25)
-    const [expandedId, setExpandedId] = useState<number | null>(null)
-    const [deleting, setDeleting] = useState<number | null>(null)
-
-    // Export Panel
-    const [showExport, setShowExport] = useState(false)
-    const [exportColumns, setExportColumns] = useState<Record<string, boolean>>(
-        Object.fromEntries(EXPORT_COLUMNS.map(c => [c.key, c.default]))
-    )
-    const [exportFormat, setExportFormat] = useState<"csv" | "tsv">("csv")
-    const [exportScope, setExportScope] = useState<"filtered" | "all" | "page">("filtered")
-
-    // Derived unique values for filter dropdowns
-    const uniqueNiches = useMemo(() => [...new Set(leads.map(l => l.niche).filter(Boolean))].sort(), [leads])
-    const uniqueCities = useMemo(() => [...new Set(leads.map(l => l.city).filter(Boolean))].sort(), [leads])
-
-    // Count active filters
     const activeFilterCount = useMemo(() => {
-        let count = 0
-        if (statusFilter !== "ALL") count++
-        if (hasEmailFilter !== "ALL") count++
-        if (hasPhoneFilter !== "ALL") count++
-        if (hasContactFilter !== "ALL") count++
-        if (hasSocialFilter !== "ALL") count++
-        if (nicheFilter !== "ALL") count++
-        if (cityFilter !== "ALL") count++
-        if (minRating) count++
-        if (maxRating) count++
-        if (minReviews) count++
-        if (maxReviews) count++
-        if (dateFrom) count++
-        if (dateTo) count++
-        return count
-    }, [statusFilter, hasEmailFilter, hasPhoneFilter, hasContactFilter, hasSocialFilter, nicheFilter, cityFilter, minRating, maxRating, minReviews, maxReviews, dateFrom, dateTo])
+        let count = 0;
+        if (statusFilter !== "ALL") count++;
+        if (hasEmailFilter !== "ALL") count++;
+        if (hasPhoneFilter !== "ALL") count++;
+        if (hasContactFilter !== "ALL") count++;
+        if (hasSocialFilter !== "ALL") count++;
+        if (nicheFilter !== "ALL") count++;
+        if (cityFilter !== "ALL") count++;
+        if (minRating) count++;
+        if (maxRating) count++;
+        if (minReviews) count++;
+        if (maxReviews) count++;
+        if (dateFrom) count++;
+        if (dateTo) count++;
+        return count;
+    }, [
+        statusFilter,
+        hasEmailFilter,
+        hasPhoneFilter,
+        hasContactFilter,
+        hasSocialFilter,
+        nicheFilter,
+        cityFilter,
+        minRating,
+        maxRating,
+        minReviews,
+        maxReviews,
+        dateFrom,
+        dateTo,
+    ]);
 
-    const clearAllFilters = () => {
-        setStatusFilter("ALL")
-        setHasEmailFilter("ALL")
-        setHasPhoneFilter("ALL")
-        setHasContactFilter("ALL")
-        setHasSocialFilter("ALL")
-        setNicheFilter("ALL")
-        setCityFilter("ALL")
-        setMinRating("")
-        setMaxRating("")
-        setMinReviews("")
-        setMaxReviews("")
-        setDateFrom("")
-        setDateTo("")
-        setSearch("")
-    }
+    const clearAllFilters = useCallback(() => {
+        setStatusFilter("ALL");
+        setHasEmailFilter("ALL");
+        setHasPhoneFilter("ALL");
+        setHasContactFilter("ALL");
+        setHasSocialFilter("ALL");
+        setNicheFilter("ALL");
+        setCityFilter("ALL");
+        setMinRating("");
+        setMaxRating("");
+        setMinReviews("");
+        setMaxReviews("");
+        setDateFrom("");
+        setDateTo("");
+        setSearch("");
+    }, []);
 
-    // Filtered + sorted
     const processedLeads = useMemo(() => {
-        let filtered = leads.filter((lead) => {
-            // Text search
-            if (search) {
-                const s = search.toLowerCase()
+        const query = search.trim().toLowerCase();
+        const filtered = leads.filter((lead) => {
+            if (query) {
                 const matchesSearch =
-                    (lead.businessName || "").toLowerCase().includes(s) ||
-                    (lead.niche || "").toLowerCase().includes(s) ||
-                    (lead.city || "").toLowerCase().includes(s) ||
-                    (lead.email || "").toLowerCase().includes(s) ||
-                    (lead.contactName || "").toLowerCase().includes(s) ||
-                    (lead.category || "").toLowerCase().includes(s) ||
-                    (lead.address || "").toLowerCase().includes(s) ||
-                    (lead.tacticalNote || "").toLowerCase().includes(s) ||
-                    (lead.outreachNotes || "").toLowerCase().includes(s) ||
-                    (lead.outreachStatus || "").toLowerCase().includes(s)
-                if (!matchesSearch) return false
+                    (lead.businessName || "").toLowerCase().includes(query) ||
+                    (lead.niche || "").toLowerCase().includes(query) ||
+                    (lead.city || "").toLowerCase().includes(query) ||
+                    (lead.email || "").toLowerCase().includes(query) ||
+                    (lead.contactName || "").toLowerCase().includes(query) ||
+                    (lead.category || "").toLowerCase().includes(query) ||
+                    (lead.address || "").toLowerCase().includes(query) ||
+                    (lead.tacticalNote || "").toLowerCase().includes(query) ||
+                    (lead.outreachNotes || "").toLowerCase().includes(query) ||
+                    (lead.outreachStatus || "").toLowerCase().includes(query);
+                if (!matchesSearch) return false;
             }
 
-            // Website Status
-            if (statusFilter !== "ALL" && lead.websiteStatus !== statusFilter) return false
+            if (statusFilter !== "ALL" && lead.websiteStatus !== statusFilter) return false;
+            if (hasEmailFilter === "YES" && !hasText(lead.email)) return false;
+            if (hasEmailFilter === "NO" && hasText(lead.email)) return false;
+            if (hasPhoneFilter === "YES" && !hasText(lead.phone)) return false;
+            if (hasPhoneFilter === "NO" && hasText(lead.phone)) return false;
+            if (hasContactFilter === "YES" && !hasText(lead.contactName)) return false;
+            if (hasContactFilter === "NO" && hasText(lead.contactName)) return false;
+            if (hasSocialFilter === "YES" && !hasText(lead.socialLink)) return false;
+            if (hasSocialFilter === "NO" && hasText(lead.socialLink)) return false;
+            if (nicheFilter !== "ALL" && lead.niche !== nicheFilter) return false;
+            if (cityFilter !== "ALL" && lead.city !== cityFilter) return false;
+            if (minRating && (lead.rating == null || lead.rating < Number.parseFloat(minRating))) return false;
+            if (maxRating && (lead.rating == null || lead.rating > Number.parseFloat(maxRating))) return false;
+            if (minReviews && (lead.reviewCount == null || lead.reviewCount < Number.parseInt(minReviews, 10))) return false;
+            if (maxReviews && (lead.reviewCount == null || lead.reviewCount > Number.parseInt(maxReviews, 10))) return false;
 
-            // Has Email
-            if (hasEmailFilter === "YES" && (!lead.email || lead.email.trim() === "")) return false
-            if (hasEmailFilter === "NO" && lead.email && lead.email.trim() !== "") return false
-
-            // Has Phone
-            if (hasPhoneFilter === "YES" && (!lead.phone || lead.phone.trim() === "")) return false
-            if (hasPhoneFilter === "NO" && lead.phone && lead.phone.trim() !== "") return false
-
-            // Has Contact Name
-            if (hasContactFilter === "YES" && (!lead.contactName || lead.contactName.trim() === "")) return false
-            if (hasContactFilter === "NO" && lead.contactName && lead.contactName.trim() !== "") return false
-
-            // Has Social Link
-            if (hasSocialFilter === "YES" && (!lead.socialLink || lead.socialLink.trim() === "")) return false
-            if (hasSocialFilter === "NO" && lead.socialLink && lead.socialLink.trim() !== "") return false
-
-            // Niche filter
-            if (nicheFilter !== "ALL" && lead.niche !== nicheFilter) return false
-
-            // City filter
-            if (cityFilter !== "ALL" && lead.city !== cityFilter) return false
-
-            // Rating range
-            if (minRating && (lead.rating == null || lead.rating < parseFloat(minRating))) return false
-            if (maxRating && (lead.rating == null || lead.rating > parseFloat(maxRating))) return false
-
-            // Reviews range
-            if (minReviews && (lead.reviewCount == null || lead.reviewCount < parseInt(minReviews))) return false
-            if (maxReviews && (lead.reviewCount == null || lead.reviewCount > parseInt(maxReviews))) return false
-
-            // Date range
             if (dateFrom) {
-                const d = new Date(lead.createdAt)
-                if (d < new Date(dateFrom)) return false
+                const leadDate = new Date(lead.createdAt);
+                if (leadDate < new Date(dateFrom)) return false;
             }
             if (dateTo) {
-                const d = new Date(lead.createdAt)
-                const to = new Date(dateTo)
-                to.setHours(23, 59, 59, 999)
-                if (d > to) return false
+                const leadDate = new Date(lead.createdAt);
+                const to = new Date(dateTo);
+                to.setHours(23, 59, 59, 999);
+                if (leadDate > to) return false;
             }
 
-            return true
-        })
+            return true;
+        });
 
         filtered.sort((a, b) => {
-            let aVal: any = a[sortKey]
-            let bVal: any = b[sortKey]
-            if (aVal == null) aVal = sortKey === "rating" || sortKey === "reviewCount" ? 0 : ""
-            if (bVal == null) bVal = sortKey === "rating" || sortKey === "reviewCount" ? 0 : ""
-            if (typeof aVal === "string") aVal = aVal.toLowerCase()
-            if (typeof bVal === "string") bVal = bVal.toLowerCase()
-            if (aVal < bVal) return sortDir === "asc" ? -1 : 1
-            if (aVal > bVal) return sortDir === "asc" ? 1 : -1
-            return 0
-        })
+            let aValue = a[sortKey] as string | number | null;
+            let bValue = b[sortKey] as string | number | null;
+            if (aValue == null) aValue = sortKey === "rating" || sortKey === "reviewCount" ? 0 : "";
+            if (bValue == null) bValue = sortKey === "rating" || sortKey === "reviewCount" ? 0 : "";
+            if (typeof aValue === "string") aValue = aValue.toLowerCase();
+            if (typeof bValue === "string") bValue = bValue.toLowerCase();
+            if (aValue < bValue) return sortDir === "asc" ? -1 : 1;
+            if (aValue > bValue) return sortDir === "asc" ? 1 : -1;
+            return 0;
+        });
 
-        return filtered
-    }, [leads, search, statusFilter, hasEmailFilter, hasPhoneFilter, hasContactFilter, hasSocialFilter, nicheFilter, cityFilter, minRating, maxRating, minReviews, maxReviews, dateFrom, dateTo, sortKey, sortDir])
+        return filtered;
+    }, [
+        leads,
+        search,
+        statusFilter,
+        hasEmailFilter,
+        hasPhoneFilter,
+        hasContactFilter,
+        hasSocialFilter,
+        nicheFilter,
+        cityFilter,
+        minRating,
+        maxRating,
+        minReviews,
+        maxReviews,
+        dateFrom,
+        dateTo,
+        sortKey,
+        sortDir,
+    ]);
 
-    // Pagination
-    const totalPages = Math.max(1, Math.ceil(processedLeads.length / perPage))
-    const pagedLeads = processedLeads.slice(page * perPage, (page + 1) * perPage)
+    const totalPages = Math.max(1, Math.ceil(processedLeads.length / perPage));
+    const pagedLeads = useMemo(
+        () => processedLeads.slice(page * perPage, (page + 1) * perPage),
+        [page, perPage, processedLeads],
+    );
 
-    useMemo(() => { setPage(0) }, [search, statusFilter, hasEmailFilter, hasPhoneFilter, hasContactFilter, hasSocialFilter, nicheFilter, cityFilter, minRating, maxRating, minReviews, maxReviews, dateFrom, dateTo, perPage])
+    useEffect(() => {
+        setPage(0);
+    }, [
+        search,
+        statusFilter,
+        hasEmailFilter,
+        hasPhoneFilter,
+        hasContactFilter,
+        hasSocialFilter,
+        nicheFilter,
+        cityFilter,
+        minRating,
+        maxRating,
+        minReviews,
+        maxReviews,
+        dateFrom,
+        dateTo,
+        perPage,
+    ]);
 
-    const handleSort = (key: SortKey) => {
-        if (sortKey === key) {
-            setSortDir(d => d === "asc" ? "desc" : "asc")
-        } else {
-            setSortKey(key)
-            setSortDir("desc")
-        }
-    }
+    useEffect(() => {
+        if (page > totalPages - 1) setPage(totalPages - 1);
+    }, [page, totalPages]);
 
-    const SortIcon = ({ col }: { col: SortKey }) => {
-        if (sortKey !== col) return <ArrowUpDown className="w-3 h-3 text-zinc-600 ml-1" />
-        return sortDir === "asc"
-            ? <ChevronUp className="w-3 h-3 text-emerald-400 ml-1" />
-            : <ChevronDown className="w-3 h-3 text-emerald-400 ml-1" />
-    }
+    const handleSort = useCallback((key: SortKey) => {
+        setSortKey((currentKey) => {
+            if (currentKey === key) {
+                setSortDir((currentDir) => (currentDir === "asc" ? "desc" : "asc"));
+                return currentKey;
+            }
+            setSortDir("desc");
+            return key;
+        });
+    }, []);
 
-    // Delete lead
     const handleDelete = useCallback(async (id: number) => {
-        setDeleting(id)
+        setDeleting(id);
         try {
             const res = await fetch("/api/leads/delete", {
                 method: "DELETE",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ id }),
-            })
+            });
             if (res.ok) {
-                setLeads(prev => prev.filter(l => l.id !== id))
-                if (expandedId === id) setExpandedId(null)
+                setLeads((prev) => prev.filter((lead) => lead.id !== id));
+                setExpandedId((current) => (current === id ? null : current));
             }
-        } catch (e) {
-            console.error("Delete failed:", e)
+        } catch (error) {
+            console.error("Delete failed:", error);
         } finally {
-            setDeleting(null)
+            setDeleting(null);
         }
-    }, [expandedId])
+    }, []);
 
-    // Export
     const handleExport = useCallback(() => {
-        const separator = exportFormat === "csv" ? "," : "\t"
-        const ext = exportFormat === "csv" ? "csv" : "tsv"
+        const separator = exportFormat === "csv" ? "," : "\t";
+        const extension = exportFormat === "csv" ? "csv" : "tsv";
+        const selectedColumns = EXPORT_COLUMNS.filter((column) => exportColumns[column.key]);
+        const headers = selectedColumns.map((column) => column.label);
+        const dataToExport =
+            exportScope === "all" ? leads : exportScope === "page" ? pagedLeads : processedLeads;
 
-        const selectedCols = EXPORT_COLUMNS.filter(c => exportColumns[c.key])
-        const headers = selectedCols.map(c => c.label)
-
-        let dataToExport: Lead[]
-        if (exportScope === "all") {
-            dataToExport = leads
-        } else if (exportScope === "page") {
-            dataToExport = pagedLeads
-        } else {
-            dataToExport = processedLeads
-        }
-
-        const rows = dataToExport.map(l => {
-            return selectedCols.map(c => {
-                let val = (l as any)[c.key]
-                if (val == null) val = ""
-                if (c.key === "createdAt" && val) {
-                    val = formatAppDate(val, undefined, "")
+        const rows = dataToExport.map((lead) =>
+            selectedColumns.map((column) => {
+                let value = lead[column.key];
+                if (value == null) value = "";
+                if (column.key === "createdAt" && value) {
+                    value = formatAppDate(lead.createdAt, undefined, "");
                 }
-                val = String(val).replace(/"/g, '""')
-                return `"${val}"`
-            })
-        })
+                return `"${String(value).replace(/"/g, '""')}"`;
+            }),
+        );
 
-        const content = [headers.join(separator), ...rows.map(r => r.join(separator))].join("\n")
-        const mimeType = exportFormat === "csv" ? "text/csv" : "text/tab-separated-values"
-        const blob = new Blob([content], { type: `${mimeType};charset=utf-8;` })
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement("a")
-        a.href = url
+        const content = [headers.join(separator), ...rows.map((row) => row.join(separator))].join("\n");
+        const mimeType = exportFormat === "csv" ? "text/csv" : "text/tab-separated-values";
+        const blob = new Blob([content], { type: `${mimeType};charset=utf-8;` });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        const filenameParts = ["omniscient_v4_leads"];
 
-        // Build descriptive filename
-        const parts = ["omniscient_v4_leads"]
         if (exportScope === "filtered" && activeFilterCount > 0) {
-            if (statusFilter === "MISSING") parts.push("no_website")
-            else if (statusFilter === "ACTIVE") parts.push("has_website")
-            if (hasEmailFilter === "YES") parts.push("with_email")
-            if (hasEmailFilter === "NO") parts.push("no_email")
-            if (nicheFilter !== "ALL") parts.push(nicheFilter.toLowerCase().replace(/\s+/g, "_"))
-            if (cityFilter !== "ALL") parts.push(cityFilter.toLowerCase())
+            if (statusFilter === "MISSING") filenameParts.push("no_website");
+            else if (statusFilter === "ACTIVE") filenameParts.push("has_website");
+            if (hasEmailFilter === "YES") filenameParts.push("with_email");
+            if (hasEmailFilter === "NO") filenameParts.push("no_email");
+            if (nicheFilter !== "ALL") filenameParts.push(nicheFilter.toLowerCase().replace(/\s+/g, "_"));
+            if (cityFilter !== "ALL") filenameParts.push(cityFilter.toLowerCase().replace(/\s+/g, "_"));
         }
-        parts.push(new Date().toISOString().slice(0, 10))
-        a.download = `${parts.join("_")}.${ext}`
-        a.click()
-        URL.revokeObjectURL(url)
-        setShowExport(false)
-    }, [exportFormat, exportColumns, exportScope, leads, processedLeads, pagedLeads, activeFilterCount, statusFilter, hasEmailFilter, nicheFilter, cityFilter])
 
-    const toggleExportColumn = (key: string) => {
-        setExportColumns(prev => ({ ...prev, [key]: !prev[key] }))
-    }
-
-    const selectAllExportCols = () => setExportColumns(Object.fromEntries(EXPORT_COLUMNS.map(c => [c.key, true])))
-    const deselectAllExportCols = () => setExportColumns(Object.fromEntries(EXPORT_COLUMNS.map(c => [c.key, false])))
+        filenameParts.push(new Date().toISOString().slice(0, 10));
+        anchor.href = url;
+        anchor.download = `${filenameParts.join("_")}.${extension}`;
+        anchor.click();
+        URL.revokeObjectURL(url);
+        setShowExport(false);
+    }, [
+        activeFilterCount,
+        cityFilter,
+        exportColumns,
+        exportFormat,
+        exportScope,
+        hasEmailFilter,
+        leads,
+        nicheFilter,
+        pagedLeads,
+        processedLeads,
+        statusFilter,
+    ]);
 
     const handleOutreachSaved = useCallback((updatedLead: Partial<Lead> & { id: number }) => {
-        setLeads(prev => prev.map(lead => lead.id === updatedLead.id ? { ...lead, ...updatedLead } : lead))
-    }, [])
+        setLeads((prev) => prev.map((lead) => (lead.id === updatedLead.id ? { ...lead, ...updatedLead } : lead)));
+    }, []);
 
-    // Filter pill component
-    const FilterPill = ({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) => (
-        <button
-            onClick={onClick}
-            className={`text-[10px] px-2.5 py-1 rounded-full border transition-all duration-200 ${active
-                ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300"
-                : "border-white/10 text-zinc-500 hover:border-white/20 hover:text-zinc-300"
-                }`}
-        >
-            {label}
-        </button>
-    )
+    const toggleExportColumn = useCallback((key: ExportColumnKey) => {
+        setExportColumns((prev) => ({ ...prev, [key]: !prev[key] }));
+    }, []);
 
-    // Tri-state filter button
-    const TriFilter = ({ label, icon: Icon, value, onChange }: { label: string; icon: any; value: string; onChange: (v: string) => void }) => (
-        <div className="space-y-1.5">
-            <Label className="text-[10px] uppercase tracking-widest text-muted-foreground/60 flex items-center gap-1">
-                <Icon className="w-3 h-3" /> {label}
-            </Label>
-            <div className="flex gap-1">
-                {[
-                    { key: "ALL", label: "Any", color: "" },
-                    { key: "YES", label: "Has", color: "emerald" },
-                    { key: "NO", label: "Missing", color: "red" },
-                ].map(opt => (
-                    <button
-                        key={opt.key}
-                        onClick={() => onChange(opt.key)}
-                        className={`text-[10px] px-2 py-1 rounded border transition-all duration-200 flex-1 ${value === opt.key
-                            ? opt.color === "emerald" ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300"
-                                : opt.color === "red" ? "bg-red-500/20 border-red-500/40 text-red-300"
-                                    : "bg-white/5 border-white/20 text-white"
-                            : "border-white/8 text-zinc-600 hover:border-white/15 hover:text-zinc-400"
-                            }`}
-                    >
-                        {opt.label}
-                    </button>
-                ))}
-            </div>
-        </div>
-    )
+    const selectedExportColumnCount = Object.values(exportColumns).filter(Boolean).length;
+    const exportRowCount = exportScope === "all" ? leads.length : exportScope === "page" ? pagedLeads.length : processedLeads.length;
 
     return (
         <div className="space-y-4">
-            {/* Top Bar: Search + Actions */}
-            <div className="flex flex-col sm:flex-row gap-3">
-                <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-600" />
+            <div className="grid gap-3 lg:grid-cols-[minmax(280px,1fr)_auto] lg:items-center">
+                <div className="relative">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-600" />
                     <Input
-                        placeholder="Search anything — business, niche, city, email, notes..."
                         value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                        className="pl-10 bg-black/30 border-white/10 focus:border-emerald-500/50 transition-all"
+                        onChange={(event) => setSearch(event.target.value)}
+                        placeholder="Search business, city, niche, contact, email, notes"
+                        className="h-10 border-white/[0.08] bg-black/25 pl-9 pr-9 text-sm focus:border-emerald-500/50"
                     />
-                    {search && (
+                    {search ? (
                         <button
+                            type="button"
                             onClick={() => setSearch("")}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-600 hover:text-white transition-colors"
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-600 hover:text-white"
+                            aria-label="Clear search"
                         >
-                            <X className="w-4 h-4" />
+                            <X className="h-4 w-4" />
                         </button>
-                    )}
+                    ) : null}
                 </div>
-                <div className="flex gap-2">
+
+                <div className="flex flex-wrap items-center gap-2">
+                    {[
+                        { key: "ALL", label: "All", count: statusCounts.all },
+                        { key: "MISSING", label: "No site", count: statusCounts.missing },
+                        { key: "ACTIVE", label: "Verified", count: statusCounts.active },
+                    ].map((status) => (
+                        <Button
+                            key={status.key}
+                            type="button"
+                            variant={statusFilter === status.key ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => setStatusFilter(status.key)}
+                            className={`h-8 gap-2 px-3 text-[11px] ${
+                                statusFilter === status.key
+                                    ? "bg-white text-black hover:bg-zinc-200"
+                                    : "border-white/[0.08] text-zinc-500 hover:text-white"
+                            }`}
+                        >
+                            {status.label}
+                            <span className="font-mono tabular-nums opacity-70">{status.count}</span>
+                        </Button>
+                    ))}
                     <Button
+                        type="button"
                         variant="outline"
                         size="sm"
-                        onClick={() => setShowFilters(!showFilters)}
-                        className={`text-xs gap-1.5 transition-all ${showFilters || activeFilterCount > 0
-                            ? "border-emerald-500/40 text-emerald-400 bg-emerald-500/10"
-                            : "border-white/10 text-zinc-500 hover:text-white"
-                            }`}
+                        onClick={() => setShowFilters((value) => !value)}
+                        className={`h-8 gap-2 border-white/[0.08] text-[11px] ${
+                            showFilters || activeFilterCount > 0 ? "text-emerald-300" : "text-zinc-500 hover:text-white"
+                        }`}
                     >
-                        <SlidersHorizontal className="w-3.5 h-3.5" />
+                        <SlidersHorizontal className="h-3.5 w-3.5" />
                         Filters
-                        {activeFilterCount > 0 && (
-                            <span className="ml-1 px-1.5 py-0.5 rounded-full bg-emerald-500/30 text-emerald-300 text-[9px] font-bold">
-                                {activeFilterCount}
-                            </span>
-                        )}
+                        {activeFilterCount > 0 ? <span className="font-mono">{activeFilterCount}</span> : null}
                     </Button>
                     <Button
+                        type="button"
                         variant="outline"
                         size="sm"
-                        onClick={() => setShowExport(!showExport)}
-                        className={`text-xs gap-1.5 transition-all ${showExport
-                            ? "border-cyan-500/40 text-cyan-400 bg-cyan-500/10"
-                            : "border-white/10 text-zinc-500 hover:text-white"
-                            }`}
+                        onClick={() => setShowExport((value) => !value)}
+                        className={`h-8 gap-2 border-white/[0.08] text-[11px] ${
+                            showExport ? "text-cyan-300" : "text-zinc-500 hover:text-white"
+                        }`}
                     >
-                        <FileSpreadsheet className="w-3.5 h-3.5" />
+                        <FileSpreadsheet className="h-3.5 w-3.5" />
                         Export
                     </Button>
                 </div>
             </div>
 
-            {/* Quick Status Filter Pills */}
-            <div className="flex flex-wrap gap-2">
-                {[
-                    { key: "ALL", label: `All (${leads.length})`, color: "emerald" },
-                    { key: "MISSING", label: `No Website (${leads.filter(l => l.websiteStatus === "MISSING").length})`, color: "red" },
-                    { key: "ACTIVE", label: `Has Website (${leads.filter(l => l.websiteStatus === "ACTIVE").length})`, color: "blue" },
-                ].map(f => (
-                    <Button
-                        key={f.key}
-                        variant={statusFilter === f.key ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => setStatusFilter(f.key)}
-                        className={`text-[11px] h-7 transition-all duration-200 ${statusFilter === f.key
-                            ? f.color === "emerald" ? "bg-emerald-600/80 text-white border-emerald-500"
-                                : f.color === "red" ? "bg-red-600/80 text-white border-red-500"
-                                    : "bg-blue-600/80 text-white border-blue-500"
-                            : "border-white/10 text-zinc-500 hover:text-white hover:border-white/20"
-                            }`}
-                    >
-                        {f.label}
-                    </Button>
-                ))}
-                {activeFilterCount > 0 && (
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={clearAllFilters}
-                        className="text-[11px] h-7 text-zinc-500 hover:text-red-400 gap-1"
-                    >
-                        <X className="w-3 h-3" /> Clear all filters
-                    </Button>
-                )}
+            <div className="flex flex-wrap items-center gap-2 text-[11px] text-zinc-500">
+                <span className="inline-flex items-center gap-1.5">
+                    <Circle className="h-2 w-2 fill-emerald-400 text-emerald-400" />
+                    {processedLeads.length.toLocaleString()} shown
+                </span>
+                <span className="text-zinc-700">/</span>
+                <span>{leads.length.toLocaleString()} total</span>
+                <span className="text-zinc-700">/</span>
+                <span>{statusCounts.email.toLocaleString()} with email</span>
+                <span className="text-zinc-700">/</span>
+                <span>{statusCounts.phone.toLocaleString()} with phone</span>
+                {activeFilterCount > 0 ? (
+                    <button type="button" onClick={clearAllFilters} className="ml-1 text-red-300/80 hover:text-red-200">
+                        Clear filters
+                    </button>
+                ) : null}
             </div>
 
-            {/* Advanced Filter Panel */}
-            {showFilters && (
-                <div className="glass-strong rounded-xl p-5 space-y-5 animate-slide-up">
-                    <div className="flex items-center justify-between mb-1">
-                        <h3 className="text-xs font-bold text-white flex items-center gap-2">
-                            <Filter className="w-4 h-4 text-emerald-400" />
-                            Advanced Filters
-                        </h3>
+            {showFilters ? (
+                <div className="border-y border-white/[0.06] bg-white/[0.015] py-4">
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2 text-xs font-semibold text-white">
+                            <Filter className="h-4 w-4 text-emerald-400" />
+                            Verification filters
+                        </div>
                         <Button
+                            type="button"
                             variant="ghost"
                             size="sm"
                             onClick={clearAllFilters}
-                            className="text-[10px] text-zinc-500 hover:text-red-400 h-6 gap-1"
+                            className="h-7 gap-1 text-[11px] text-zinc-500 hover:text-red-300"
                         >
-                            <X className="w-3 h-3" /> Reset
+                            <X className="h-3 w-3" />
+                            Reset
                         </Button>
                     </div>
-
-                    {/* Row 1: Data Availability Filters */}
-                    <div>
-                        <div className="text-[10px] uppercase tracking-widest text-muted-foreground/40 mb-3 font-semibold">Data Availability</div>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                            <TriFilter label="Email" icon={AtSign} value={hasEmailFilter} onChange={setHasEmailFilter} />
-                            <TriFilter label="Phone" icon={Phone} value={hasPhoneFilter} onChange={setHasPhoneFilter} />
-                            <TriFilter label="Contact Name" icon={User} value={hasContactFilter} onChange={setHasContactFilter} />
-                            <TriFilter label="Social Link" icon={Share2} value={hasSocialFilter} onChange={setHasSocialFilter} />
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[repeat(4,minmax(150px,1fr))_repeat(2,minmax(180px,1.2fr))]">
+                        <TriFilter label="Email" value={hasEmailFilter} onChange={setHasEmailFilter} />
+                        <TriFilter label="Phone" value={hasPhoneFilter} onChange={setHasPhoneFilter} />
+                        <TriFilter label="Contact" value={hasContactFilter} onChange={setHasContactFilter} />
+                        <TriFilter label="Social" value={hasSocialFilter} onChange={setHasSocialFilter} />
+                        <div className="space-y-1.5">
+                            <Label className="text-[10px] uppercase tracking-[0.18em] text-zinc-600">Niche</Label>
+                            <select
+                                value={nicheFilter}
+                                onChange={(event) => setNicheFilter(event.target.value)}
+                                className="h-9 w-full rounded-lg border border-white/[0.08] bg-black/30 px-3 text-xs text-white outline-none focus:border-emerald-500/50"
+                            >
+                                <option value="ALL">All niches ({uniqueNiches.length})</option>
+                                {uniqueNiches.map((niche) => (
+                                    <option key={niche} value={niche}>
+                                        {niche}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="space-y-1.5">
+                            <Label className="text-[10px] uppercase tracking-[0.18em] text-zinc-600">City</Label>
+                            <select
+                                value={cityFilter}
+                                onChange={(event) => setCityFilter(event.target.value)}
+                                className="h-9 w-full rounded-lg border border-white/[0.08] bg-black/30 px-3 text-xs text-white outline-none focus:border-emerald-500/50"
+                            >
+                                <option value="ALL">All cities ({uniqueCities.length})</option>
+                                {uniqueCities.map((city) => (
+                                    <option key={city} value={city}>
+                                        {city}
+                                    </option>
+                                ))}
+                            </select>
                         </div>
                     </div>
 
-                    {/* Row 2: Category Filters */}
-                    <div>
-                        <div className="text-[10px] uppercase tracking-widest text-muted-foreground/40 mb-3 font-semibold">Categories</div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="space-y-1.5">
-                                <Label className="text-[10px] uppercase tracking-widest text-muted-foreground/60 flex items-center gap-1">
-                                    <Tag className="w-3 h-3" /> Niche
-                                </Label>
-                                <select
-                                    value={nicheFilter}
-                                    onChange={(e) => setNicheFilter(e.target.value)}
-                                    className="w-full bg-black/40 border border-white/10 rounded-md px-3 py-1.5 text-xs text-white focus:border-emerald-500/50 outline-none transition-all appearance-none cursor-pointer"
-                                >
-                                    <option value="ALL">All Niches ({uniqueNiches.length})</option>
-                                    {uniqueNiches.map(n => (
-                                        <option key={n} value={n}>{n} ({leads.filter(l => l.niche === n).length})</option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div className="space-y-1.5">
-                                <Label className="text-[10px] uppercase tracking-widest text-muted-foreground/60 flex items-center gap-1">
-                                    <MapPin className="w-3 h-3" /> City
-                                </Label>
-                                <select
-                                    value={cityFilter}
-                                    onChange={(e) => setCityFilter(e.target.value)}
-                                    className="w-full bg-black/40 border border-white/10 rounded-md px-3 py-1.5 text-xs text-white focus:border-emerald-500/50 outline-none transition-all appearance-none cursor-pointer"
-                                >
-                                    <option value="ALL">All Cities ({uniqueCities.length})</option>
-                                    {uniqueCities.map(c => (
-                                        <option key={c} value={c}>{c} ({leads.filter(l => l.city === c).length})</option>
-                                    ))}
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Row 3: Range Filters */}
-                    <div>
-                        <div className="text-[10px] uppercase tracking-widest text-muted-foreground/40 mb-3 font-semibold">Ranges</div>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                            <div className="space-y-1.5">
-                                <Label className="text-[10px] uppercase tracking-widest text-muted-foreground/60 flex items-center gap-1">
-                                    <Star className="w-3 h-3" /> Min Rating
-                                </Label>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+                        {[
+                            { label: "Min rating", value: minRating, setter: setMinRating, type: "number", placeholder: "4.0" },
+                            { label: "Max rating", value: maxRating, setter: setMaxRating, type: "number", placeholder: "5.0" },
+                            { label: "Min reviews", value: minReviews, setter: setMinReviews, type: "number", placeholder: "10" },
+                            { label: "Max reviews", value: maxReviews, setter: setMaxReviews, type: "number", placeholder: "100" },
+                            { label: "From", value: dateFrom, setter: setDateFrom, type: "date", placeholder: "" },
+                            { label: "To", value: dateTo, setter: setDateTo, type: "date", placeholder: "" },
+                        ].map((field) => (
+                            <div key={field.label} className="space-y-1.5">
+                                <Label className="text-[10px] uppercase tracking-[0.18em] text-zinc-600">{field.label}</Label>
                                 <Input
-                                    type="number" step="0.1" min="0" max="5" placeholder="e.g. 4.0"
-                                    value={minRating} onChange={e => setMinRating(e.target.value)}
-                                    className="bg-black/40 border-white/10 text-xs h-8 focus:border-emerald-500/50"
+                                    type={field.type}
+                                    value={field.value}
+                                    onChange={(event) => field.setter(event.target.value)}
+                                    placeholder={field.placeholder}
+                                    className="h-9 border-white/[0.08] bg-black/30 text-xs focus:border-emerald-500/50"
                                 />
                             </div>
-                            <div className="space-y-1.5">
-                                <Label className="text-[10px] uppercase tracking-widest text-muted-foreground/60 flex items-center gap-1">
-                                    <Star className="w-3 h-3" /> Max Rating
-                                </Label>
-                                <Input
-                                    type="number" step="0.1" min="0" max="5" placeholder="e.g. 5.0"
-                                    value={maxRating} onChange={e => setMaxRating(e.target.value)}
-                                    className="bg-black/40 border-white/10 text-xs h-8 focus:border-emerald-500/50"
-                                />
-                            </div>
-                            <div className="space-y-1.5">
-                                <Label className="text-[10px] uppercase tracking-widest text-muted-foreground/60 flex items-center gap-1">
-                                    <MessageSquare className="w-3 h-3" /> Min Reviews
-                                </Label>
-                                <Input
-                                    type="number" min="0" placeholder="e.g. 10"
-                                    value={minReviews} onChange={e => setMinReviews(e.target.value)}
-                                    className="bg-black/40 border-white/10 text-xs h-8 focus:border-emerald-500/50"
-                                />
-                            </div>
-                            <div className="space-y-1.5">
-                                <Label className="text-[10px] uppercase tracking-widest text-muted-foreground/60 flex items-center gap-1">
-                                    <MessageSquare className="w-3 h-3" /> Max Reviews
-                                </Label>
-                                <Input
-                                    type="number" min="0" placeholder="e.g. 100"
-                                    value={maxReviews} onChange={e => setMaxReviews(e.target.value)}
-                                    className="bg-black/40 border-white/10 text-xs h-8 focus:border-emerald-500/50"
-                                />
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Row 4: Date Range */}
-                    <div>
-                        <div className="text-[10px] uppercase tracking-widest text-muted-foreground/40 mb-3 font-semibold">Date Range</div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-1.5">
-                                <Label className="text-[10px] uppercase tracking-widest text-muted-foreground/60 flex items-center gap-1">
-                                    <Calendar className="w-3 h-3" /> From
-                                </Label>
-                                <Input
-                                    type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-                                    className="bg-black/40 border-white/10 text-xs h-8 focus:border-emerald-500/50"
-                                />
-                            </div>
-                            <div className="space-y-1.5">
-                                <Label className="text-[10px] uppercase tracking-widest text-muted-foreground/60 flex items-center gap-1">
-                                    <Calendar className="w-3 h-3" /> To
-                                </Label>
-                                <Input
-                                    type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-                                    className="bg-black/40 border-white/10 text-xs h-8 focus:border-emerald-500/50"
-                                />
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Filter Summary */}
-                    <div className="flex items-center justify-between pt-2 border-t border-white/[0.06]">
-                        <span className="text-[10px] text-muted-foreground">
-                            {processedLeads.length} lead{processedLeads.length !== 1 ? "s" : ""} matching your filters
-                        </span>
-                        {activeFilterCount > 0 && (
-                            <div className="flex items-center gap-2">
-                                <span className="text-[10px] text-emerald-400 font-mono">{activeFilterCount} filter{activeFilterCount !== 1 ? "s" : ""} active</span>
-                            </div>
-                        )}
+                        ))}
                     </div>
                 </div>
-            )}
+            ) : null}
 
-            {/* Export Panel */}
-            {showExport && (
-                <div className="glass-strong rounded-xl p-5 space-y-5 animate-slide-up">
-                    <div className="flex items-center justify-between mb-1">
-                        <h3 className="text-xs font-bold text-white flex items-center gap-2">
-                            <FileSpreadsheet className="w-4 h-4 text-cyan-400" />
-                            Export Settings
-                        </h3>
-                        <button onClick={() => setShowExport(false)} className="text-zinc-600 hover:text-white transition-colors">
-                            <X className="w-4 h-4" />
+            {showExport ? (
+                <div className="border-y border-cyan-500/15 bg-cyan-500/[0.025] py-4">
+                    <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex items-center gap-2 text-xs font-semibold text-white">
+                            <FileSpreadsheet className="h-4 w-4 text-cyan-300" />
+                            Export slice
+                        </div>
+                        <button type="button" onClick={() => setShowExport(false)} className="self-start text-zinc-600 hover:text-white sm:self-auto">
+                            <X className="h-4 w-4" />
                         </button>
                     </div>
 
-                    {/* Export Scope */}
-                    <div>
-                        <div className="text-[10px] uppercase tracking-widest text-muted-foreground/40 mb-3 font-semibold">Data Scope</div>
-                        <div className="grid grid-cols-3 gap-2">
+                    <div className="grid gap-4 lg:grid-cols-[360px_1fr_auto]">
+                        <div className="grid grid-cols-3 gap-1 rounded-lg border border-white/[0.07] bg-black/20 p-1">
                             {[
-                                { key: "filtered" as const, label: "Filtered Results", count: processedLeads.length, desc: "Export what matches your current filters" },
-                                { key: "page" as const, label: "Current Page", count: pagedLeads.length, desc: "Export only leads visible on this page" },
-                                { key: "all" as const, label: "All Leads", count: leads.length, desc: "Export your entire database" },
-                            ].map(s => (
+                                { key: "filtered" as const, label: "Filtered", count: processedLeads.length },
+                                { key: "page" as const, label: "Page", count: pagedLeads.length },
+                                { key: "all" as const, label: "All", count: leads.length },
+                            ].map((scope) => (
                                 <button
-                                    key={s.key}
-                                    onClick={() => setExportScope(s.key)}
-                                    className={`p-3 rounded-lg border text-left transition-all duration-200 ${exportScope === s.key
-                                        ? "bg-cyan-500/10 border-cyan-500/30 glow-cyan"
-                                        : "border-white/8 hover:border-white/15"
-                                        }`}
+                                    key={scope.key}
+                                    type="button"
+                                    onClick={() => setExportScope(scope.key)}
+                                    className={`rounded-md px-2 py-2 text-left transition-colors ${
+                                        exportScope === scope.key ? "bg-cyan-500/15 text-cyan-200" : "text-zinc-500 hover:text-white"
+                                    }`}
                                 >
-                                    <div className="flex items-center justify-between mb-1">
-                                        <span className={`text-xs font-semibold ${exportScope === s.key ? "text-cyan-300" : "text-zinc-400"}`}>{s.label}</span>
-                                        <span className={`text-xs font-mono ${exportScope === s.key ? "text-cyan-400" : "text-zinc-600"}`}>{s.count}</span>
-                                    </div>
-                                    <p className="text-[9px] text-zinc-600">{s.desc}</p>
+                                    <div className="text-[11px] font-medium">{scope.label}</div>
+                                    <div className="font-mono text-[10px] opacity-70">{scope.count.toLocaleString()} rows</div>
                                 </button>
                             ))}
                         </div>
-                    </div>
 
-                    {/* Columns Selection */}
-                    <div>
-                        <div className="flex items-center justify-between mb-3">
-                            <div className="text-[10px] uppercase tracking-widest text-muted-foreground/40 font-semibold">Columns to Include</div>
-                            <div className="flex gap-2">
-                                <button onClick={selectAllExportCols} className="text-[9px] text-emerald-500 hover:text-emerald-300 transition-colors">Select All</button>
-                                <span className="text-zinc-700">|</span>
-                                <button onClick={deselectAllExportCols} className="text-[9px] text-zinc-500 hover:text-zinc-300 transition-colors">Deselect All</button>
-                            </div>
-                        </div>
-                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2">
-                            {EXPORT_COLUMNS.map(col => (
+                        <div className="flex flex-wrap gap-1.5">
+                            {EXPORT_COLUMNS.map((column) => (
                                 <button
-                                    key={col.key}
-                                    onClick={() => toggleExportColumn(col.key)}
-                                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-[10px] transition-all duration-200 ${exportColumns[col.key]
-                                        ? "bg-cyan-500/15 border-cyan-500/30 text-cyan-300"
-                                        : "border-white/8 text-zinc-600 hover:border-white/15"
-                                        }`}
+                                    key={column.key}
+                                    type="button"
+                                    onClick={() => toggleExportColumn(column.key)}
+                                    className={`inline-flex items-center gap-1 rounded-md border px-2 py-1.5 text-[10px] transition-colors ${
+                                        exportColumns[column.key]
+                                            ? "border-cyan-500/25 bg-cyan-500/10 text-cyan-200"
+                                            : "border-white/[0.06] text-zinc-600 hover:text-zinc-300"
+                                    }`}
                                 >
-                                    {exportColumns[col.key]
-                                        ? <CheckCircle2 className="w-3 h-3 text-cyan-400" />
-                                        : <XCircle className="w-3 h-3 text-zinc-700" />
-                                    }
-                                    {col.label}
+                                    {exportColumns[column.key] ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
+                                    {column.label}
                                 </button>
                             ))}
                         </div>
-                    </div>
 
-                    {/* Format & Download */}
-                    <div className="flex items-center justify-between pt-3 border-t border-white/[0.06]">
-                        <div className="flex items-center gap-3">
-                            <span className="text-[10px] uppercase tracking-widest text-muted-foreground/60">Format:</span>
-                            {(["csv", "tsv"] as const).map(f => (
-                                <button
-                                    key={f}
-                                    onClick={() => setExportFormat(f)}
-                                    className={`text-[10px] px-3 py-1 rounded-md border uppercase font-bold tracking-wider transition-all ${exportFormat === f
-                                        ? "bg-cyan-500/20 border-cyan-500/40 text-cyan-300"
-                                        : "border-white/10 text-zinc-600 hover:text-white"
-                                        }`}
+                        <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                            {(["csv", "tsv"] as const).map((format) => (
+                                <Button
+                                    key={format}
+                                    type="button"
+                                    variant={exportFormat === format ? "default" : "outline"}
+                                    size="sm"
+                                    onClick={() => setExportFormat(format)}
+                                    className={`h-8 px-3 text-[11px] uppercase ${
+                                        exportFormat === format ? "bg-cyan-500 text-white hover:bg-cyan-400" : "border-white/[0.08] text-zinc-500"
+                                    }`}
                                 >
-                                    {f}
-                                </button>
+                                    {format}
+                                </Button>
                             ))}
-                        </div>
-                        <div className="flex items-center gap-3">
-                            <span className="text-[10px] text-zinc-600">
-                                {Object.values(exportColumns).filter(Boolean).length} columns × {
-                                    exportScope === "all" ? leads.length :
-                                        exportScope === "page" ? pagedLeads.length :
-                                            processedLeads.length
-                                } rows
-                            </span>
                             <Button
+                                type="button"
                                 onClick={handleExport}
                                 size="sm"
-                                disabled={Object.values(exportColumns).filter(Boolean).length === 0}
-                                className="bg-gradient-to-r from-cyan-600 to-emerald-600 hover:from-cyan-500 hover:to-emerald-500 text-white text-xs font-bold gap-1.5 shadow-lg shadow-cyan-500/20 transition-all"
+                                disabled={selectedExportColumnCount === 0}
+                                className="h-8 gap-2 bg-emerald-500 text-black hover:bg-emerald-400"
                             >
-                                <Download className="w-3.5 h-3.5" />
-                                Download {exportFormat.toUpperCase()}
+                                <Download className="h-3.5 w-3.5" />
+                                {exportRowCount.toLocaleString()} rows
                             </Button>
                         </div>
                     </div>
                 </div>
-            )}
+            ) : null}
 
-            {/* Active Filters Tags */}
-            {activeFilterCount > 0 && !showFilters && (
-                <div className="flex flex-wrap gap-1.5 animate-slide-up">
-                    {statusFilter !== "ALL" && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                            Status: {statusFilter === "MISSING" ? "No Website" : "Has Website"}
-                            <button onClick={() => setStatusFilter("ALL")}><X className="w-2.5 h-2.5" /></button>
-                        </span>
-                    )}
-                    {hasEmailFilter !== "ALL" && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
-                            Email: {hasEmailFilter === "YES" ? "Has" : "Missing"}
-                            <button onClick={() => setHasEmailFilter("ALL")}><X className="w-2.5 h-2.5" /></button>
-                        </span>
-                    )}
-                    {hasPhoneFilter !== "ALL" && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                            Phone: {hasPhoneFilter === "YES" ? "Has" : "Missing"}
-                            <button onClick={() => setHasPhoneFilter("ALL")}><X className="w-2.5 h-2.5" /></button>
-                        </span>
-                    )}
-                    {hasContactFilter !== "ALL" && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-purple-500/10 text-purple-400 border border-purple-500/20">
-                            Contact: {hasContactFilter === "YES" ? "Has" : "Missing"}
-                            <button onClick={() => setHasContactFilter("ALL")}><X className="w-2.5 h-2.5" /></button>
-                        </span>
-                    )}
-                    {hasSocialFilter !== "ALL" && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                            Social: {hasSocialFilter === "YES" ? "Has" : "Missing"}
-                            <button onClick={() => setHasSocialFilter("ALL")}><X className="w-2.5 h-2.5" /></button>
-                        </span>
-                    )}
-                    {nicheFilter !== "ALL" && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                            Niche: {nicheFilter}
-                            <button onClick={() => setNicheFilter("ALL")}><X className="w-2.5 h-2.5" /></button>
-                        </span>
-                    )}
-                    {cityFilter !== "ALL" && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                            City: {cityFilter}
-                            <button onClick={() => setCityFilter("ALL")}><X className="w-2.5 h-2.5" /></button>
-                        </span>
-                    )}
-                    {(minRating || maxRating) && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                            Rating: {minRating || "0"}–{maxRating || "5"}
-                            <button onClick={() => { setMinRating(""); setMaxRating("") }}><X className="w-2.5 h-2.5" /></button>
-                        </span>
-                    )}
-                    {(minReviews || maxReviews) && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                            Reviews: {minReviews || "0"}–{maxReviews || "∞"}
-                            <button onClick={() => { setMinReviews(""); setMaxReviews("") }}><X className="w-2.5 h-2.5" /></button>
-                        </span>
-                    )}
-                    {(dateFrom || dateTo) && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-zinc-500/10 text-zinc-400 border border-zinc-500/20">
-                            Date: {dateFrom || "start"}–{dateTo || "now"}
-                            <button onClick={() => { setDateFrom(""); setDateTo("") }}><X className="w-2.5 h-2.5" /></button>
-                        </span>
-                    )}
+            {activeFilterCount > 0 && !showFilters ? (
+                <div className="flex flex-wrap gap-1.5">
+                    {statusFilter !== "ALL" ? (
+                        <ActiveFilter
+                            label={`Website: ${statusFilter === "MISSING" ? "No site" : "Verified"}`}
+                            onClear={() => setStatusFilter("ALL")}
+                        />
+                    ) : null}
+                    {hasEmailFilter !== "ALL" ? (
+                        <ActiveFilter label={`Email: ${hasEmailFilter === "YES" ? "Has" : "Missing"}`} onClear={() => setHasEmailFilter("ALL")} />
+                    ) : null}
+                    {hasPhoneFilter !== "ALL" ? (
+                        <ActiveFilter label={`Phone: ${hasPhoneFilter === "YES" ? "Has" : "Missing"}`} onClear={() => setHasPhoneFilter("ALL")} />
+                    ) : null}
+                    {hasContactFilter !== "ALL" ? (
+                        <ActiveFilter label={`Contact: ${hasContactFilter === "YES" ? "Has" : "Missing"}`} onClear={() => setHasContactFilter("ALL")} />
+                    ) : null}
+                    {hasSocialFilter !== "ALL" ? (
+                        <ActiveFilter label={`Social: ${hasSocialFilter === "YES" ? "Has" : "Missing"}`} onClear={() => setHasSocialFilter("ALL")} />
+                    ) : null}
+                    {nicheFilter !== "ALL" ? <ActiveFilter label={`Niche: ${nicheFilter}`} onClear={() => setNicheFilter("ALL")} /> : null}
+                    {cityFilter !== "ALL" ? <ActiveFilter label={`City: ${cityFilter}`} onClear={() => setCityFilter("ALL")} /> : null}
+                    {minRating || maxRating ? (
+                        <ActiveFilter label={`Rating: ${minRating || "0"}-${maxRating || "5"}`} onClear={() => { setMinRating(""); setMaxRating(""); }} />
+                    ) : null}
+                    {minReviews || maxReviews ? (
+                        <ActiveFilter label={`Reviews: ${minReviews || "0"}-${maxReviews || "max"}`} onClear={() => { setMinReviews(""); setMaxReviews(""); }} />
+                    ) : null}
+                    {dateFrom || dateTo ? (
+                        <ActiveFilter label={`Date: ${dateFrom || "start"}-${dateTo || "now"}`} onClear={() => { setDateFrom(""); setDateTo(""); }} />
+                    ) : null}
                 </div>
-            )}
+            ) : null}
 
-            {/* Mobile Cards */}
-            <div className="space-y-3 md:hidden">
+            <div className="md:hidden">
                 {pagedLeads.length === 0 ? (
-                    <div className="rounded-lg border border-white/[0.06] bg-black/20 px-4 py-12 text-center">
-                        <div className="mx-auto flex max-w-md flex-col items-center gap-3 text-zinc-600">
-                            <Globe className="h-10 w-10" />
-                            <div>
-                                <p className="text-sm text-zinc-500">No leads found</p>
-                                <p className="mt-1 text-[10px] text-zinc-700">
-                                    {activeFilterCount > 0 ? "Try adjusting your filters" : "Run an extraction to populate your vault"}
-                                </p>
-                            </div>
-                        </div>
+                    <div className="border-y border-white/[0.06] py-12 text-center">
+                        <Globe className="mx-auto h-9 w-9 text-zinc-700" />
+                        <p className="mt-3 text-sm text-zinc-500">No matching leads</p>
+                        <p className="mt-1 text-[11px] text-zinc-700">
+                            {activeFilterCount > 0 ? "Adjust filters or clear the current slice." : "Run an extraction to populate Vault."}
+                        </p>
                     </div>
                 ) : (
-                    pagedLeads.map((lead) => (
-                        <div
-                            key={lead.id}
-                            className="rounded-xl border border-white/[0.06] bg-black/20 p-4 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]"
-                        >
-                            <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0 space-y-1">
-                                    <div className="text-sm font-semibold text-white">{lead.businessName}</div>
-                                    <div className="flex flex-wrap items-center gap-2 text-[11px] text-zinc-500">
-                                        <span>{lead.city}</span>
-                                        <span>•</span>
-                                        <span className="font-mono text-purple-400/80">{lead.niche}</span>
+                    <div className="divide-y divide-white/[0.06] border-y border-white/[0.06]">
+                        {pagedLeads.map((lead) => (
+                            <div key={lead.id} className="py-3">
+                                <button
+                                    type="button"
+                                    onClick={() => setExpandedId((current) => (current === lead.id ? null : lead.id))}
+                                    className="flex w-full items-start justify-between gap-3 text-left"
+                                >
+                                    <div className="min-w-0">
+                                        <div className="truncate text-sm font-medium text-white">{lead.businessName}</div>
+                                        <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-zinc-500">
+                                            <span>{lead.city || "Unknown city"}</span>
+                                            <span className="text-zinc-700">/</span>
+                                            <span className="font-mono text-zinc-400">{lead.niche || "No niche"}</span>
+                                            {lead.rating != null ? (
+                                                <span className="inline-flex items-center gap-1 text-amber-300">
+                                                    <Star className="h-3 w-3" />
+                                                    {lead.rating}
+                                                </span>
+                                            ) : null}
+                                        </div>
                                     </div>
-                                    <div className="flex flex-wrap items-center gap-2 text-[11px] text-zinc-500">
-                                        {lead.rating != null && (
-                                            <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-amber-400">
-                                                <Star className="h-3 w-3" />
-                                                {lead.rating}
-                                            </span>
-                                        )}
-                                        <span className="font-mono">{lead.reviewCount || 0} reviews</span>
+                                    <div className="flex flex-col items-end gap-1.5">
+                                        <StatusBadge status={lead.websiteStatus} />
+                                        <ChevronDown className={`h-4 w-4 text-zinc-600 ${expandedId === lead.id ? "rotate-180" : ""}`} />
+                                    </div>
+                                </button>
+
+                                <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                                    <ContactIndicators lead={lead} />
+                                    <div className="flex items-center gap-1">
+                                        <OutreachEditorSheet
+                                            lead={lead}
+                                            onSaved={handleOutreachSaved}
+                                            buttonLabel="Status"
+                                            buttonVariant="ghost"
+                                            buttonSize="sm"
+                                            buttonClassName="h-8 px-2 text-zinc-500 hover:text-cyan-300 hover:bg-cyan-500/10"
+                                        />
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-8 px-2 text-emerald-300 hover:bg-emerald-500/10"
+                                            onClick={() => router.push(`/lead/${lead.id}`)}
+                                        >
+                                            <FileText className="h-3.5 w-3.5" />
+                                            Dossier
+                                        </Button>
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-8 px-2 text-red-300 hover:bg-red-500/10"
+                                            onClick={() => void handleDelete(lead.id)}
+                                            disabled={deleting === lead.id}
+                                            aria-label={`Delete ${lead.businessName}`}
+                                        >
+                                            <Trash2 className={`h-3.5 w-3.5 ${deleting === lead.id ? "animate-pulse" : ""}`} />
+                                        </Button>
                                     </div>
                                 </div>
 
-                                <div className="flex flex-col items-end gap-1">
-                                    {isContactedOutreachStatus(lead.outreachStatus) && (
-                                        <OutreachStatusBadge status={lead.outreachStatus} />
-                                    )}
-                                    {lead.websiteStatus === "MISSING" ? (
-                                        <span className="inline-flex items-center gap-1 rounded-full border border-red-500/20 bg-red-500/10 px-2 py-0.5 text-[10px] font-semibold text-red-400">
-                                            <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
-                                            No Site
-                                        </span>
-                                    ) : (
-                                        <span className="inline-flex items-center gap-1 rounded-full border border-blue-500/20 bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold text-blue-400">
-                                            <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
-                                            Has Site
-                                        </span>
-                                    )}
-                                </div>
-                            </div>
-
-                            <div className="mt-3 space-y-1 text-xs">
-                                {lead.contactName ? <div className="text-amber-300">{lead.contactName}</div> : null}
-                                {lead.phone ? <div className="break-all font-mono text-zinc-300">{lead.phone}</div> : null}
-                                {lead.email ? <div className="break-all font-mono text-cyan-300">{lead.email}</div> : null}
-                                {lead.socialLink ? <div className="break-all text-blue-300">{lead.socialLink}</div> : null}
-                                {!lead.contactName && !lead.phone && !lead.email && !lead.socialLink ? (
-                                    <div className="italic text-zinc-600">No contact info</div>
+                                {expandedId === lead.id ? (
+                                    <div className="mt-4 border-t border-white/[0.06] pt-4">
+                                        <LeadDetails lead={lead} />
+                                    </div>
                                 ) : null}
                             </div>
-
-                            <div className="mt-4 grid grid-cols-2 gap-2">
-                                <OutreachEditorSheet
-                                    lead={lead}
-                                    onSaved={handleOutreachSaved}
-                                    buttonLabel="Outreach"
-                                    buttonVariant="ghost"
-                                    buttonSize="sm"
-                                    buttonClassName="w-full justify-center border border-cyan-500/20 bg-cyan-500/5 text-cyan-300 hover:bg-cyan-500/10"
-                                />
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="w-full justify-center border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/10"
-                                    onClick={() => router.push(`/lead/${lead.id}`)}
-                                >
-                                    <FileText className="h-3.5 w-3.5" />
-                                    Dossier
-                                </Button>
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="w-full justify-center border border-white/10 text-zinc-400 hover:bg-white/5 hover:text-white"
-                                    onClick={() => setExpandedId(expandedId === lead.id ? null : lead.id)}
-                                >
-                                    {expandedId === lead.id ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-                                    {expandedId === lead.id ? "Less" : "Details"}
-                                </Button>
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="w-full justify-center border border-red-500/20 text-red-400 hover:bg-red-500/10"
-                                    onClick={() => void handleDelete(lead.id)}
-                                    disabled={deleting === lead.id}
-                                >
-                                    <Trash2 className={`h-3.5 w-3.5 ${deleting === lead.id ? "animate-pulse" : ""}`} />
-                                    Delete
-                                </Button>
-                            </div>
-
-                            {expandedId === lead.id && (
-                                <div className="mt-4 space-y-3">
-                                    <div className="rounded-lg border border-white/[0.06] bg-white/[0.03] p-3">
-                                        <h4 className="mb-2 text-[10px] uppercase tracking-widest text-muted-foreground">Contact Details</h4>
-                                        <div className="space-y-2 text-xs">
-                                            {lead.contactName && (
-                                                <div className="flex items-center gap-2">
-                                                    <User className="h-3 w-3 text-amber-400" />
-                                                    <span className="text-amber-400 font-medium">{lead.contactName}</span>
-                                                </div>
-                                            )}
-                                            {lead.phone && (
-                                                <div className="flex items-center gap-2">
-                                                    <Phone className="h-3 w-3 text-zinc-500" />
-                                                    <span className="font-mono text-zinc-300">{lead.phone}</span>
-                                                </div>
-                                            )}
-                                            {lead.email && (
-                                                <div className="flex items-center gap-2">
-                                                    <Mail className="h-3 w-3 text-cyan-400" />
-                                                    <span className="break-all text-cyan-400">{lead.email}</span>
-                                                </div>
-                                            )}
-                                            {lead.socialLink && (
-                                                <a href={lead.socialLink} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-blue-400">
-                                                    <ExternalLink className="h-3 w-3" />
-                                                    <span className="break-all">{lead.socialLink.replace(/https?:\/\//, "")}</span>
-                                                </a>
-                                            )}
-                                            {!lead.contactName && !lead.phone && !lead.email && !lead.socialLink && (
-                                                <p className="italic text-zinc-600">No contact details found.</p>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    <div className="rounded-lg border border-white/[0.06] bg-white/[0.03] p-3">
-                                        <h4 className="mb-2 text-[10px] uppercase tracking-widest text-muted-foreground">Location</h4>
-                                        <div className="space-y-2 text-xs">
-                                            <div className="flex items-center gap-2">
-                                                <MapPin className="h-3 w-3 text-emerald-400" />
-                                                <span className="text-zinc-300">{lead.city}</span>
-                                            </div>
-                                            {lead.address && <p className="pl-5 text-zinc-500">{lead.address}</p>}
-                                            {lead.category && (
-                                                <div>
-                                                    <span className="inline-block rounded border border-purple-500/20 bg-purple-500/10 px-2 py-0.5 text-[10px] text-purple-400">
-                                                        {lead.category}
-                                                    </span>
-                                                </div>
-                                            )}
-                                            <div className="text-[10px] text-zinc-600">
-                                                Added: {formatAppDate(lead.createdAt)}
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div className="rounded-lg border border-white/[0.06] bg-white/[0.03] p-3">
-                                        <h4 className="mb-2 text-[10px] uppercase tracking-widest text-muted-foreground">AI Intelligence</h4>
-                                        <p className="text-xs leading-relaxed text-zinc-300" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word" }}>
-                                            {lead.tacticalNote || "No intelligence generated."}
-                                        </p>
-                                    </div>
-
-                                    {isContactedOutreachStatus(lead.outreachStatus) && (
-                                        <div className="rounded-lg border border-cyan-500/10 bg-cyan-500/5 p-3">
-                                            <div className="mb-2 flex items-center justify-between gap-2">
-                                                <span className="text-[10px] uppercase tracking-widest text-cyan-300/70">Outreach</span>
-                                                <OutreachStatusBadge status={lead.outreachStatus} />
-                                            </div>
-                                            <div className="space-y-2 text-[11px] text-zinc-400">
-                                                <div className="flex items-center justify-between gap-3">
-                                                    <span>Channel</span>
-                                                    <span className="text-zinc-200">{getOutreachChannelLabel(lead.outreachChannel)}</span>
-                                                </div>
-                                                <div className="flex items-center justify-between gap-3">
-                                                    <span>First Contact</span>
-                                                    <span className="text-zinc-200">{formatOutreachDate(lead.firstContactedAt, true)}</span>
-                                                </div>
-                                                <div className="flex items-center justify-between gap-3">
-                                                    <span>Last Contact</span>
-                                                    <span className="text-zinc-200">{formatOutreachDate(lead.lastContactedAt, true)}</span>
-                                                </div>
-                                                <div className="flex items-center justify-between gap-3">
-                                                    <span>Follow-Up Due</span>
-                                                    <span className="text-zinc-200">{formatOutreachDate(lead.nextFollowUpDue)}</span>
-                                                </div>
-                                            </div>
-                                            {lead.outreachNotes && (
-                                                <p className="mt-3 text-[11px] leading-relaxed text-zinc-300" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-                                                    {lead.outreachNotes}
-                                                </p>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                    ))
+                        ))}
+                    </div>
                 )}
             </div>
 
-            {/* Desktop Table */}
-            <div className="hidden rounded-lg border border-white/[0.06] bg-black/20 md:block">
+            <div className="hidden overflow-hidden rounded-lg border border-white/[0.06] bg-black/20 md:block">
                 <Table>
                     <TableHeader className="bg-black/40">
-                        <TableRow className="hover:bg-transparent border-white/[0.06]">
+                        <TableRow className="border-white/[0.06] hover:bg-transparent">
+                            {[
+                                { key: "businessName" as const, label: "Business" },
+                                { key: "niche" as const, label: "Niche" },
+                                { key: "city" as const, label: "City" },
+                            ].map((column) => (
+                                <TableHead
+                                    key={column.key}
+                                    onClick={() => handleSort(column.key)}
+                                    className="cursor-pointer select-none text-xs font-semibold text-zinc-500 hover:text-white"
+                                >
+                                    <span className="flex items-center">
+                                        {column.label}
+                                        <SortIcon active={sortKey === column.key} dir={sortDir} />
+                                    </span>
+                                </TableHead>
+                            ))}
+                            <TableHead className="text-xs font-semibold text-zinc-500">Contact</TableHead>
                             <TableHead
-                                className="font-bold text-zinc-400 text-xs cursor-pointer select-none hover:text-white transition-colors"
-                                onClick={() => handleSort("businessName")}
-                            >
-                                <span className="flex items-center">Business <SortIcon col="businessName" /></span>
-                            </TableHead>
-                            <TableHead
-                                className="hidden font-bold text-zinc-400 text-xs cursor-pointer select-none hover:text-white transition-colors md:table-cell"
-                                onClick={() => handleSort("niche")}
-                            >
-                                <span className="flex items-center">Niche <SortIcon col="niche" /></span>
-                            </TableHead>
-                            <TableHead
-                                className="hidden font-bold text-zinc-400 text-xs cursor-pointer select-none hover:text-white transition-colors md:table-cell"
-                                onClick={() => handleSort("city")}
-                            >
-                                <span className="flex items-center">City <SortIcon col="city" /></span>
-                            </TableHead>
-                            <TableHead className="font-bold text-zinc-400 text-xs">Contact</TableHead>
-                            <TableHead
-                                className="hidden font-bold text-zinc-400 text-xs cursor-pointer select-none hover:text-white transition-colors md:table-cell"
                                 onClick={() => handleSort("rating")}
+                                className="w-[96px] cursor-pointer select-none text-xs font-semibold text-zinc-500 hover:text-white"
                             >
-                                <span className="flex items-center">Rating <SortIcon col="rating" /></span>
+                                <span className="flex items-center">
+                                    Rating
+                                    <SortIcon active={sortKey === "rating"} dir={sortDir} />
+                                </span>
                             </TableHead>
                             <TableHead
-                                className="hidden font-bold text-zinc-400 text-xs cursor-pointer select-none hover:text-white transition-colors md:table-cell"
                                 onClick={() => handleSort("reviewCount")}
+                                className="w-[110px] cursor-pointer select-none text-xs font-semibold text-zinc-500 hover:text-white"
                             >
-                                <span className="flex items-center">Reviews <SortIcon col="reviewCount" /></span>
+                                <span className="flex items-center">
+                                    Reviews
+                                    <SortIcon active={sortKey === "reviewCount"} dir={sortDir} />
+                                </span>
                             </TableHead>
-                            <TableHead className="font-bold text-zinc-400 text-xs">Status</TableHead>
-                            <TableHead className="font-bold text-zinc-400 text-xs w-10"></TableHead>
+                            <TableHead className="w-[108px] text-xs font-semibold text-zinc-500">Website</TableHead>
+                            <TableHead className="w-[150px] text-right text-xs font-semibold text-zinc-500">Actions</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
                         {pagedLeads.length === 0 ? (
                             <TableRow>
-                                <TableCell colSpan={8} className="text-center h-40">
-                                    <div className="flex flex-col items-center gap-3 text-zinc-600">
-                                        <Globe className="w-10 h-10" />
-                                        <div>
-                                            <p className="text-sm text-zinc-500">No leads found</p>
-                                            <p className="text-[10px] text-zinc-700 mt-1">
-                                                {activeFilterCount > 0 ? "Try adjusting your filters" : "Run an extraction to populate your vault"}
-                                            </p>
-                                        </div>
-                                    </div>
+                                <TableCell colSpan={8} className="h-40 text-center">
+                                    <Globe className="mx-auto h-9 w-9 text-zinc-700" />
+                                    <p className="mt-3 text-sm text-zinc-500">No matching leads</p>
+                                    <p className="mt-1 text-[11px] text-zinc-700">
+                                        {activeFilterCount > 0 ? "Adjust filters or clear the current slice." : "Run an extraction to populate Vault."}
+                                    </p>
                                 </TableCell>
                             </TableRow>
                         ) : (
                             pagedLeads.map((lead) => (
                                 <React.Fragment key={lead.id}>
                                     <TableRow
-                                        className={`border-white/[0.04] cursor-pointer transition-all duration-200 group ${expandedId === lead.id ? "bg-white/[0.04]" : "hover:bg-white/[0.02]"
-                                            }`}
-                                        onClick={() => setExpandedId(expandedId === lead.id ? null : lead.id)}
+                                        onClick={() => setExpandedId((current) => (current === lead.id ? null : lead.id))}
+                                        className={`cursor-pointer border-white/[0.04] transition-colors ${
+                                            expandedId === lead.id ? "bg-white/[0.035]" : "hover:bg-white/[0.02]"
+                                        }`}
                                     >
-                                        <TableCell className="font-medium text-white">
-                                            <div className="min-w-0 space-y-1">
-                                                <span className="block text-sm">{lead.businessName}</span>
-                                                <span className="block text-[11px] text-zinc-500 md:hidden">
-                                                    {lead.city} • {lead.niche}
-                                                </span>
-                                                {isContactedOutreachStatus(lead.outreachStatus) && (
+                                        <TableCell className="max-w-[320px]">
+                                            <div className="min-w-0">
+                                                <div className="truncate text-sm font-medium text-white">{lead.businessName}</div>
+                                                <div className="mt-1 flex items-center gap-2 text-[11px] text-zinc-600">
+                                                    <CopyCheck className="h-3 w-3" />
+                                                    <span>Added {formatAppDate(lead.createdAt)}</span>
+                                                </div>
+                                            </div>
+                                        </TableCell>
+                                        <TableCell className="max-w-[180px]">
+                                            <span className="block truncate font-mono text-[11px] text-zinc-400">{lead.niche || "-"}</span>
+                                        </TableCell>
+                                        <TableCell className="max-w-[160px]">
+                                            <span className="block truncate text-sm text-zinc-400">{lead.city || "-"}</span>
+                                        </TableCell>
+                                        <TableCell>
+                                            <ContactIndicators lead={lead} />
+                                            {isContactedOutreachStatus(lead.outreachStatus) ? (
+                                                <div className="mt-1">
                                                     <OutreachStatusBadge status={lead.outreachStatus} />
-                                                )}
-                                            </div>
-                                        </TableCell>
-                                        <TableCell className="hidden md:table-cell">
-                                            <span className="text-[10px] text-purple-400/80 font-mono">{lead.niche}</span>
-                                        </TableCell>
-                                        <TableCell className="hidden md:table-cell">
-                                            <span className="text-sm text-zinc-400">{lead.city}</span>
+                                                </div>
+                                            ) : null}
                                         </TableCell>
                                         <TableCell>
-                                            <div className="flex items-center gap-2">
-                                                {lead.email && <Mail className="w-3 h-3 text-cyan-500" />}
-                                                {lead.phone && <Phone className="w-3 h-3 text-zinc-500" />}
-                                                {lead.contactName && <User className="w-3 h-3 text-amber-500" />}
-                                                {lead.socialLink && <Share2 className="w-3 h-3 text-blue-500" />}
-                                                {!lead.email && !lead.phone && !lead.contactName && !lead.socialLink && (
-                                                    <span className="text-[10px] text-zinc-700">None</span>
-                                                )}
-                                            </div>
-                                        </TableCell>
-                                        <TableCell className="hidden md:table-cell">
-                                            <div className="flex items-center gap-1">
-                                                <span className="text-amber-400">★</span>
-                                                <span className="font-bold text-sm">{lead.rating || "—"}</span>
-                                            </div>
-                                        </TableCell>
-                                        <TableCell className="hidden md:table-cell">
-                                            <span className="text-sm font-mono text-zinc-400">{lead.reviewCount || 0}</span>
+                                            <span className="inline-flex items-center gap-1 font-mono text-sm text-zinc-300">
+                                                <Star className="h-3.5 w-3.5 text-amber-400" />
+                                                {lead.rating ?? "-"}
+                                            </span>
                                         </TableCell>
                                         <TableCell>
-                                            {lead.websiteStatus === "MISSING" ? (
-                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-500/10 text-red-400 border border-red-500/20">
-                                                    <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
-                                                    No Site
-                                                </span>
-                                            ) : (
-                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                                                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-                                                    Has Site
-                                                </span>
-                                            )}
+                                            <span className="font-mono text-sm tabular-nums text-zinc-400">{lead.reviewCount ?? 0}</span>
                                         </TableCell>
                                         <TableCell>
-                                            <div className="flex items-center gap-1">
-                                                <ChevronDown className={`w-4 h-4 text-zinc-600 transition-transform duration-200 ${expandedId === lead.id ? "rotate-180" : ""}`} />
+                                            <StatusBadge status={lead.websiteStatus} />
+                                        </TableCell>
+                                        <TableCell onClick={(event) => event.stopPropagation()}>
+                                            <div className="flex items-center justify-end gap-1">
+                                                <ChevronDown className={`h-4 w-4 text-zinc-700 ${expandedId === lead.id ? "rotate-180" : ""}`} />
                                                 <OutreachEditorSheet
                                                     lead={lead}
                                                     onSaved={handleOutreachSaved}
-                                                    buttonLabel="Outreach"
+                                                    buttonLabel="Status"
                                                     buttonVariant="ghost"
                                                     buttonSize="sm"
-                                                    buttonClassName="h-7 px-2 text-zinc-700 hover:bg-cyan-500/10 hover:text-cyan-300"
+                                                    buttonClassName="h-7 px-2 text-zinc-600 hover:text-cyan-300 hover:bg-cyan-500/10"
                                                 />
                                                 <Button
+                                                    type="button"
                                                     variant="ghost"
                                                     size="sm"
-                                                    className="w-7 h-7 p-0 text-zinc-700 hover:text-emerald-400 hover:bg-emerald-500/10 transition-all"
-                                                    onClick={(e) => { e.stopPropagation(); router.push(`/lead/${lead.id}`) }}
-                                                    title="Open Dossier"
+                                                    className="h-7 w-7 p-0 text-zinc-600 hover:bg-emerald-500/10 hover:text-emerald-300"
+                                                    onClick={() => router.push(`/lead/${lead.id}`)}
+                                                    title="Open dossier"
                                                 >
-                                                    <FileText className="w-3.5 h-3.5" />
+                                                    <FileText className="h-3.5 w-3.5" />
                                                 </Button>
                                                 <Button
+                                                    type="button"
                                                     variant="ghost"
                                                     size="sm"
-                                                    className="w-7 h-7 p-0 text-zinc-700 hover:text-red-400 hover:bg-red-500/10 transition-all"
-                                                    onClick={(e) => { e.stopPropagation(); handleDelete(lead.id) }}
+                                                    className="h-7 w-7 p-0 text-zinc-600 hover:bg-red-500/10 hover:text-red-300"
+                                                    onClick={() => void handleDelete(lead.id)}
                                                     disabled={deleting === lead.id}
+                                                    title="Delete lead"
                                                 >
-                                                    <Trash2 className={`w-3.5 h-3.5 ${deleting === lead.id ? "animate-pulse" : ""}`} />
+                                                    <Trash2 className={`h-3.5 w-3.5 ${deleting === lead.id ? "animate-pulse" : ""}`} />
                                                 </Button>
                                             </div>
                                         </TableCell>
                                     </TableRow>
-                                    {/* Expanded Detail Row */}
-                                    {expandedId === lead.id && (
-                                        <TableRow key={`${lead.id}-expanded`} className="bg-white/[0.02] border-white/[0.04]">
-                                            <TableCell
-                                                colSpan={8}
-                                                className="whitespace-normal break-words px-6 py-4 align-top"
-                                            >
-                                                <div className="grid min-w-0 grid-cols-1 gap-4 animate-slide-up items-start md:grid-cols-3">
-                                                    <div className="glass rounded-lg p-4 space-y-2 min-w-0">
-                                                        <h4 className="text-[10px] uppercase tracking-widest text-muted-foreground mb-2">Contact Details</h4>
-                                                        {lead.contactName && (
-                                                            <div className="flex items-center gap-2 text-xs">
-                                                                <User className="w-3 h-3 text-amber-400" />
-                                                                <span className="text-amber-400 font-medium">{lead.contactName}</span>
-                                                            </div>
-                                                        )}
-                                                        {lead.phone && (
-                                                            <div className="flex items-center gap-2 text-xs">
-                                                                <Phone className="w-3 h-3 text-zinc-500" />
-                                                                <span className="text-zinc-300 font-mono">{lead.phone}</span>
-                                                            </div>
-                                                        )}
-                                                        {lead.email && (
-                                                            <div className="flex items-center gap-2 text-xs">
-                                                                <Mail className="w-3 h-3 text-cyan-400" />
-                                                                <span className="text-cyan-400 break-all">{lead.email}</span>
-                                                            </div>
-                                                        )}
-                                                        {lead.socialLink && (
-                                                            <a href={lead.socialLink} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-xs text-blue-400 hover:text-blue-300 transition-colors">
-                                                                <ExternalLink className="w-3 h-3" />
-                                                                <span className="truncate">{lead.socialLink.replace(/https?:\/\//, "").substring(0, 35)}...</span>
-                                                            </a>
-                                                        )}
-                                                        {!lead.contactName && !lead.phone && !lead.email && !lead.socialLink && (
-                                                            <p className="text-xs text-zinc-600 italic">No contact details found.</p>
-                                                        )}
-                                                    </div>
-                                                    <div className="glass rounded-lg p-4 space-y-2 min-w-0">
-                                                        <h4 className="text-[10px] uppercase tracking-widest text-muted-foreground mb-2">Location</h4>
-                                                        <div className="flex items-center gap-2 text-xs">
-                                                            <MapPin className="w-3 h-3 text-emerald-400" />
-                                                            <span className="text-zinc-300">{lead.city}</span>
-                                                        </div>
-                                                        {lead.address && (
-                                                            <p className="text-xs text-zinc-500 pl-5">{lead.address}</p>
-                                                        )}
-                                                        {lead.category && (
-                                                            <div className="mt-2">
-                                                                <span className="inline-block px-2 py-0.5 rounded text-[10px] bg-purple-500/10 text-purple-400 border border-purple-500/20">
-                                                                    {lead.category}
-                                                                </span>
-                                                            </div>
-                                                        )}
-                                                        <div className="mt-2 text-[10px] text-zinc-600">
-                                                            Added: {formatAppDate(lead.createdAt)}
-                                                        </div>
-                                                    </div>
-                                                    <div className="glass rounded-lg p-4 space-y-2 min-w-0">
-                                                        <h4 className="text-[10px] uppercase tracking-widest text-muted-foreground mb-2">AI Intelligence</h4>
-                                                        <p
-                                                            className="min-w-0 max-w-full text-xs leading-relaxed text-zinc-300"
-                                                            style={{
-                                                                whiteSpace: "pre-wrap",
-                                                                overflowWrap: "anywhere",
-                                                                wordBreak: "break-word",
-                                                            }}
-                                                        >
-                                                            {lead.tacticalNote || "No intelligence generated."}
-                                                        </p>
-                                                        {isContactedOutreachStatus(lead.outreachStatus) && (
-                                                            <div className="mt-3 rounded-lg border border-cyan-500/10 bg-cyan-500/5 p-3 space-y-2">
-                                                                <div className="flex items-center justify-between gap-2">
-                                                                    <span className="text-[10px] uppercase tracking-widest text-cyan-300/70">Outreach</span>
-                                                                    <OutreachStatusBadge status={lead.outreachStatus} />
-                                                                </div>
-                                                                <div className="grid grid-cols-1 gap-2 text-[11px] text-zinc-400">
-                                                                    <div className="flex items-center justify-between gap-3">
-                                                                        <span>Channel</span>
-                                                                        <span className="text-zinc-200">{getOutreachChannelLabel(lead.outreachChannel)}</span>
-                                                                    </div>
-                                                                    <div className="flex items-center justify-between gap-3">
-                                                                        <span>First Contact</span>
-                                                                        <span className="text-zinc-200">{formatOutreachDate(lead.firstContactedAt, true)}</span>
-                                                                    </div>
-                                                                    <div className="flex items-center justify-between gap-3">
-                                                                        <span>Last Contact</span>
-                                                                        <span className="text-zinc-200">{formatOutreachDate(lead.lastContactedAt, true)}</span>
-                                                                    </div>
-                                                                    <div className="flex items-center justify-between gap-3">
-                                                                        <span>Follow-Up Due</span>
-                                                                        <span className="text-zinc-200">{formatOutreachDate(lead.nextFollowUpDue)}</span>
-                                                                    </div>
-                                                                </div>
-                                                                {lead.outreachNotes && (
-                                                                    <p
-                                                                        className="text-[11px] leading-relaxed text-zinc-300"
-                                                                        style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
-                                                                    >
-                                                                        {lead.outreachNotes}
-                                                                    </p>
-                                                                )}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </div>
+                                    {expandedId === lead.id ? (
+                                        <TableRow className="border-white/[0.04] bg-white/[0.015]">
+                                            <TableCell colSpan={8} className="px-5 py-4 align-top">
+                                                <LeadDetails lead={lead} />
                                             </TableCell>
                                         </TableRow>
-                                    )}
+                                    ) : null}
                                 </React.Fragment>
                             ))
                         )}
@@ -1256,70 +1085,74 @@ export default function VaultDataTable({ initialLeads }: { initialLeads: Lead[] 
                 </Table>
             </div>
 
-            {/* Pagination */}
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-3 border-t border-white/[0.06] pt-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-xs text-muted-foreground">Show</span>
-                    {PAGE_OPTIONS.map(opt => (
+                    <span className="text-xs text-zinc-600">Rows</span>
+                    {PAGE_OPTIONS.map((option) => (
                         <Button
-                            key={opt}
-                            variant={perPage === opt ? "default" : "outline"}
+                            key={option}
+                            type="button"
+                            variant={perPage === option ? "default" : "outline"}
                             size="sm"
-                            onClick={() => setPerPage(opt)}
-                            className={`text-[10px] h-7 px-2.5 transition-all ${perPage === opt
-                                ? "bg-emerald-600/60 text-white"
-                                : "border-white/10 text-zinc-500 hover:text-white"
-                                }`}
+                            onClick={() => setPerPage(option)}
+                            className={`h-7 px-2.5 text-[10px] ${
+                                perPage === option ? "bg-white text-black hover:bg-zinc-200" : "border-white/[0.08] text-zinc-500 hover:text-white"
+                            }`}
                         >
-                            {opt}
+                            {option}
                         </Button>
                     ))}
-                    <span className="text-xs text-muted-foreground ml-2">
-                            {processedLeads.length} of {leads.length} total
+                    <span className="ml-1 text-xs text-zinc-600">
+                        {processedLeads.length.toLocaleString()} of {leads.length.toLocaleString()}
                     </span>
                 </div>
+
                 <div className="flex items-center gap-2 self-end sm:self-auto">
                     <Button
+                        type="button"
                         variant="outline"
                         size="sm"
                         onClick={() => setPage(0)}
                         disabled={page === 0}
-                        className="h-7 px-2 text-[10px] border-white/10 text-zinc-500 hover:text-white disabled:opacity-30"
+                        className="h-7 border-white/[0.08] px-2 text-[10px] text-zinc-500 hover:text-white disabled:opacity-30"
                     >
                         First
                     </Button>
                     <Button
+                        type="button"
                         variant="outline"
                         size="sm"
-                        onClick={() => setPage(p => Math.max(0, p - 1))}
+                        onClick={() => setPage((current) => Math.max(0, current - 1))}
                         disabled={page === 0}
-                        className="h-7 w-7 p-0 border-white/10 text-zinc-500 hover:text-white disabled:opacity-30"
+                        className="h-7 w-7 border-white/[0.08] p-0 text-zinc-500 hover:text-white disabled:opacity-30"
                     >
-                        <ChevronLeft className="w-4 h-4" />
+                        <ChevronLeft className="h-4 w-4" />
                     </Button>
-                    <span className="text-xs font-mono text-zinc-400 min-w-[60px] text-center">
+                    <span className="min-w-[64px] text-center font-mono text-xs text-zinc-400">
                         {page + 1} / {totalPages}
                     </span>
                     <Button
+                        type="button"
                         variant="outline"
                         size="sm"
-                        onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+                        onClick={() => setPage((current) => Math.min(totalPages - 1, current + 1))}
                         disabled={page >= totalPages - 1}
-                        className="h-7 w-7 p-0 border-white/10 text-zinc-500 hover:text-white disabled:opacity-30"
+                        className="h-7 w-7 border-white/[0.08] p-0 text-zinc-500 hover:text-white disabled:opacity-30"
                     >
-                        <ChevronRight className="w-4 h-4" />
+                        <ChevronRight className="h-4 w-4" />
                     </Button>
                     <Button
+                        type="button"
                         variant="outline"
                         size="sm"
                         onClick={() => setPage(totalPages - 1)}
                         disabled={page >= totalPages - 1}
-                        className="h-7 px-2 text-[10px] border-white/10 text-zinc-500 hover:text-white disabled:opacity-30"
+                        className="h-7 border-white/[0.08] px-2 text-[10px] text-zinc-500 hover:text-white disabled:opacity-30"
                     >
                         Last
                     </Button>
                 </div>
             </div>
         </div>
-    )
+    );
 }

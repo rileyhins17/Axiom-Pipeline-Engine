@@ -1,11 +1,10 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState, type ComponentType, type FormEvent, type ReactNode } from "react";
 
 import { AlertTriangle, KeyRound, LockKeyhole, Monitor, ShieldCheck, TimerReset, Trash2, Zap } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/toast-provider";
@@ -28,19 +27,13 @@ type RuntimeStatus = {
   scrapeTimeoutMs: number;
 };
 
-function StatusPill({
-  label,
-  state,
-}: {
-  label: string;
-  state: "ready" | "attention";
-}) {
+function StatusPill({ label, state }: { label: string; state: "ready" | "attention" }) {
   return (
     <span
-      className={`rounded-md px-2 py-1 text-[10px] font-mono uppercase tracking-widest ${
+      className={`rounded-md border px-2 py-1 text-[10px] font-mono uppercase tracking-widest ${
         state === "ready"
-          ? "bg-emerald-400/10 text-emerald-400"
-          : "bg-amber-400/10 text-amber-400"
+          ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-300"
+          : "border-amber-400/25 bg-amber-400/10 text-amber-300"
       }`}
     >
       {label}
@@ -143,255 +136,228 @@ export function SettingsClient({ runtimeStatus }: { runtimeStatus: RuntimeStatus
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <div className="app-shell-surface animate-slide-up rounded-[28px] p-6">
-        <p className="app-eyebrow">Settings</p>
-        <h1 className="app-title mt-2 text-3xl font-semibold md:text-4xl">
-          Runtime controls, safety rails, and operator preferences.
-        </h1>
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-400">
-          Keep sensitive configuration readable, keep destructive actions isolated, and keep the browser experience tuned for long work sessions.
-        </p>
-      </div>
+    <div className="mx-auto max-w-6xl space-y-5">
+      <header className="rounded-2xl border border-white/10 bg-zinc-950/70 p-5 shadow-[0_22px_80px_rgba(0,0,0,0.22)]">
+        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div>
+            <OperatorLabel>Settings</OperatorLabel>
+            <h1 className="mt-1 text-3xl font-semibold tracking-tight text-white">Operator controls</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">
+              Runtime posture, account security, browser preference, and isolated destructive actions.
+            </p>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-zinc-500">
+            Signed in as <span className="font-mono text-zinc-300">{runtimeStatus.currentUserEmail}</span>
+          </div>
+        </div>
+      </header>
 
-      <Card
-        className="animate-slide-up rounded-2xl"
-        style={{ animationDelay: "100ms" }}
-      >
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg font-bold">
-            <Monitor className="h-5 w-5 text-emerald-400" />
-            Display & Performance
-          </CardTitle>
-          <CardDescription className="text-xs">
-            Client-only display preferences remain local to the operator browser.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="glass flex items-center justify-between rounded-xl p-4 transition-colors hover:bg-white/[0.02]">
+      <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <Panel>
+          <SectionTitle icon={Monitor} title="Display and performance" detail="Local browser preference." />
+          <div className="flex items-center justify-between gap-4 rounded-xl border border-white/10 bg-black/20 p-4">
             <div className="flex items-center gap-3">
-              <div className="glass-strong flex h-9 w-9 items-center justify-center rounded-lg">
-                <Zap className={`h-4 w-4 ${reducedMotion ? "text-amber-400" : "text-emerald-400"}`} />
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03]">
+                <Zap className={`h-4 w-4 ${reducedMotion ? "text-amber-300" : "text-emerald-300"}`} />
               </div>
               <div>
-                <div className="text-sm font-medium text-foreground">Performance Mode</div>
-                <div className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
-                  Reduce decorative effects for longer sessions or lower-powered devices.
-                </div>
+                <div className="text-sm font-medium text-foreground">Performance mode</div>
+                <div className="mt-0.5 text-xs leading-relaxed text-muted-foreground">Reduce decorative motion and effects.</div>
               </div>
             </div>
             <button
               aria-label="Toggle performance mode"
-              className={`relative h-6 w-11 rounded-full border transition-all duration-300 ${
-                reducedMotion
-                  ? "border-amber-400/40 bg-amber-400/30"
-                  : "border-white/[0.06] bg-white/[0.08]"
+              className={`relative h-6 w-11 rounded-full border transition-colors ${
+                reducedMotion ? "border-amber-400/40 bg-amber-400/30" : "border-white/10 bg-white/[0.08]"
               }`}
               onClick={toggle}
               type="button"
             >
               <span
-                className={`absolute top-0.5 h-5 w-5 rounded-full transition-all duration-300 ${
-                  reducedMotion
-                    ? "left-[22px] bg-amber-400 shadow-lg shadow-amber-400/30"
-                    : "left-0.5 bg-zinc-400"
+                className={`absolute top-0.5 h-5 w-5 rounded-full transition-all ${
+                  reducedMotion ? "left-[22px] bg-amber-400 shadow-lg shadow-amber-400/30" : "left-0.5 bg-zinc-400"
                 }`}
               />
             </button>
           </div>
-        </CardContent>
-      </Card>
+        </Panel>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card
-          className="animate-slide-up rounded-2xl"
-          style={{ animationDelay: "160ms" }}
-        >
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg font-bold">
-              <ShieldCheck className="h-5 w-5 text-cyan-400" />
-              Security Posture
-            </CardTitle>
-            <CardDescription className="text-xs">
-              Sensitive configuration is server-side only and never editable from this screen.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <div className="glass flex items-center justify-between rounded-xl p-3">
-              <span>Gemini server key</span>
-              <StatusPill
-                label={runtimeStatus.geminiConfigured ? "Configured" : "Missing"}
-                state={runtimeStatus.geminiConfigured ? "ready" : "attention"}
-              />
-            </div>
-            <div className="glass flex items-center justify-between rounded-xl p-3">
-              <span>Allowed sign-up emails</span>
+        <Panel>
+          <SectionTitle icon={ShieldCheck} title="Security posture" detail="Read-only runtime signals." />
+          <div className="space-y-2 text-sm">
+            <StatusRow label="Gemini server key">
+              <StatusPill label={runtimeStatus.geminiConfigured ? "Configured" : "Missing"} state={runtimeStatus.geminiConfigured ? "ready" : "attention"} />
+            </StatusRow>
+            <StatusRow label="Allowed sign-up emails">
               <span className="font-mono text-xs text-muted-foreground">{runtimeStatus.authAllowedCount}</span>
-            </div>
-            <div className="glass flex items-center justify-between rounded-xl p-3">
-              <span>Admin emails</span>
+            </StatusRow>
+            <StatusRow label="Admin emails">
               <span className="font-mono text-xs text-muted-foreground">{runtimeStatus.adminEmailCount}</span>
-            </div>
-            <div className="glass flex items-center justify-between rounded-xl p-3">
-              <span>App base URL</span>
-              <span className="max-w-[16rem] truncate font-mono text-xs text-muted-foreground">
-                {runtimeStatus.appBaseUrl}
-              </span>
-            </div>
-          </CardContent>
-        </Card>
+            </StatusRow>
+            <StatusRow label="App base URL">
+              <span className="max-w-[14rem] truncate font-mono text-xs text-muted-foreground">{runtimeStatus.appBaseUrl}</span>
+            </StatusRow>
+          </div>
+        </Panel>
+      </section>
 
-        <Card
-          className="animate-slide-up rounded-2xl"
-          style={{ animationDelay: "220ms" }}
-        >
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg font-bold">
-              <TimerReset className="h-5 w-5 text-emerald-400" />
-              Runtime Controls
-            </CardTitle>
-            <CardDescription className="text-xs">
-              Cloudflare-safe limits for auth, exports, and scrape operations.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <div className="glass flex items-center justify-between rounded-xl p-3">
-              <span>Database target</span>
-              <StatusPill
-                label={runtimeStatus.databaseTarget === "cloudflare-d1" ? "D1" : "Missing"}
-                state={runtimeStatus.databaseTarget === "cloudflare-d1" ? "ready" : "attention"}
-              />
-            </div>
-            <div className="glass flex items-center justify-between rounded-xl p-3">
-              <span>Browser rendering binding</span>
-              <StatusPill
-                label={runtimeStatus.browserRenderingConfigured ? "Bound" : "Local fallback"}
-                state={runtimeStatus.browserRenderingConfigured ? "ready" : "attention"}
-              />
-            </div>
-            <div className="glass rounded-xl p-3 text-xs text-muted-foreground">
-              <div>Auth requests: {runtimeStatus.rateLimitMaxAuth} per {runtimeStatus.rateLimitWindowSeconds}s</div>
-              <div>Export requests: {runtimeStatus.rateLimitMaxExport} per {runtimeStatus.rateLimitWindowSeconds}s</div>
-              <div>Scrape requests: {runtimeStatus.rateLimitMaxScrape} per {runtimeStatus.rateLimitWindowSeconds}s</div>
-              <div>Scrape concurrency: {runtimeStatus.scrapeConcurrencyLimit}</div>
-              <div>Scrape timeout: {Math.round(runtimeStatus.scrapeTimeoutMs / 1000)}s</div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      <section className="grid gap-4 lg:grid-cols-2">
+        <Panel>
+          <SectionTitle icon={TimerReset} title="Runtime limits" detail="Cloudflare-safe request and scrape limits." />
+          <div className="space-y-2 text-sm">
+            <StatusRow label="Database target">
+              <StatusPill label={runtimeStatus.databaseTarget === "cloudflare-d1" ? "D1" : "Missing"} state={runtimeStatus.databaseTarget === "cloudflare-d1" ? "ready" : "attention"} />
+            </StatusRow>
+            <StatusRow label="Browser rendering">
+              <StatusPill label={runtimeStatus.browserRenderingConfigured ? "Bound" : "Local fallback"} state={runtimeStatus.browserRenderingConfigured ? "ready" : "attention"} />
+            </StatusRow>
+          </div>
+          <div className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
+            <Limit label="Auth" value={`${runtimeStatus.rateLimitMaxAuth}/${runtimeStatus.rateLimitWindowSeconds}s`} />
+            <Limit label="Export" value={`${runtimeStatus.rateLimitMaxExport}/${runtimeStatus.rateLimitWindowSeconds}s`} />
+            <Limit label="Scrape" value={`${runtimeStatus.rateLimitMaxScrape}/${runtimeStatus.rateLimitWindowSeconds}s`} />
+            <Limit label="Concurrency" value={String(runtimeStatus.scrapeConcurrencyLimit)} />
+            <Limit label="Timeout" value={`${Math.round(runtimeStatus.scrapeTimeoutMs / 1000)}s`} />
+          </div>
+        </Panel>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card
-          className="animate-slide-up rounded-2xl"
-          style={{ animationDelay: "260ms" }}
-        >
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg font-bold">
-              <KeyRound className="h-5 w-5 text-emerald-400" />
-              Change Password
-            </CardTitle>
-            <CardDescription className="text-xs">
-              Update the password for the currently signed-in account. Other sessions will be revoked.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form className="space-y-4" onSubmit={handlePasswordSubmit}>
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="current-password">Current password</Label>
-                  <Input
-                    id="current-password"
-                    autoComplete="current-password"
-                    disabled={passwordSaving}
-                    onChange={(event) => setCurrentPassword(event.target.value)}
-                    type="password"
-                    value={currentPassword}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="new-password">New password</Label>
-                  <Input
-                    id="new-password"
-                    autoComplete="new-password"
-                    disabled={passwordSaving}
-                    onChange={(event) => setNewPassword(event.target.value)}
-                    type="password"
-                    value={newPassword}
-                  />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="confirm-password">Confirm new password</Label>
+        <Panel>
+          <SectionTitle icon={KeyRound} title="Change password" detail="Other sessions are revoked after update." />
+          <form className="space-y-4" onSubmit={handlePasswordSubmit}>
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field label="Current password" id="current-password">
                 <Input
-                  id="confirm-password"
+                  id="current-password"
+                  autoComplete="current-password"
+                  disabled={passwordSaving}
+                  onChange={(event) => setCurrentPassword(event.target.value)}
+                  type="password"
+                  value={currentPassword}
+                />
+              </Field>
+              <Field label="New password" id="new-password">
+                <Input
+                  id="new-password"
                   autoComplete="new-password"
                   disabled={passwordSaving}
-                  onChange={(event) => setConfirmPassword(event.target.value)}
+                  onChange={(event) => setNewPassword(event.target.value)}
                   type="password"
-                  value={confirmPassword}
+                  value={newPassword}
                 />
-              </div>
-              <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-                <span>Signed in as {runtimeStatus.currentUserEmail}</span>
-                <Button disabled={passwordSaving} type="submit" variant="default">
-                  <LockKeyhole className="h-4 w-4" />
-                  {passwordSaving ? "Updating..." : "Change Password"}
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
+              </Field>
+            </div>
+            <Field label="Confirm new password" id="confirm-password">
+              <Input
+                id="confirm-password"
+                autoComplete="new-password"
+                disabled={passwordSaving}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+                type="password"
+                value={confirmPassword}
+              />
+            </Field>
+            <div className="flex items-center justify-end">
+              <Button disabled={passwordSaving} type="submit" variant="default">
+                <LockKeyhole className="h-4 w-4" />
+                {passwordSaving ? "Updating..." : "Change password"}
+              </Button>
+            </div>
+          </form>
+        </Panel>
+      </section>
 
-        <Card
-          className="animate-slide-up rounded-2xl"
-          style={{ animationDelay: "320ms" }}
-        >
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg font-bold">
-              <Trash2 className="h-5 w-5 text-amber-400" />
-              Delete All Leads
-            </CardTitle>
-            <CardDescription className="text-xs">
-              Permanently remove every lead in the database. This does not touch auth, jobs, or audit history.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form className="space-y-4" onSubmit={handleDeleteAllLeads}>
-              <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-100/90">
-                <div className="flex items-center gap-2 font-semibold text-amber-300">
-                  <AlertTriangle className="h-4 w-4" />
-                  Danger zone
-                </div>
-                <div className="mt-1 text-muted-foreground">
-                  Current lead count: <span className="font-mono text-foreground">{runtimeStatus.leadCount}</span>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="delete-confirm">Type DELETE ALL LEADS to confirm</Label>
-                <Input
-                  id="delete-confirm"
-                  autoComplete="off"
-                  disabled={deletingLeads}
-                  onChange={(event) => setDeleteConfirm(event.target.value)}
-                  placeholder="DELETE ALL LEADS"
-                  value={deleteConfirm}
-                />
-              </div>
-              <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-                <span>Irreversible once submitted.</span>
-                <Button
-                  disabled={deletingLeads || runtimeStatus.leadCount === 0}
-                  type="submit"
-                  variant="destructive"
-                >
-                  <Trash2 className="h-4 w-4" />
-                  {deletingLeads ? "Deleting..." : "Delete All Leads"}
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
+      <section className="rounded-2xl border border-rose-500/25 bg-rose-500/[0.04] p-5 shadow-[0_22px_80px_rgba(0,0,0,0.18)]">
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_420px] lg:items-start">
+          <div>
+            <div className="flex items-center gap-2 text-sm font-semibold text-rose-200">
+              <AlertTriangle className="h-4 w-4" />
+              Danger zone
+            </div>
+            <h2 className="mt-2 text-xl font-semibold tracking-tight text-white">Delete all leads</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">
+              Permanently removes every lead in the database. Auth, jobs, and audit history are not touched.
+            </p>
+            <div className="mt-4 inline-flex rounded-lg border border-rose-400/20 bg-black/20 px-3 py-2 text-xs text-rose-100/90">
+              Current lead count: <span className="ml-1 font-mono text-white">{runtimeStatus.leadCount}</span>
+            </div>
+          </div>
+
+          <form className="space-y-4 rounded-xl border border-rose-400/20 bg-black/20 p-4" onSubmit={handleDeleteAllLeads}>
+            <Field label="Type DELETE ALL LEADS to confirm" id="delete-confirm">
+              <Input
+                id="delete-confirm"
+                autoComplete="off"
+                disabled={deletingLeads}
+                onChange={(event) => setDeleteConfirm(event.target.value)}
+                placeholder="DELETE ALL LEADS"
+                value={deleteConfirm}
+              />
+            </Field>
+            <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+              <span>Irreversible once submitted.</span>
+              <Button disabled={deletingLeads || runtimeStatus.leadCount === 0} type="submit" variant="destructive">
+                <Trash2 className="h-4 w-4" />
+                {deletingLeads ? "Deleting..." : "Delete all leads"}
+              </Button>
+            </div>
+          </form>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function OperatorLabel({ children }: { children: ReactNode }) {
+  return <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-300">{children}</p>;
+}
+
+function Panel({ children }: { children: ReactNode }) {
+  return <div className="rounded-2xl border border-white/10 bg-zinc-950/60 p-5 shadow-[0_18px_60px_rgba(0,0,0,0.16)]">{children}</div>;
+}
+
+function SectionTitle({
+  icon: Icon,
+  title,
+  detail,
+}: {
+  icon: ComponentType<{ className?: string }>;
+  title: string;
+  detail: string;
+}) {
+  return (
+    <div className="mb-4">
+      <div className="flex items-center gap-2 text-sm font-semibold text-zinc-100">
+        <Icon className="h-4 w-4 text-zinc-400" />
+        {title}
       </div>
+      <p className="mt-1 text-xs leading-5 text-zinc-500">{detail}</p>
+    </div>
+  );
+}
+
+function StatusRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-xl border border-white/10 bg-black/20 p-3">
+      <span className="text-zinc-300">{label}</span>
+      {children}
+    </div>
+  );
+}
+
+function Limit({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+      <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">{label}</div>
+      <div className="mt-1 font-mono text-sm text-zinc-200">{value}</div>
+    </div>
+  );
+}
+
+function Field({ label, id, children }: { label: string; id: string; children: ReactNode }) {
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={id}>{label}</Label>
+      {children}
     </div>
   );
 }

@@ -1,56 +1,33 @@
 "use client";
 
-import type { ComponentType } from "react";
+import { MessageSquareText, User } from "lucide-react";
 import { usePathname } from "next/navigation";
-import {
-  Bot,
-  Database,
-  LayoutDashboard,
-  MessageSquareText,
-  Settings,
-  Target,
-  User,
-} from "lucide-react";
 
-const staticRouteMap: Record<
-  string,
-  { label: string; icon: ComponentType<{ className?: string }> }
-> = {
-  "/dashboard": { label: "Dashboard", icon: LayoutDashboard },
-  "/hunt": { label: "Lead Generator", icon: Target },
-  "/vault": { label: "Vault", icon: Database },
-  "/automation": { label: "Automation", icon: Bot },
-  "/outreach": { label: "Outreach", icon: MessageSquareText },
-  "/settings": { label: "Settings", icon: Settings },
-  "/lead/latest": { label: "Latest Lead", icon: User },
-};
+import { getNavItemForPath } from "@/lib/navigation";
 
 export function LayoutBreadcrumb() {
   const pathname = usePathname();
+  const route = getNavItemForPath(pathname);
 
-  // Static routes hit the map directly.
-  const staticRoute = staticRouteMap[pathname];
-  if (staticRoute) {
-    const Icon = staticRoute.icon;
+  if (pathname?.match(/^\/lead\/\d+/)) {
     return (
-      <div className="flex items-center gap-2">
-        <Icon className="h-4 w-4 text-emerald-400/80" />
-        <span className="text-sm font-medium text-white">{staticRoute.label}</span>
+      <div className="flex items-center gap-2 text-sm">
+        <MessageSquareText className="size-4 text-emerald-300" />
+        <span className="font-medium text-white">Lead Dossier</span>
+        <span className="text-zinc-600">/</span>
+        <User className="size-4 text-zinc-500" />
+        <span className="font-medium text-zinc-300">Record</span>
       </div>
     );
   }
 
-  // Dynamic /lead/[id] — show "Outreach / Lead #123" so users always know the
-  // context they drilled in from.
-  const leadMatch = pathname?.match(/^\/lead\/(\d+)/);
-  if (leadMatch) {
+  if (route) {
+    const Icon = route.icon;
     return (
-      <div className="flex items-center gap-2">
-        <MessageSquareText className="h-4 w-4 text-emerald-400/80" />
-        <span className="text-sm font-medium text-white">Outreach</span>
-        <span className="text-zinc-600">/</span>
-        <User className="h-4 w-4 text-zinc-500" />
-        <span className="text-sm font-medium text-zinc-300">Lead #{leadMatch[1]}</span>
+      <div className="flex min-w-0 items-center gap-2 text-sm">
+        <Icon className="size-4 shrink-0 text-emerald-300" />
+        <span className="truncate font-medium text-white">{route.label}</span>
+        <span className="hidden truncate text-zinc-500 md:inline">{route.description}</span>
       </div>
     );
   }

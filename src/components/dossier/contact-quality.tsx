@@ -40,9 +40,9 @@ export function ContactQuality({ emailType, emailConfidence, phoneConfidence }: 
     const emailInfo = EMAIL_TYPE_LABELS[emailType || "unknown"] || EMAIL_TYPE_LABELS.unknown;
 
     return (
-        <div className="glass-ultra rounded-xl p-4 space-y-3">
+        <div className="space-y-3 rounded-lg border border-white/[0.06] bg-white/[0.02] p-4">
             <div className="text-[10px] uppercase tracking-widest text-muted-foreground/40 font-semibold flex items-center gap-1.5">
-                <Shield className="w-3 h-3" /> Contact Quality
+                <Shield className="w-3 h-3" /> Contact quality
             </div>
 
             {emailType && (

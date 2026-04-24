@@ -1,26 +1,31 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { cn } from "@/lib/utils";
+import { AlertTriangle, ArrowLeft, Clock, FileText } from "lucide-react";
+
 import { useToast } from "@/components/ui/toast-provider";
+import { cn } from "@/lib/utils";
 import {
-    getArchiveOverride, setArchiveOverride,
-    isInCallList, addToCallList, removeFromCallList,
-    getLeadDisposition, DISPOSITION_OPTIONS,
+    DISPOSITION_OPTIONS,
+    addToCallList,
+    getArchiveOverride,
+    getLeadDisposition,
+    isInCallList,
+    removeFromCallList,
+    setArchiveOverride,
 } from "@/lib/ui/storage";
 import { getTierConfig } from "@/lib/ui/tokens";
 
+import { CallSheet } from "./call-sheet";
+import { ContactQuality } from "./contact-quality";
+import { DisqualifiersPanel } from "./disqualifiers-panel";
 import { DossierSkeleton } from "./dossier-skeleton";
 import { IdentityCard } from "./identity-card";
-import { QuickActions } from "./quick-actions";
-import { ContactQuality } from "./contact-quality";
-import { PainSignalsPanel } from "./pain-signals-panel";
-import { WebsiteAssessmentPanel } from "./website-assessment-panel";
-import { DisqualifiersPanel } from "./disqualifiers-panel";
-import { CallSheet } from "./call-sheet";
 import { OperationalHistory } from "./operational-history";
-
-import { ArrowLeft, AlertTriangle, Clock, FileText } from "lucide-react";
+import { PainSignalsPanel } from "./pain-signals-panel";
+import { QuickActions } from "./quick-actions";
+import { WebsiteAssessmentPanel } from "./website-assessment-panel";
 
 interface LeadData {
     id: number;
@@ -53,7 +58,11 @@ interface LeadData {
 
 function parseJSON<T>(raw: string | null, fallback: T): T {
     if (!raw) return fallback;
-    try { return JSON.parse(raw); } catch { return fallback; }
+    try {
+        return JSON.parse(raw) as T;
+    } catch {
+        return fallback;
+    }
 }
 
 export function DossierClient({ leadId }: { leadId: number }) {
@@ -66,44 +75,39 @@ export function DossierClient({ leadId }: { leadId: number }) {
     const [archiveSyncPending, setArchiveSyncPending] = useState(false);
     const [inCallList, setInCallList] = useState(false);
 
-    // Fetch lead
     useEffect(() => {
-        setLoading(true);
-        setError(null);
         fetch(`/api/leads/${leadId}`)
-            .then(res => {
+            .then((res) => {
                 if (!res.ok) throw new Error(res.status === 404 ? "Lead not found" : "Failed to load");
                 return res.json();
             })
             .then((data: LeadData) => {
                 setLead(data);
-                // Check archive override
                 const override = getArchiveOverride(data.id);
                 setArchived(override !== null ? override : data.isArchived);
                 setArchiveSyncPending(override !== null && override !== data.isArchived);
                 setInCallList(isInCallList(data.id));
             })
-            .catch(e => setError(e.message))
+            .catch((fetchError: Error) => setError(fetchError.message))
             .finally(() => setLoading(false));
     }, [leadId]);
 
-    // Keyboard shortcuts
     useEffect(() => {
-        const handler = (e: KeyboardEvent) => {
-            const target = e.target as HTMLElement;
+        const handler = (event: KeyboardEvent) => {
+            const target = event.target as HTMLElement;
             const isInput = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable;
             if (isInput) return;
 
-            if (e.key === "n" || e.key === "N") {
-                e.preventDefault();
+            if (event.key === "n" || event.key === "N") {
+                event.preventDefault();
                 document.getElementById("dossier-note-input")?.focus();
             }
-            if (e.key === "c" && !e.metaKey && !e.ctrlKey) {
-                e.preventDefault();
+            if (event.key === "c" && !event.metaKey && !event.ctrlKey) {
+                event.preventDefault();
                 if (lead?.callOpener) {
                     navigator.clipboard.writeText(lead.callOpener)
                         .then(() => toast("Copied opener", { icon: "copy" }))
-                        .catch(() => { });
+                        .catch(() => {});
                 }
             }
         };
@@ -133,87 +137,95 @@ export function DossierClient({ leadId }: { leadId: number }) {
         }
     }, [lead, inCallList, toast]);
 
-    // Loading state
     if (loading) {
         return (
-            <div className="max-w-[1440px] mx-auto">
+            <div className="mx-auto max-w-[1500px]">
                 <div className="mb-6">
-                    <div className="h-8 w-48 bg-white/[0.04] rounded animate-pulse" />
+                    <div className="h-8 w-48 animate-pulse rounded bg-white/[0.04]" />
                 </div>
                 <DossierSkeleton />
             </div>
         );
     }
 
-    // Error state
     if (error || !lead) {
         return (
-            <div className="max-w-7xl mx-auto">
+            <div className="mx-auto max-w-7xl">
                 <button
                     onClick={() => router.push("/vault")}
-                    className="flex items-center gap-2 text-sm text-muted-foreground hover:text-white transition-colors mb-8"
+                    className="mb-8 flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-white"
                 >
-                    <ArrowLeft className="w-4 h-4" /> Back to Vault
+                    <ArrowLeft className="h-4 w-4" /> Back to Vault
                 </button>
                 <div className="flex flex-col items-center justify-center py-24 text-center">
-                    <div className="w-16 h-16 rounded-2xl glass-strong flex items-center justify-center mb-4">
-                        <AlertTriangle className="w-7 h-7 text-red-400/60" />
+                    <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-lg border border-red-500/10 bg-red-500/[0.04]">
+                        <AlertTriangle className="h-7 w-7 text-red-400/60" />
                     </div>
-                    <h2 className="text-lg font-bold text-white mb-1">Lead Not Found</h2>
+                    <h2 className="mb-1 text-lg font-bold text-white">Lead not found</h2>
                     <p className="text-sm text-muted-foreground">{error || "This lead does not exist or has been deleted."}</p>
                 </div>
             </div>
         );
     }
 
-    // Parse JSON fields
-    const painSignals = parseJSON<any[]>(lead.painSignals, []);
-    const assessment = parseJSON<any>(lead.axiomWebsiteAssessment, null);
-    const scoreBreakdown = parseJSON<any>(lead.scoreBreakdown, null);
+    const painSignals = parseJSON<Array<{ type: string; severity: number; evidence: string; source?: string }>>(lead.painSignals, []);
+    const assessment = parseJSON<{
+        speedRisk: number;
+        conversionRisk: number;
+        trustRisk: number;
+        seoRisk: number;
+        overallGrade: string;
+        topFixes: string[];
+    } | null>(lead.axiomWebsiteAssessment, null);
+    const scoreBreakdown = parseJSON<Record<string, string | number> | null>(lead.scoreBreakdown, null);
     const disqualifiers = parseJSON<string[]>(lead.disqualifiers, []);
     const disposition = getLeadDisposition(lead.id);
-    const dispOpt = disposition ? DISPOSITION_OPTIONS.find(o => o.value === disposition.type) : null;
+    const dispOpt = disposition ? DISPOSITION_OPTIONS.find((option) => option.value === disposition.type) : null;
     const tierConfig = getTierConfig(lead.axiomTier);
 
     return (
-        <div className="max-w-[1440px] mx-auto animate-slide-up">
-            {/* Header */}
-            <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-4">
+        <div className="mx-auto max-w-[1500px] animate-slide-up">
+            <div className="mb-5 border-b border-white/[0.06] pb-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
                     <button
                         onClick={() => router.push("/vault")}
-                        className="flex items-center gap-2 text-sm text-muted-foreground hover:text-white transition-colors"
+                        className="flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-white"
                     >
-                        <ArrowLeft className="w-4 h-4" /> Vault
+                        <ArrowLeft className="h-4 w-4" /> Vault
                     </button>
-                    <div className="h-4 w-px bg-white/[0.08]" />
-                    <h1 className="text-xl font-bold text-white flex items-center gap-3">
-                        <FileText className={cn("w-5 h-5", tierConfig.text)} />
-                        Lead Dossier
-                    </h1>
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                        {dispOpt ? (
+                            <span className="rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-[10px] font-mono text-zinc-300">
+                                {dispOpt.icon} {dispOpt.label}
+                            </span>
+                        ) : null}
+                        {lead.lastUpdated ? (
+                            <span className="flex items-center gap-1 text-[10px] font-mono text-muted-foreground/50">
+                                <Clock className="h-3 w-3" />
+                                {new Date(lead.lastUpdated).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                            </span>
+                        ) : null}
+                    </div>
                 </div>
-                <div className="flex items-center gap-3">
-                    {dispOpt && (
-                        <span className={cn(
-                            "text-[10px] font-mono px-2 py-0.5 rounded-md border",
-                            `bg-${dispOpt.color}-500/10 text-${dispOpt.color}-400 border-${dispOpt.color}-500/20`
-                        )}>
-                            {dispOpt.icon} {dispOpt.label}
-                        </span>
-                    )}
-                    {lead.lastUpdated && (
-                        <span className="text-[10px] font-mono text-muted-foreground/40 flex items-center gap-1">
-                            <Clock className="w-3 h-3" />
-                            {new Date(lead.lastUpdated).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                        </span>
-                    )}
+
+                <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+                    <div className="min-w-0">
+                        <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.22em] text-zinc-500">
+                            <FileText className={cn("h-3.5 w-3.5", tierConfig.text)} />
+                            Lead dossier
+                        </div>
+                        <h1 className="mt-2 truncate text-2xl font-semibold tracking-tight text-white md:text-3xl">
+                            {lead.businessName}
+                        </h1>
+                        <p className="mt-1 text-sm text-zinc-500">
+                            {lead.niche} in {lead.city} - verification, call prep, disposition, and local notes.
+                        </p>
+                    </div>
                 </div>
             </div>
 
-            {/* 3-Column Layout */}
-            <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr_300px] gap-5">
-                {/* ═══ LEFT SIDEBAR ═══ */}
-                <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-5 xl:grid-cols-[320px_minmax(0,1fr)]">
+                <aside className="space-y-4 xl:sticky xl:top-4 xl:self-start">
                     <IdentityCard
                         businessName={lead.businessName}
                         niche={lead.niche}
@@ -242,45 +254,41 @@ export function DossierClient({ leadId }: { leadId: number }) {
                         phoneConfidence={lead.phoneConfidence}
                     />
 
-                    {/* Score Breakdown */}
-                    {scoreBreakdown && (
-                        <div className="glass-ultra rounded-xl p-4">
-                            <div className="text-[10px] uppercase tracking-widest text-muted-foreground/40 font-semibold mb-3">
-                                Score Breakdown
+                    {scoreBreakdown ? (
+                        <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-4">
+                            <div className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/40">
+                                Score breakdown
                             </div>
                             <div className="space-y-2">
                                 {Object.entries(scoreBreakdown).map(([key, val]) => (
-                                    <div key={key} className="flex items-center justify-between text-xs">
-                                        <span className="text-zinc-400 capitalize">{key.replace(/([A-Z])/g, " $1").trim()}</span>
+                                    <div key={key} className="flex items-center justify-between gap-3 text-xs">
+                                        <span className="truncate text-zinc-400 capitalize">{key.replace(/([A-Z])/g, " $1").trim()}</span>
                                         <span className="font-mono font-bold text-white">{String(val)}</span>
                                     </div>
                                 ))}
                             </div>
                         </div>
-                    )}
-                </div>
+                    ) : null}
+                </aside>
 
-                {/* ═══ CENTER (Evidence) ═══ */}
-                <div className="space-y-5">
-                    <PainSignalsPanel painSignals={painSignals} />
-                    <WebsiteAssessmentPanel assessment={assessment} />
-                    <DisqualifiersPanel
-                        disqualifiers={disqualifiers}
-                        disqualifyReason={lead.disqualifyReason}
-                    />
-
-                    {/* Bottom: Operational History */}
-                    <OperationalHistory leadId={lead.id} />
-                </div>
-
-                {/* ═══ RIGHT SIDEBAR (Call Sheet) ═══ */}
-                <div>
-                    <CallSheet
-                        callOpener={lead.callOpener}
-                        followUpQuestion={lead.followUpQuestion}
-                        painSignals={painSignals}
-                    />
-                </div>
+                <main className="grid min-w-0 grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
+                    <section className="min-w-0 space-y-5">
+                        <PainSignalsPanel painSignals={painSignals} />
+                        <WebsiteAssessmentPanel assessment={assessment} />
+                        <DisqualifiersPanel
+                            disqualifiers={disqualifiers}
+                            disqualifyReason={lead.disqualifyReason}
+                        />
+                        <OperationalHistory leadId={lead.id} />
+                    </section>
+                    <aside className="min-w-0 lg:sticky lg:top-4 lg:self-start">
+                        <CallSheet
+                            callOpener={lead.callOpener}
+                            followUpQuestion={lead.followUpQuestion}
+                            painSignals={painSignals}
+                        />
+                    </aside>
+                </main>
             </div>
         </div>
     );

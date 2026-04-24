@@ -10,20 +10,25 @@ interface BrandMarkProps {
   className?: string;
   href?: Route;
   imageClassName?: string;
+  priority?: boolean;
   showBorder?: boolean;
+  variant?: "full" | "compact";
 }
 
 export function BrandMark({
   className,
   href,
   imageClassName,
+  priority = false,
   showBorder = true,
+  variant = "full",
 }: BrandMarkProps) {
   const content = (
     <div
       className={cn(
-        "inline-flex items-center justify-center rounded-xl bg-white/5 px-3 py-2 shadow-lg shadow-black/20 backdrop-blur",
-        showBorder && "border border-white/10",
+        "inline-flex items-center justify-center bg-transparent",
+        variant === "full" ? "px-0 py-0" : "size-10 overflow-hidden rounded-lg",
+        showBorder && "border border-white/10 bg-white/[0.03]",
         className,
       )}
     >
@@ -32,9 +37,11 @@ export function BrandMark({
         alt="Axiom"
         width={1260}
         height={340}
-        priority
+        priority={priority}
         className={cn(
-          "h-10 w-auto object-contain select-none drop-shadow-[0_0_12px_rgba(255,255,255,0.08)]",
+          variant === "full"
+            ? "h-10 w-auto select-none object-contain"
+            : "h-7 w-[5.8rem] max-w-none -translate-x-1 object-contain select-none",
           imageClassName,
         )}
       />

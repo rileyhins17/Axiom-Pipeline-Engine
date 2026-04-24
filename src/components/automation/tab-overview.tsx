@@ -1,36 +1,17 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 import Link from "next/link";
-import {
-  AlertTriangle,
-  Clock,
-  Gauge,
-  Mail,
-  TrendingUp,
-  Zap,
-  Play,
-  Pause,
-  Loader2,
-  Power,
-} from "lucide-react";
+import { AlertTriangle, Clock, Gauge, Loader2, Mail, Pause, Play, Power, TrendingUp, Zap } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
+import { fmtCountdown, fmtDt, fmtWindow, stageLabel, stateColor, stateLabel } from "./helpers";
+import { Chip, Divider, EmptyState, Panel, SectionHeader, StatCell, StatStrip, StatusDot } from "./shared";
 import type { AutomationOverview, AutomationSequence } from "./types";
 import { DAILY_TARGET } from "./types";
-import {
-  fmtCountdown,
-  fmtDt,
-  fmtWindow,
-  stageLabel,
-  stateColor,
-  stateLabel,
-} from "./helpers";
-import { Panel, SectionHeader, StatCell, Chip, Divider } from "./shared";
 
-/* Transient blockers that don't need human attention */
 const TRANSIENT_BLOCKERS = new Set([
   "outside_send_window",
   "awaiting_follow_up_window",
@@ -57,10 +38,7 @@ export function OverviewTab({
   const allSeqs = overview.sequences;
   const queued = useMemo(() => allSeqs.filter((s) => s.state === "QUEUED"), [allSeqs]);
   const sending = useMemo(() => allSeqs.filter((s) => s.state === "SENDING"), [allSeqs]);
-  const waiting = useMemo(
-    () => allSeqs.filter((s) => s.state === "WAITING" && s.hasSentAnyStep),
-    [allSeqs],
-  );
+  const waiting = useMemo(() => allSeqs.filter((s) => s.state === "WAITING" && s.hasSentAnyStep), [allSeqs]);
   const blocked = useMemo(() => allSeqs.filter((s) => s.state === "BLOCKED"), [allSeqs]);
   const issues = useMemo(() => allSeqs.filter(isRealIssue), [allSeqs]);
   const waitingForWindow = useMemo(
@@ -78,23 +56,13 @@ export function OverviewTab({
   const atCapMailboxes = overview.mailboxes.filter((m) => m.sentToday >= m.dailyLimit);
   const pausedMailboxes = overview.mailboxes.filter((m) => m.status === "PAUSED");
   const hasAttention =
-    issues.length > 0 ||
-    atCapMailboxes.length > 0 ||
-    pausedMailboxes.length > 0 ||
-    overview.settings.globalPaused;
+    issues.length > 0 || atCapMailboxes.length > 0 || pausedMailboxes.length > 0 || overview.settings.globalPaused;
 
-  // Throughput calculations
   const sentToday = overview.stats.scheduledToday;
-  const activeMbs = overview.mailboxes.filter(
-    (m) => m.status === "ACTIVE" || m.status === "WARMING",
-  );
+  const activeMbs = overview.mailboxes.filter((m) => m.status === "ACTIVE" || m.status === "WARMUP");
   const totalMailboxCapacity = activeMbs.reduce((s, m) => s + m.dailyLimit, 0);
-  const remainingCapacity = activeMbs.reduce(
-    (s, m) => s + Math.max(0, m.dailyLimit - m.sentToday),
-    0,
-  );
+  const remainingCapacity = activeMbs.reduce((s, m) => s + Math.max(0, m.dailyLimit - m.sentToday), 0);
 
-  // Pacing
   const now = new Date();
   const h = now.getHours() + now.getMinutes() / 60;
   const ws = overview.settings.sendWindowStartHour + overview.settings.sendWindowStartMinute / 60;
@@ -103,8 +71,7 @@ export function OverviewTab({
   const elapsed = Math.max(0, Math.min(h - ws, windowHrs));
   const hoursRemaining = Math.max(0, we - h);
   const emailsPerHour = elapsed > 0 ? (sentToday / elapsed).toFixed(1) : "0";
-  const neededPerHour =
-    hoursRemaining > 0 ? ((DAILY_TARGET - sentToday) / hoursRemaining).toFixed(1) : "—";
+  const neededPerHour = hoursRemaining > 0 ? ((DAILY_TARGET - sentToday) / hoursRemaining).toFixed(1) : "-";
   const expectedByNow = windowHrs > 0 ? Math.round((elapsed / windowHrs) * DAILY_TARGET) : 0;
 
   const stats: {
@@ -125,121 +92,87 @@ export function OverviewTab({
       emphasis: true,
     },
     { label: "Emails/hour", value: emailsPerHour },
+    { label: "Needed/hour", value: neededPerHour, tone: Number(neededPerHour) > 8 ? "warn" : "default" },
     {
-      label: "Needed/hour",
-      value: neededPerHour,
-      tone: Number(neededPerHour) > 8 ? "warn" : "default",
-    },
-    {
-      label: "Queue depth",
+      label: "Queue",
       value: `${queued.length + sending.length}`,
-      tone:
-        queued.length + sending.length === 0 && sentToday < DAILY_TARGET ? "warn" : "default",
+      tone: queued.length + sending.length === 0 && sentToday < DAILY_TARGET ? "warn" : "default",
     },
     {
       label: "Capacity left",
       value: `${remainingCapacity}`,
       tone: remainingCapacity < DAILY_TARGET - sentToday ? "warn" : "default",
     },
-    {
-      label: "Issues",
-      value: String(issues.length),
-      tone: issues.length > 0 ? "warn" : "default",
-    },
+    { label: "Issues", value: String(issues.length), tone: issues.length > 0 ? "warn" : "default" },
   ];
 
   return (
-    <div className="space-y-6">
-      {/* KPI strip */}
-      <div className="grid grid-cols-2 overflow-hidden rounded-xl border border-white/10 bg-white/[0.02] sm:grid-cols-3 lg:grid-cols-7">
+    <div className="space-y-5">
+      <StatStrip className="grid-cols-2 sm:grid-cols-3 lg:grid-cols-7">
         {stats.map((s) => (
-          <StatCell
-            key={s.label}
-            label={s.label}
-            value={s.value}
-            tone={s.tone}
-            emphasis={s.emphasis}
-          />
+          <StatCell key={s.label} label={s.label} value={s.value} tone={s.tone} emphasis={s.emphasis} />
         ))}
-      </div>
+      </StatStrip>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
-        {/* Left column */}
-        <div className="space-y-6">
-          {/* Scheduler controls */}
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="space-y-5">
           <Panel tone="accent" className="relative overflow-hidden">
-            {/* subtle inner glow, static — no layout shifts */}
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,rgba(52,211,153,0.08),transparent_60%)]"
+            <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-px bg-emerald-300/40" />
+            <SectionHeader
+              icon={Power}
+              title="Run control"
+              tone="accent"
+              hint={
+                overview.settings.globalPaused
+                  ? "Paused. Queue state is preserved; no sends fire."
+                  : "Scheduler runs every minute. Use manual run for an immediate pass."
+              }
             />
-            <div className="relative">
-              <SectionHeader
-                icon={Power}
-                title="Scheduler controls"
-                tone="accent"
-                hint={
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Button
+                onClick={onRun}
+                disabled={busyKey === "run" || overview.settings.globalPaused}
+                className={cn(
+                  "h-11 cursor-pointer justify-center gap-2 rounded-lg text-sm font-semibold",
+                  "bg-emerald-500 text-emerald-950 hover:bg-emerald-400",
+                  "disabled:cursor-not-allowed disabled:bg-emerald-500/30 disabled:text-emerald-200/60",
+                )}
+                aria-label="Process queue now"
+              >
+                {busyKey === "run" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+                Process queue
+              </Button>
+
+              <Button
+                onClick={onPause}
+                disabled={busyKey === "pause"}
+                variant="outline"
+                className={cn(
+                  "h-11 cursor-pointer justify-center gap-2 rounded-lg text-sm font-semibold",
                   overview.settings.globalPaused
-                    ? "Engine is paused. No outreach will send until you resume."
-                    : "The scheduler auto-runs every minute. Hit the button to process the queue now without waiting."
-                }
-              />
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Button
-                  onClick={onRun}
-                  disabled={busyKey === "run" || overview.settings.globalPaused}
-                  className={cn(
-                    "h-11 cursor-pointer justify-center gap-2 rounded-lg text-sm font-semibold",
-                    "bg-emerald-500 text-emerald-950 hover:bg-emerald-400",
-                    "disabled:cursor-not-allowed disabled:bg-emerald-500/30 disabled:text-emerald-200/60",
-                    "transition-colors duration-200",
-                  )}
-                  aria-label="Process queue now"
-                >
-                  {busyKey === "run" ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Zap className="h-4 w-4" />
-                  )}
-                  Process queue now
-                </Button>
-
-                <Button
-                  onClick={onPause}
-                  disabled={busyKey === "pause"}
-                  variant="outline"
-                  className={cn(
-                    "h-11 cursor-pointer justify-center gap-2 rounded-lg text-sm font-semibold transition-colors duration-200",
-                    overview.settings.globalPaused
-                      ? "border-cyan-400/30 bg-cyan-500/10 text-cyan-200 hover:bg-cyan-500/20"
-                      : "border-rose-400/30 bg-rose-500/[0.08] text-rose-200 hover:bg-rose-500/15",
-                  )}
-                  aria-label={overview.settings.globalPaused ? "Resume engine" : "Pause engine"}
-                >
-                  {busyKey === "pause" ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : overview.settings.globalPaused ? (
-                    <Play className="h-4 w-4" />
-                  ) : (
-                    <Pause className="h-4 w-4" />
-                  )}
-                  {overview.settings.globalPaused ? "Resume engine" : "Pause engine"}
-                </Button>
-              </div>
+                    ? "border-cyan-400/30 bg-cyan-500/10 text-cyan-200 hover:bg-cyan-500/20"
+                    : "border-rose-400/30 bg-rose-500/[0.08] text-rose-200 hover:bg-rose-500/15",
+                )}
+                aria-label={overview.settings.globalPaused ? "Resume engine" : "Pause engine"}
+              >
+                {busyKey === "pause" ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : overview.settings.globalPaused ? (
+                  <Play className="h-4 w-4" />
+                ) : (
+                  <Pause className="h-4 w-4" />
+                )}
+                {overview.settings.globalPaused ? "Resume" : "Pause"}
+              </Button>
             </div>
           </Panel>
 
-          {/* Daily progress */}
           <Panel>
             <SectionHeader
               icon={TrendingUp}
-              title="Daily progress"
-              action={
-                <span className="text-xs tabular-nums text-zinc-400">
-                  {Math.round((sentToday / DAILY_TARGET) * 100)}%
-                </span>
-              }
+              title="Daily send line"
+              action={<span className="text-xs tabular-nums text-zinc-400">{Math.round((sentToday / DAILY_TARGET) * 100)}%</span>}
             />
             <div className="h-2.5 overflow-hidden rounded-full bg-white/[0.06]">
               <div
@@ -270,13 +203,12 @@ export function OverviewTab({
             </div>
           </Panel>
 
-          {/* Sending next */}
-          <Panel className="p-0 overflow-hidden">
+          <Panel className="overflow-hidden p-0">
             <div className="p-5 pb-0">
               <SectionHeader
                 icon={Clock}
                 title="Sending next"
-                hint={nextUp.length > 0 ? `Showing the ${nextUp.length} closest sends.` : undefined}
+                hint={nextUp.length > 0 ? `Next ${nextUp.length} scheduled touches.` : undefined}
               />
             </div>
 
@@ -293,104 +225,65 @@ export function OverviewTab({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/[0.05]">
-                    {nextUp.map((s) => (
-                      <SeqRow key={s.id} seq={s} />
-                    ))}
+                    {nextUp.map((s) => <SeqRow key={s.id} seq={s} />)}
                   </tbody>
                 </table>
               </div>
             ) : waitingForWindow.length > 0 ? (
-              <div className="border-t border-white/[0.06] bg-white/[0.01] px-5 py-5 text-sm text-zinc-400">
-                <span className="text-zinc-100">
-                  {waitingForWindow.length} sequence
-                  {waitingForWindow.length !== 1 && "s"}
-                </span>{" "}
-                waiting for the next send window.
-                {overview.engine.nextSendAt && (
-                  <>
-                    {" "}
-                    Reopens in{" "}
-                    <span className="text-zinc-200">
-                      {fmtCountdown(overview.engine.nextSendAt)}
-                    </span>
-                    .
-                  </>
-                )}
+              <div className="border-t border-white/[0.06] px-5 py-5 text-sm text-zinc-400">
+                <span className="text-zinc-100">{waitingForWindow.length} sequence{waitingForWindow.length !== 1 && "s"}</span>{" "}
+                waiting for window or cooldown.
+                {overview.engine.nextSendAt ? (
+                  <span> Next slot in <span className="text-zinc-200">{fmtCountdown(overview.engine.nextSendAt)}</span>.</span>
+                ) : null}
               </div>
             ) : (
-              <div className="flex items-start gap-3 border-t border-amber-400/15 bg-amber-500/[0.03] px-5 py-5 text-sm text-amber-200">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
-                <div className="leading-5">
-                  No outreach is queued. Queue more leads to hit the {DAILY_TARGET}/day target.{" "}
-                  <Link
-                    href="/outreach"
-                    className="cursor-pointer font-medium text-amber-200 underline underline-offset-2 transition-colors hover:text-amber-100"
-                  >
-                    Open outreach →
+              <EmptyState
+                title="No outreach queued."
+                detail={`Queue more qualified leads to reach the ${DAILY_TARGET}/day target.`}
+                action={
+                  <Link className="text-sm font-medium text-emerald-300 underline underline-offset-4 hover:text-emerald-200" href="/outreach">
+                    Open outreach
                   </Link>
-                </div>
-              </div>
+                }
+              />
             )}
           </Panel>
 
-          {/* Recent sends */}
-          {overview.recentSent.length > 0 && (
+          {overview.recentSent.length > 0 ? (
             <Panel>
               <SectionHeader icon={Zap} title="Recent sends" />
               <ul className="-mx-1 divide-y divide-white/[0.05]">
                 {overview.recentSent.slice(0, 8).map((e) => (
-                  <li
-                    key={e.id}
-                    className="flex items-center justify-between gap-3 rounded-md px-2 py-2 text-sm transition-colors hover:bg-white/[0.02]"
-                  >
+                  <li key={e.id} className="flex items-center justify-between gap-3 rounded-md px-2 py-2 text-sm hover:bg-white/[0.02]">
                     <div className="min-w-0 flex-1">
-                      <span className="text-zinc-100">
-                        {e.lead?.businessName || e.recipientEmail}
-                      </span>
+                      <span className="text-zinc-100">{e.lead?.businessName || e.recipientEmail}</span>
                       <span className="ml-2 truncate text-xs text-zinc-500">{e.subject}</span>
                     </div>
-                    <span className="shrink-0 text-xs tabular-nums text-zinc-500">
-                      {fmtDt(e.sentAt)}
-                    </span>
+                    <span className="shrink-0 text-xs tabular-nums text-zinc-500">{fmtDt(e.sentAt)}</span>
                   </li>
                 ))}
               </ul>
             </Panel>
-          )}
+          ) : null}
         </div>
 
-        {/* Right column */}
-        <div className="space-y-6">
-          {/* Mailbox health */}
+        <div className="space-y-5">
           <Panel>
             <SectionHeader icon={Mail} title="Mailbox health" />
             {overview.mailboxes.length > 0 ? (
               <>
                 <ul className="space-y-3">
                   {overview.mailboxes.map((mb) => {
-                    const pct =
-                      mb.dailyLimit > 0 ? Math.round((mb.sentToday / mb.dailyLimit) * 100) : 0;
+                    const pct = mb.dailyLimit > 0 ? Math.round((mb.sentToday / mb.dailyLimit) * 100) : 0;
                     return (
                       <li key={mb.id}>
-                        <div className="flex items-center justify-between text-sm">
-                          <div className="min-w-0 truncate">
-                            <span className="text-zinc-100">
-                              {mb.label || mb.gmailAddress.split("@")[0]}
-                            </span>
-                          </div>
+                        <div className="flex items-center justify-between gap-3 text-sm">
+                          <span className="min-w-0 truncate text-zinc-100">{mb.label || mb.gmailAddress.split("@")[0]}</span>
                           <div className="flex shrink-0 items-center gap-2 text-xs">
-                            <span className="tabular-nums text-zinc-400">
-                              {mb.sentToday}/{mb.dailyLimit}
-                            </span>
-                            <Chip
-                              tone={
-                                mb.status === "ACTIVE"
-                                  ? "emerald"
-                                  : mb.status === "PAUSED"
-                                  ? "amber"
-                                  : "zinc"
-                              }
-                            >
+                            <span className="tabular-nums text-zinc-400">{mb.sentToday}/{mb.dailyLimit}</span>
+                            <Chip tone={mb.status === "ACTIVE" ? "emerald" : mb.status === "PAUSED" ? "amber" : "zinc"}>
+                              <StatusDot tone={mb.status === "ACTIVE" ? "emerald" : mb.status === "PAUSED" ? "amber" : "zinc"} />
                               {mb.status}
                             </Chip>
                           </div>
@@ -404,10 +297,7 @@ export function OverviewTab({
                           aria-label={`${mb.label || mb.gmailAddress} daily usage`}
                         >
                           <div
-                            className={cn(
-                              "h-full rounded-full transition-[width] duration-500",
-                              pct >= 90 ? "bg-amber-500" : "bg-emerald-500/70",
-                            )}
+                            className={cn("h-full rounded-full transition-[width] duration-500", pct >= 90 ? "bg-amber-500" : "bg-emerald-500/70")}
                             style={{ width: `${Math.min(100, pct)}%` }}
                           />
                         </div>
@@ -417,8 +307,7 @@ export function OverviewTab({
                 </ul>
                 <Divider className="my-4" />
                 <p className="text-[11px] text-zinc-500">
-                  Combined capacity: {totalMailboxCapacity}/day ·{" "}
-                  <span className="text-zinc-300">{remainingCapacity}</span> remaining
+                  Capacity {totalMailboxCapacity}/day. <span className="text-zinc-300">{remainingCapacity}</span> remaining.
                 </p>
               </>
             ) : (
@@ -426,7 +315,6 @@ export function OverviewTab({
             )}
           </Panel>
 
-          {/* Pipeline */}
           <Panel>
             <SectionHeader icon={Gauge} title="Pipeline" />
             <div className="space-y-1.5">
@@ -435,81 +323,38 @@ export function OverviewTab({
               <PipelineRow label="Qualified" value={overview.pipeline?.enriched ?? 0} />
               <PipelineRow label="Ready to send" value={overview.pipeline?.readyForTouch ?? 0} />
               <Divider className="my-2" />
-              <PipelineRow label="Queued (initial)" value={overview.stats.queued} />
-              <PipelineRow
-                label="Active sequences"
-                value={overview.stats.waiting + overview.stats.sending}
-              />
+              <PipelineRow label="Queued initial" value={overview.stats.queued} />
+              <PipelineRow label="Active sequences" value={overview.stats.waiting + overview.stats.sending} />
               <PipelineRow label="Waiting for window" value={waitingForWindow.length} />
               <PipelineRow label="Issues" value={issues.length} warn={issues.length > 0} />
               <Divider className="my-2" />
               <PipelineRow label="Completed" value={overview.stats.completed} />
               <PipelineRow label="Replied" value={overview.stats.replied} />
             </div>
-            <p className="mt-4 text-[11px] text-zinc-500">
-              Send window: {fmtWindow(overview.settings)}
-            </p>
+            <p className="mt-4 text-[11px] text-zinc-500">Send window: {fmtWindow(overview.settings)}</p>
           </Panel>
 
-          {/* Needs attention */}
-          {hasAttention && (
+          {hasAttention ? (
             <Panel tone="warn">
-              <SectionHeader icon={AlertTriangle} title="Needs attention" tone="warn" />
-              <ul className="space-y-1.5 text-sm text-zinc-200">
-                {overview.settings.globalPaused && (
-                  <li className="flex gap-2">
-                    <span className="text-amber-400">·</span>
-                    <span>Engine is globally paused.</span>
-                  </li>
-                )}
-                {issues.length > 0 && (
-                  <li className="flex gap-2">
-                    <span className="text-amber-400">·</span>
-                    <span>
-                      {issues.length} sequence{issues.length !== 1 && "s"} need review.
-                    </span>
-                  </li>
-                )}
-                {atCapMailboxes.length > 0 && (
-                  <li className="flex gap-2">
-                    <span className="text-amber-400">·</span>
-                    <span>
-                      {atCapMailboxes.length} mailbox{atCapMailboxes.length !== 1 && "es"} at daily
-                      cap.
-                    </span>
-                  </li>
-                )}
-                {pausedMailboxes.length > 0 && (
-                  <li className="flex gap-2">
-                    <span className="text-amber-400">·</span>
-                    <span>
-                      {pausedMailboxes.length} mailbox{pausedMailboxes.length !== 1 && "es"} paused.
-                    </span>
-                  </li>
-                )}
-                {sentToday < expectedByNow && sentToday < DAILY_TARGET && (
-                  <li className="flex gap-2 text-amber-300">
-                    <span>·</span>
-                    <span>
-                      Behind pace by {expectedByNow - sentToday} emails — need {neededPerHour}/hr to
-                      catch up.
-                    </span>
-                  </li>
-                )}
+              <SectionHeader icon={AlertTriangle} title="Attention queue" tone="warn" />
+              <ul className="space-y-2 text-sm text-zinc-200">
+                {overview.settings.globalPaused ? <AttentionItem>Engine is globally paused.</AttentionItem> : null}
+                {issues.length > 0 ? <AttentionItem>{issues.length} sequence{issues.length !== 1 && "s"} need review.</AttentionItem> : null}
+                {atCapMailboxes.length > 0 ? <AttentionItem>{atCapMailboxes.length} mailbox{atCapMailboxes.length !== 1 && "es"} at daily cap.</AttentionItem> : null}
+                {pausedMailboxes.length > 0 ? <AttentionItem>{pausedMailboxes.length} mailbox{pausedMailboxes.length !== 1 && "es"} paused.</AttentionItem> : null}
+                {sentToday < expectedByNow && sentToday < DAILY_TARGET ? (
+                  <AttentionItem>Behind pace by {expectedByNow - sentToday}. Need {neededPerHour}/hr.</AttentionItem>
+                ) : null}
               </ul>
             </Panel>
-          )}
+          ) : null}
 
-          {/* Recent runs */}
-          {overview.recentRuns.length > 0 && (
+          {overview.recentRuns.length > 0 ? (
             <Panel>
-              <SectionHeader title="Recent runs" />
+              <SectionHeader title="Run log" />
               <ul className="space-y-1.5">
                 {overview.recentRuns.slice(0, 6).map((r) => (
-                  <li
-                    key={r.id}
-                    className="flex items-baseline justify-between text-xs tabular-nums"
-                  >
+                  <li key={r.id} className="flex items-baseline justify-between text-xs tabular-nums">
                     <span className="text-zinc-400">{fmtDt(r.startedAt)}</span>
                     <span className="text-zinc-500">
                       <span className="text-emerald-300">{r.sentCount}s</span>{" "}
@@ -520,10 +365,19 @@ export function OverviewTab({
                 ))}
               </ul>
             </Panel>
-          )}
+          ) : null}
         </div>
       </div>
     </div>
+  );
+}
+
+function AttentionItem({ children }: { children: ReactNode }) {
+  return (
+    <li className="flex gap-2">
+      <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-amber-400" />
+      <span>{children}</span>
+    </li>
   );
 }
 
@@ -531,25 +385,14 @@ function SeqRow({ seq }: { seq: AutomationSequence }) {
   return (
     <tr className="transition-colors hover:bg-white/[0.02]">
       <td className="px-4 py-2.5">
-        <div className="text-sm font-medium text-zinc-100">
-          {seq.lead?.businessName || `#${seq.id.slice(0, 6)}`}
-        </div>
-        {seq.lead?.email && <div className="text-xs text-zinc-500">{seq.lead.email}</div>}
+        <div className="text-sm font-medium text-zinc-100">{seq.lead?.businessName || `#${seq.id.slice(0, 6)}`}</div>
+        {seq.lead?.email ? <div className="text-xs text-zinc-500">{seq.lead.email}</div> : null}
       </td>
       <td className="px-3 py-2.5 text-xs text-zinc-400">{stageLabel(seq)}</td>
-      <td className="px-3 py-2.5 text-xs tabular-nums text-zinc-200">
-        {fmtCountdown(seq.nextSendAt)}
-      </td>
-      <td className="px-3 py-2.5 text-xs font-mono text-zinc-500">
-        {seq.mailbox?.gmailAddress?.split("@")[0] || "—"}
-      </td>
+      <td className="px-3 py-2.5 text-xs tabular-nums text-zinc-200">{fmtCountdown(seq.nextSendAt)}</td>
+      <td className="px-3 py-2.5 text-xs font-mono text-zinc-500">{seq.mailbox?.gmailAddress?.split("@")[0] || "-"}</td>
       <td className="px-3 py-2.5">
-        <span
-          className={cn(
-            "inline-flex rounded-md border px-1.5 py-0.5 text-[10px] font-medium",
-            stateColor(seq.state),
-          )}
-        >
+        <span className={cn("inline-flex rounded-md border px-1.5 py-0.5 text-[10px] font-medium", stateColor(seq.state))}>
           {stateLabel(seq.state)}
         </span>
       </td>
@@ -574,13 +417,7 @@ function PipelineRow({
       <span
         className={cn(
           "tabular-nums font-medium",
-          warn
-            ? "text-amber-300"
-            : active && value > 0
-            ? "text-cyan-300"
-            : value > 0
-            ? "text-zinc-100"
-            : "text-zinc-600",
+          warn ? "text-amber-300" : active && value > 0 ? "text-cyan-300" : value > 0 ? "text-zinc-100" : "text-zinc-600",
         )}
       >
         {value}

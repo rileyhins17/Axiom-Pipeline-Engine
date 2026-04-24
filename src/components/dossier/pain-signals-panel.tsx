@@ -1,7 +1,5 @@
 "use client";
-import { cn } from "@/lib/utils";
 import { SignalChip } from "@/components/ui/signal-chip";
-import { getSignalConfig } from "@/lib/ui/tokens";
 import { AlertTriangle, Zap } from "lucide-react";
 
 interface PainSignal {
@@ -18,10 +16,10 @@ interface PainSignalsPanelProps {
 export function PainSignalsPanel({ painSignals }: PainSignalsPanelProps) {
     if (!painSignals || painSignals.length === 0) {
         return (
-            <div className="glass-ultra rounded-xl p-6">
+            <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
                 <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-4">
                     <Zap className="w-4 h-4 text-amber-400" />
-                    Pain Signals
+                    Pain signals
                 </h3>
                 <div className="flex flex-col items-center py-8 text-center">
                     <div className="w-12 h-12 rounded-xl glass-strong flex items-center justify-center mb-3">
@@ -43,11 +41,11 @@ export function PainSignalsPanel({ painSignals }: PainSignalsPanelProps) {
     }, {});
 
     return (
-        <div className="glass-ultra rounded-xl p-6">
+        <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
             <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
                     <Zap className="w-4 h-4 text-amber-400" />
-                    Pain Signals
+                    Pain signals
                 </h3>
                 <span className="text-[10px] font-mono text-muted-foreground/40">
                     {painSignals.length} signal{painSignals.length !== 1 ? "s" : ""}
