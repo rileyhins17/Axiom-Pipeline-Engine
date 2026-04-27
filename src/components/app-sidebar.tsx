@@ -48,7 +48,7 @@ export function AppSidebar() {
   }, [pathname]);
 
   return (
-    <Sidebar className="border-r border-white/[0.08] bg-[#071017]">
+    <Sidebar className="v2-sidebar">
       <SidebarHeader className="border-b border-white/[0.08] px-4 py-4">
         <Link href="/dashboard" className="flex items-center gap-3">
           <BrandMark
@@ -62,8 +62,11 @@ export function AppSidebar() {
 
       <SidebarContent className="px-3 py-4">
         <SidebarGroup>
-          <div className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-zinc-500">
-            Workspace
+          <div className="mb-2.5 flex items-center justify-between px-3">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-zinc-500">
+              Workspace
+            </span>
+            <span className="text-[10px] font-mono text-zinc-600">⌘K</span>
           </div>
           <SidebarGroupContent>
             <SidebarMenu className="gap-1">
@@ -77,26 +80,34 @@ export function AppSidebar() {
                     <SidebarMenuButton asChild isActive={isActive}>
                       <Link
                         href={item.url}
+                        data-active={isActive ? "true" : "false"}
                         className={cn(
-                          "group relative flex items-center gap-3 rounded-md border px-3 py-2.5 text-sm transition-colors",
-                          isActive
-                            ? "border-emerald-400/20 bg-emerald-400/[0.09] text-emerald-100"
-                            : "border-transparent text-zinc-400 hover:border-white/[0.08] hover:bg-white/[0.035] hover:text-white",
+                          "v2-nav-item group flex items-center gap-3 px-3 py-2.5 text-sm",
+                          isActive ? "text-emerald-100" : "text-zinc-400 hover:text-white",
                         )}
                       >
                         <Icon
                           className={cn(
-                            "size-4 shrink-0",
-                            isActive ? "text-emerald-300" : "text-zinc-500 group-hover:text-zinc-300",
+                            "size-4 shrink-0 transition-colors",
+                            isActive ? "text-emerald-300" : "text-zinc-500 group-hover:text-zinc-200",
                           )}
                         />
                         <span className="min-w-0 flex-1 truncate font-medium">{item.title}</span>
                         {badgeValue > 0 ? (
-                          <span className="rounded border border-white/[0.1] bg-black/20 px-1.5 py-0.5 font-mono text-[10px] text-zinc-300">
+                          <span
+                            className={cn(
+                              "rounded-md border px-1.5 py-0.5 font-mono text-[10px] tabular-nums",
+                              isActive
+                                ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-200"
+                                : "border-white/[0.09] bg-black/30 text-zinc-300",
+                            )}
+                          >
                             {badgeValue > 99 ? "99+" : badgeValue}
                           </span>
                         ) : null}
-                        <span className="font-mono text-[10px] text-zinc-600">{item.shortcut}</span>
+                        <span className="font-mono text-[10px] text-zinc-600 group-hover:text-zinc-500">
+                          {item.shortcut}
+                        </span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -108,15 +119,18 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter className="border-t border-white/[0.08] p-3">
-        <div className="rounded-md border border-white/[0.08] bg-black/20">
+        <div className="overflow-hidden rounded-xl border border-white/[0.08] bg-gradient-to-b from-white/[0.025] to-black/30">
           <div className="flex items-center justify-between border-b border-white/[0.06] px-3 py-2.5">
             <div className="flex items-center gap-2">
-              <Building2 className="size-4 text-zinc-500" />
-              <div>
-                <div className="text-[10px] text-zinc-500">Current Workspace</div>
-                <div className="text-xs font-medium text-zinc-100">Axiom Sales US</div>
+              <div className="grid size-7 place-items-center rounded-md border border-emerald-400/25 bg-emerald-400/10">
+                <Building2 className="size-3.5 text-emerald-300" />
+              </div>
+              <div className="leading-tight">
+                <div className="text-[9.5px] uppercase tracking-[0.18em] text-zinc-500">Workspace</div>
+                <div className="text-xs font-semibold text-zinc-100">Axiom Sales US</div>
               </div>
             </div>
+            <span className="font-mono text-[10px] text-zinc-600">prod</span>
           </div>
           <div className="grid grid-cols-2 divide-x divide-white/[0.06]">
             <SidebarStat
@@ -128,6 +142,7 @@ export function AppSidebar() {
               icon={<Activity className="size-3.5" />}
               label="Today"
               value={stats ? `+${stats.todayLeads}` : "--"}
+              accent
             />
           </div>
           <div className="flex items-center justify-between border-t border-white/[0.06] px-3 py-2 text-[11px]">
@@ -136,7 +151,7 @@ export function AppSidebar() {
               Healthy
             </span>
             <span className="flex items-center gap-1.5 text-zinc-500">
-              <Radio className="size-3.5" />
+              <Radio className="size-3.5 animate-pulse text-emerald-400/70" />
               Live
             </span>
           </div>
@@ -150,18 +165,27 @@ function SidebarStat({
   icon,
   label,
   value,
+  accent = false,
 }: {
   icon: React.ReactNode;
   label: string;
   value: string;
+  accent?: boolean;
 }) {
   return (
     <div className="px-3 py-2.5">
-      <div className="flex items-center gap-1.5 text-[10px] text-zinc-500">
+      <div className="flex items-center gap-1.5 text-[9.5px] uppercase tracking-[0.16em] text-zinc-500">
         {icon}
         {label}
       </div>
-      <div className="mt-1 font-mono text-sm font-semibold text-white">{value}</div>
+      <div
+        className={cn(
+          "mt-1 font-mono text-sm font-semibold tabular-nums",
+          accent ? "text-emerald-300" : "text-white",
+        )}
+      >
+        {value}
+      </div>
     </div>
   );
 }

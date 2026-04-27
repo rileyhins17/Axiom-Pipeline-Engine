@@ -44,13 +44,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
+  const initials = (() => {
+    if (!session?.user?.name) return session?.user?.email?.[0]?.toUpperCase() ?? "?";
+    return session.user.name
+      .split(" ")
+      .map((word: string) => word[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2);
+  })();
+
   return (
     <SidebarProvider>
       <AppSidebar />
       <main className="flex min-h-screen w-full flex-1 flex-col bg-background">
-        <header className="sticky top-0 z-40 border-b border-white/[0.08] bg-[#08111a]/95 backdrop-blur-xl">
-          <div className="flex h-[70px] items-center gap-3 px-4 md:px-6">
-            <SidebarTrigger className="text-zinc-500 transition-colors hover:text-white" />
+        <header className="v2-header sticky top-0 z-40">
+          <div className="flex h-[64px] items-center gap-3 px-4 md:px-6">
+            <SidebarTrigger className="v2-focus-ring rounded-md text-zinc-400 transition-colors hover:text-white" />
             <div className="hidden h-5 w-px bg-white/[0.08] md:block" />
             <div className="min-w-0 flex-1">
               <LayoutBreadcrumb />
@@ -60,15 +70,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Button
                 size="sm"
                 onClick={handleNewClick}
-                className="h-9 rounded-md bg-emerald-400 px-3 text-sm font-semibold text-black hover:bg-emerald-300 cursor-pointer"
+                className="v2-btn-primary v2-focus-ring h-9 rounded-lg px-3.5 text-sm cursor-pointer"
               >
                 <Plus className="size-4" />
                 New
               </Button>
-              <span className="h-7 w-px bg-white/[0.08]" />
+              <span className="h-6 w-px bg-white/[0.08]" />
               <IconButton label="Notifications" onClick={handleNotificationsClick}>
                 <Bell className="size-4" />
-                <span className="absolute -right-1 -top-1 rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
+                <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full border border-[#0a111c] bg-rose-500 px-1 text-[9px] font-semibold leading-none text-white">
                   12
                 </span>
               </IconButton>
@@ -80,43 +90,42 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </IconButton>
             </div>
             <div className="hidden items-center gap-3 pl-2 lg:flex">
-              <div className="text-right">
+              <div className="text-right leading-tight">
                 <div className="text-xs font-semibold text-white">
-                  {loading ? "Loading..." : session?.user?.name || session?.user?.email || "User"}
+                  {loading ? "Loading…" : session?.user?.name || session?.user?.email || "User"}
                 </div>
-                <div className="text-[11px] text-zinc-500">
-                  {session?.user?.role ? session.user.role.charAt(0).toUpperCase() + session.user.role.slice(1) : "User"}
+                <div className="text-[10.5px] uppercase tracking-[0.14em] text-zinc-500">
+                  {session?.user?.role
+                    ? session.user.role.charAt(0).toUpperCase() + session.user.role.slice(1)
+                    : "Member"}
                 </div>
               </div>
-              <div className="flex size-9 items-center justify-center rounded-full bg-[#111d2b] text-xs font-semibold text-cyan-200">
-                {(() => {
-                  if (!session?.user?.name) return "?";
-                  return session.user.name
-                    .split(" ")
-                    .map((word: string) => word[0])
-                    .join("")
-                    .toUpperCase()
-                    .slice(0, 2);
-                })()}
+              <div className="relative flex size-9 items-center justify-center rounded-full border border-emerald-400/30 bg-gradient-to-br from-emerald-400/20 to-cyan-400/10 text-xs font-semibold text-emerald-100">
+                {initials}
+                <span className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border-2 border-[#06101a] bg-emerald-400" />
               </div>
             </div>
           </div>
         </header>
 
         <HotkeyProvider>
-          <div className="flex-1 px-4 py-5 md:px-7">{children}</div>
+          <div className="flex-1 px-4 py-6 md:px-7 md:py-7">{children}</div>
         </HotkeyProvider>
 
-        <footer className="sticky bottom-0 z-30 border-t border-white/[0.08] bg-[#071017]/95 px-4 py-3 backdrop-blur md:px-7">
-          <div className="flex flex-col gap-2 text-xs text-zinc-500 md:flex-row md:items-center md:justify-between">
+        <footer className="v2-footer sticky bottom-0 z-30 px-4 py-2.5 md:px-7">
+          <div className="flex flex-col gap-2 text-[11px] text-zinc-500 md:flex-row md:items-center md:justify-between">
             <div className="flex items-center gap-2">
-              <CheckCircle2 className="size-4 text-emerald-300" />
-              <span className="font-medium text-zinc-300">System Status</span>
+              <span className="v2-dot text-emerald-400" />
+              <span className="font-medium uppercase tracking-[0.14em] text-zinc-400">Status</span>
               <span className="text-emerald-300">All systems operational</span>
             </div>
-            <div className="flex items-center gap-6">
-              <span>API Usage 2,450 / 10,000 calls</span>
-              <span>Data Sync · last sync 2 min ago</span>
+            <div className="flex items-center gap-5 font-mono text-[10.5px] tabular-nums text-zinc-500">
+              <span>API · 2,450 / 10,000</span>
+              <span className="hidden md:inline">Sync · 2 min ago</span>
+              <span className="hidden md:inline-flex items-center gap-1.5">
+                <CheckCircle2 className="size-3 text-emerald-400" />
+                v2.0
+              </span>
             </div>
           </div>
         </footer>
@@ -139,7 +148,7 @@ function IconButton({
       type="button"
       aria-label={label}
       onClick={onClick}
-      className="relative flex size-9 items-center justify-center rounded-md border border-white/[0.1] bg-white/[0.03] text-zinc-400 transition-colors hover:bg-white/[0.06] hover:text-white cursor-pointer"
+      className="v2-focus-ring relative flex size-9 items-center justify-center rounded-lg border border-white/[0.09] bg-white/[0.025] text-zinc-400 transition-all hover:border-white/[0.16] hover:bg-white/[0.06] hover:text-white cursor-pointer"
     >
       {children}
     </button>

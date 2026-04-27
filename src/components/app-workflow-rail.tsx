@@ -45,25 +45,46 @@ export function AppWorkflowRail({ compact = false }: { compact?: boolean }) {
     <nav
       aria-label="Pipeline workflow"
       className={cn(
-        "hidden items-center gap-5 rounded-full border border-white/[0.08] bg-black/20 px-3 py-1.5 backdrop-blur lg:flex",
-        compact && "gap-2 rounded-xl px-2 py-2",
+        "hidden items-center gap-1 rounded-full border border-white/[0.09] bg-gradient-to-b from-white/[0.025] to-black/20 p-1 backdrop-blur lg:flex",
+        compact && "gap-1.5 flex-col rounded-xl p-1.5",
       )}
     >
-      {workflow.map((item) => {
+      {workflow.map((item, idx) => {
         const active = pathname.startsWith(item.href);
         return (
           <Link
             key={item.href}
             href={item.href as Route}
             className={cn(
-              "workflow-node flex items-center gap-2 rounded-full px-2.5 py-1.5 text-xs transition-colors",
-              active ? "bg-white/[0.08] text-white" : "text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200",
+              "workflow-node group relative flex items-center gap-2 rounded-full px-3 py-1.5 text-xs transition-all",
+              active
+                ? "bg-gradient-to-b from-white/[0.1] to-white/[0.04] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+                : "text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-100",
               compact && "w-full justify-start rounded-lg px-3",
             )}
           >
-            <item.icon className={cn("h-3.5 w-3.5", active ? item.color : "text-zinc-500")} />
-            <span className="font-medium">{item.label}</span>
-            {!compact && <span className="text-[10px] text-zinc-600">{item.detail}</span>}
+            <span className="relative flex items-center justify-center">
+              <item.icon
+                className={cn(
+                  "h-3.5 w-3.5 transition-colors",
+                  active ? item.color : "text-zinc-500 group-hover:text-zinc-300",
+                )}
+              />
+              {active && (
+                <span className="absolute -inset-1 rounded-full bg-current opacity-10 blur-sm" />
+              )}
+            </span>
+            <span className="font-medium tracking-tight">{item.label}</span>
+            {!compact && (
+              <span
+                className={cn(
+                  "font-mono text-[10px] tabular-nums",
+                  active ? "text-zinc-400" : "text-zinc-600",
+                )}
+              >
+                0{idx + 1}
+              </span>
+            )}
           </Link>
         );
       })}

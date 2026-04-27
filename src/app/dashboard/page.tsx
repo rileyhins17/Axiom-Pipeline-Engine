@@ -250,17 +250,25 @@ export default async function DashboardPage() {
 
   return (
     <div className="mx-auto flex max-w-[1440px] flex-col gap-4">
-      <section className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+      <section className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight text-white">Dashboard</h1>
+          <span className="v2-eyebrow inline-flex items-center gap-2">
+            <span className="v2-dot text-emerald-400" />
+            Command Center
+          </span>
+          <h1 className="mt-2 text-[34px] font-semibold tracking-[-0.025em] text-white">
+            Dashboard
+          </h1>
           <p className="mt-1 text-sm text-zinc-400">Unified overview of your pipeline engine</p>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="hidden text-right text-xs text-zinc-500 sm:block">
-            <div>{new Intl.DateTimeFormat("en-US", { weekday: "long", month: "short", day: "numeric" }).format(new Date())}</div>
-            <div>{formatRunTime(new Date(), "")}</div>
+        <div className="flex items-center gap-2.5">
+          <div className="hidden rounded-lg border border-white/[0.08] bg-white/[0.025] px-3 py-1.5 text-right text-[11px] text-zinc-400 sm:block">
+            <div className="font-medium text-zinc-200">
+              {new Intl.DateTimeFormat("en-US", { weekday: "long", month: "short", day: "numeric" }).format(new Date())}
+            </div>
+            <div className="font-mono text-[10.5px] text-zinc-500">{formatRunTime(new Date(), "")}</div>
           </div>
-          <Button variant="outline" className="h-9 rounded-md border-white/[0.1] bg-white/[0.03] text-zinc-200 hover:bg-white/[0.06]">
+          <Button variant="outline" className="h-9">
             <Settings className="size-4" />
             Customize
           </Button>

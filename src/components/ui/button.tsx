@@ -5,20 +5,21 @@ import { Slot } from "radix-ui"
 import { cn } from "@/lib/utils"
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-all duration-150 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/55 focus-visible:ring-offset-2 focus-visible:ring-offset-[#06101a] aria-invalid:ring-destructive/30 aria-invalid:border-destructive",
   {
     variants: {
       variant: {
-        default: "bg-white text-black hover:bg-zinc-200",
+        default:
+          "bg-gradient-to-b from-emerald-300 to-emerald-500 text-[#02160d] font-semibold border border-emerald-400/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_8px_24px_rgba(16,185,129,0.18)] hover:brightness-110 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_10px_32px_rgba(16,185,129,0.28)] active:translate-y-px",
         destructive:
-          "bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60",
+          "bg-gradient-to-b from-rose-500 to-rose-600 text-white border border-rose-500/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_8px_24px_rgba(244,63,94,0.2)] hover:brightness-110",
         outline:
-          "border border-white/[0.1] bg-white/[0.035] shadow-xs hover:bg-white/[0.07] hover:text-white dark:bg-white/[0.035] dark:border-white/[0.1] dark:hover:bg-white/[0.07]",
+          "border border-white/[0.12] bg-white/[0.025] text-zinc-200 hover:border-white/[0.2] hover:bg-white/[0.06] hover:text-white",
         secondary:
-          "bg-white/[0.08] text-secondary-foreground hover:bg-white/[0.12]",
+          "bg-white/[0.06] text-zinc-100 border border-white/[0.08] hover:bg-white/[0.1] hover:border-white/[0.14]",
         ghost:
-          "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
-        link: "text-primary underline-offset-4 hover:underline",
+          "text-zinc-400 hover:bg-white/[0.05] hover:text-white",
+        link: "text-emerald-300 underline-offset-4 hover:underline hover:text-emerald-200",
       },
       size: {
         default: "h-9 px-4 py-2 has-[>svg]:px-3",
