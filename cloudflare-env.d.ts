@@ -4,6 +4,9 @@ interface CloudflareEnv {
   AUTH_ADMIN_EMAILS: string;
   AUTH_ALLOWED_ORIGINS?: string;
   AGENT_SHARED_SECRET?: string;
+  CLOUD_SCRAPE_ENABLED?: string;
+  CLOUD_SCRAPE_TIMEOUT_MS?: string;
+  CLOUD_SCRAPE_WORKER_NAME?: string;
   BETTER_AUTH_SECRET: string;
   GEMINI_API_KEY?: string;
   RATE_LIMIT_WINDOW_SECONDS: string;

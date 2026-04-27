@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 
 import { writeAuditEvent } from "@/lib/audit";
+import { runCloudScrapeWorker } from "@/lib/cloud-scrape-worker";
 import { getClientIp } from "@/lib/cloudflare";
 import { createScrapeJob } from "@/lib/scrape-jobs";
 import { getServerEnv } from "@/lib/env";
@@ -48,6 +49,14 @@ export async function POST(request: Request) {
         radius,
         scrapeTimeoutMs: env.SCRAPE_TIMEOUT_MS,
       },
+    });
+
+    after(async () => {
+      try {
+        await runCloudScrapeWorker();
+      } catch (error) {
+        console.error("Cloud scrape dispatch failed:", error);
+      }
     });
 
     return NextResponse.json({ job });

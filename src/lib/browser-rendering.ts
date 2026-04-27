@@ -32,7 +32,11 @@ async function loadCloudflarePlaywright() {
 }
 
 async function loadLocalPlaywright() {
-  return import("playwright");
+  const runtimeImport = new Function("specifier", "return import(specifier)") as (
+    specifier: string,
+  ) => Promise<typeof import("playwright")>;
+
+  return runtimeImport("playwright");
 }
 
 function getLocalChromiumLaunchOptions() {
