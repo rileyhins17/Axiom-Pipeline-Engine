@@ -1,9 +1,14 @@
 import { NextResponse } from "next/server";
 
 import { enrichLeadsBatch } from "@/lib/outreach-enrichment";
+import { READY_FOR_FIRST_TOUCH_STATUS } from "@/lib/outreach";
 import { getPrisma } from "@/lib/prisma";
 import type { LeadRecord } from "@/lib/prisma";
 import { requireAdminApiSession } from "@/lib/session";
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Failed to enrich leads";
+}
 
 export async function POST(request: Request) {
   const authResult = await requireAdminApiSession(request);
@@ -65,6 +70,7 @@ export async function POST(request: Request) {
         data: {
           enrichedAt: new Date(),
           enrichmentData: enrichmentJson,
+          outreachStatus: READY_FOR_FIRST_TOUCH_STATUS,
         },
       });
       enrichedCount++;
@@ -83,10 +89,10 @@ export async function POST(request: Request) {
       total: leads.length,
       leads: enrichedLeads,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Enrichment error:", error);
     return NextResponse.json(
-      { error: error.message || "Failed to enrich leads" },
+      { error: getErrorMessage(error) },
       { status: 500 },
     );
   }

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type KeyboardEvent } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, CircleAlert, DatabaseZap, Mail, RefreshCw, Settings2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -38,15 +39,25 @@ export function AutomationConsole({ initialOverview }: { initialOverview: Automa
 }
 
 function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
   const [overview, setOverview] = useState(initialOverview);
-  const [tab, setTab] = useState<TabId>("overview");
+  const initialTab = searchParams.get("tab") as TabId | null;
+  const [tab, setTab] = useState<TabId>(
+    initialTab && ["overview", "queue", "mailboxes", "blocked", "rules"].includes(initialTab)
+      ? initialTab
+      : "overview",
+  );
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [settingsDraft, setSettingsDraft] = useState(initialOverview.settings);
 
   type RunResponse = {
-    pipeline?: { enriched?: number; qualified?: number; queued?: number };
-    sent?: number;
+    sent: number;
+    failed: number;
+    skipped: number;
+    fastForwarded?: number;
+    pipeline?: { enriched?: number; qualified?: number; queued?: number; queueSkipped?: number };
   };
 
   const refresh = useCallback(async () => {
@@ -61,6 +72,13 @@ function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview
   useEffect(() => {
     setSettingsDraft(overview.settings);
   }, [overview.settings]);
+
+  useEffect(() => {
+    const nextTab = searchParams.get("tab") as TabId | null;
+    if (nextTab && ["overview", "queue", "mailboxes", "blocked", "rules"].includes(nextTab) && nextTab !== tab) {
+      setTab(nextTab);
+    }
+  }, [searchParams, tab]);
 
   useEffect(() => {
     const t = setInterval(() => {
@@ -100,14 +118,21 @@ function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview
   };
 
   const handleSendNow = async () => {
-    const d = await exec<{ sent: number; failed: number }>("send", () =>
-      fetch("/api/outreach/send", { method: "POST" }),
+    const d = await exec<RunResponse>("send", () =>
+      fetch("/api/outreach/automation/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ immediate: true }),
+      }),
     );
     if (d) {
       const parts: string[] = [];
+      if (d.fastForwarded) parts.push(`${d.fastForwarded} readied`);
+      if (d.pipeline?.queued) parts.push(`${d.pipeline.queued} queued`);
       if (d.sent > 0) parts.push(`${d.sent} sent`);
       if (d.failed > 0) parts.push(`${d.failed} failed`);
-      toast(parts.length > 0 ? parts.join(", ") : "No emails to send.", {
+      if (d.skipped > 0) parts.push(`${d.skipped} skipped`);
+      toast(parts.length > 0 ? parts.join(", ") : "No due sends yet.", {
         type: d.failed > 0 ? "error" : "success",
         icon: "note",
       });
@@ -183,6 +208,13 @@ function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview
     return { kind: "behind" as const, gap: expectedByNow - sentToday };
   }, [overview.settings, sentToday]);
 
+  const setActiveTab = useCallback((nextTab: TabId) => {
+    setTab(nextTab);
+    const params = new URLSearchParams(Array.from(searchParams.entries()));
+    params.set("tab", nextTab);
+    router.replace(`/automation?${params.toString()}`, { scroll: false });
+  }, [router, searchParams]);
+
   const tabs: { id: TabId; label: string; count?: number; icon: ComponentType<{ className?: string }> }[] = [
     { id: "overview", label: "Overview", icon: DatabaseZap },
     { id: "queue", label: "Queue", count: queueCount, icon: ArrowRight },
@@ -256,7 +288,7 @@ function ConsoleInner({ initialOverview }: { initialOverview: AutomationOverview
         </div>
       </header>
 
-      <TabBar tabs={tabs} activeTab={tab} onSelect={setTab} />
+      <TabBar tabs={tabs} activeTab={tab} onSelect={setActiveTab} />
 
       <div id={`panel-${tab}`} role="tabpanel" aria-labelledby={`tab-${tab}`} className="pt-1">
         {tab === "overview" && <OverviewTab overview={overview} onSendNow={handleSendNow} onPause={handleTogglePause} busyKey={busyKey} />}

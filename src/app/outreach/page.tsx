@@ -36,8 +36,10 @@ export default async function OutreachPage() {
     total: leads.length,
     notContacted: leads.filter((l) => l.outreachStatus === "NOT_CONTACTED").length,
     enriching: leads.filter((l) => l.outreachStatus === "ENRICHING").length,
-    enriched: leads.filter((l) => l.outreachStatus === "ENRICHED").length,
-    readyForTouch: leads.filter((l) => l.outreachStatus === "READY_FOR_FIRST_TOUCH").length,
+    enriched: 0,
+    readyForTouch: leads.filter(
+      (l) => l.outreachStatus === "READY_FOR_FIRST_TOUCH" || l.outreachStatus === "ENRICHED",
+    ).length,
     outreached: leads.filter((l) => l.outreachStatus === "OUTREACHED").length,
     followUp: leads.filter((l) => l.outreachStatus === "FOLLOW_UP_DUE").length,
     replied: leads.filter((l) => l.outreachStatus === "REPLIED" || l.outreachStatus === "INTERESTED").length,

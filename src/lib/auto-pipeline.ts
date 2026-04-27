@@ -145,7 +145,7 @@ async function autoEnrich(
         data: {
           enrichedAt: new Date(),
           enrichmentData: JSON.stringify(result),
-          outreachStatus: "ENRICHED",
+          outreachStatus: READY_FOR_FIRST_TOUCH_STATUS,
         },
       });
       enriched++;

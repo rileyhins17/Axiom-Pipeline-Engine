@@ -62,7 +62,6 @@ type FilterId =
   | "all"
   | "not_contacted"
   | "enriching"
-  | "enriched"
   | "ready"
   | "outreached"
   | "follow_up"
@@ -106,26 +105,15 @@ const FUNNEL_STAGES: StageDef[] = [
     description: "Contact and signals in progress",
   },
   {
-    id: "enriched",
-    label: "Enriched",
-    shortLabel: "Enriched",
-    statKey: "enriched",
-    icon: Sparkles,
-    accentFrom: "from-cyan-500/40",
-    accentTo: "to-cyan-600/10",
-    accentText: "text-cyan-300",
-    description: "Data complete, ready to qualify",
-  },
-  {
     id: "ready",
-    label: "Ready",
+    label: "Ready to send",
     shortLabel: "Ready",
     statKey: "readyForTouch",
     icon: MailCheck,
     accentFrom: "from-emerald-500/40",
     accentTo: "to-emerald-600/10",
     accentText: "text-emerald-300",
-    description: "Approved for first-touch send",
+    description: "Enriched and eligible for Gmail",
   },
   {
     id: "outreached",
@@ -171,7 +159,7 @@ const STAGE_QUERY_MAP: Record<string, FilterId> = {
   "not-contacted": "not_contacted",
   enrichment: "enriching",
   enriching: "enriching",
-  enriched: "enriched",
+  enriched: "ready",
   ready: "ready",
   initial: "ready",
   "first-touch": "ready",
@@ -191,10 +179,8 @@ function matchFilter(status: string, filter: FilterId): boolean {
       return status === "NOT_CONTACTED";
     case "enriching":
       return status === "ENRICHING";
-    case "enriched":
-      return status === "ENRICHED";
     case "ready":
-      return status === "READY_FOR_FIRST_TOUCH";
+      return status === "READY_FOR_FIRST_TOUCH" || status === "ENRICHED";
     case "outreached":
       return status === "OUTREACHED";
     case "follow_up":
@@ -212,7 +198,7 @@ function statusLabel(status: string): string {
   const labels: Record<string, string> = {
     NOT_CONTACTED: "New",
     ENRICHING: "Enriching",
-    ENRICHED: "Enriched",
+    ENRICHED: "Ready",
     READY_FOR_FIRST_TOUCH: "Ready",
     OUTREACHED: "Sent",
     FOLLOW_UP_DUE: "Follow-up",
@@ -235,7 +221,7 @@ function statusDotColor(status: string): string {
     case "ENRICHING":
       return "bg-amber-400";
     case "ENRICHED":
-      return "bg-cyan-400";
+      return "bg-emerald-400";
     case "FOLLOW_UP_DUE":
       return "bg-amber-400";
     case "NOT_INTERESTED":
@@ -390,7 +376,7 @@ export function OutreachDatabase({
       count: leads.length,
       queueable: leads.filter((l) => QUEUEABLE_STATUSES.has(l.outreachStatus)),
       enrichable: leads.filter((l) => ENRICHABLE_STATUSES.has(l.outreachStatus)),
-      sendable: leads.filter((l) => l.outreachStatus === READY_STATUS && l.email),
+      sendable: leads.filter((l) => QUEUEABLE_STATUSES.has(l.outreachStatus) && l.email),
     };
   }, [filtered, selectedIds]);
 
@@ -422,7 +408,7 @@ export function OutreachDatabase({
   const queueForAutomation = async (immediate: boolean) => {
     const leadIds = selection.queueable.map((l) => l.id);
     if (leadIds.length === 0) {
-      toast("Select Ready or Enriched leads to queue.", { type: "error", icon: "note" });
+      toast("Select ready leads to queue.", { type: "error", icon: "note" });
       return;
     }
     setBusy(immediate ? "send-now" : "queue");
@@ -472,7 +458,7 @@ export function OutreachDatabase({
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error || "Failed to enrich");
       toast(
-        `Enriched ${data?.enriched ?? leadIds.length} lead${leadIds.length === 1 ? "" : "s"}`,
+        `Enriched and readied ${data?.enriched ?? leadIds.length} lead${leadIds.length === 1 ? "" : "s"}`,
         { type: "success", icon: "note" },
       );
       clearSelection();
@@ -490,7 +476,7 @@ export function OutreachDatabase({
   const openManualSend = () => {
     const leadIds = selection.sendable.map((l) => l.id);
     if (leadIds.length === 0) {
-      toast("Select Ready leads with an email to send manually.", {
+      toast("Select ready leads with an email to send manually.", {
         type: "error",
         icon: "note",
       });
@@ -527,12 +513,11 @@ export function OutreachDatabase({
             <h1 className="mt-3 text-3xl font-semibold tracking-tight text-white md:text-5xl">
               {stats.total.toLocaleString()}
               <span className="ml-3 text-lg font-normal text-zinc-500">
-                lead{stats.total === 1 ? "" : "s"} across {FUNNEL_STAGES.length} stages
+                lead{stats.total === 1 ? "" : "s"} in the outreach engine
               </span>
             </h1>
             <p className="mt-2 max-w-2xl text-sm text-zinc-400">
-              Filter the funnel, select rows, and move qualified leads through enrichment, manual send,
-              or automation without leaving the queue.
+              Enrich new leads, queue ready contacts, and let Gmail automation handle the first touch.
             </p>
           </div>
           <div className="relative">
@@ -553,7 +538,7 @@ export function OutreachDatabase({
           </div>
           <div>
             <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">Ready</div>
-            <div className="mt-1 text-sm font-medium text-emerald-300">{stats.readyForTouch.toLocaleString()} first-touch</div>
+            <div className="mt-1 text-sm font-medium text-emerald-300">{stats.readyForTouch.toLocaleString()} send-ready</div>
           </div>
           <div>
             <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">Follow-up</div>
@@ -583,7 +568,7 @@ export function OutreachDatabase({
             All | {stats.total.toLocaleString()}
           </button>
         </div>
-        <div className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-6">
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-5">
           {FUNNEL_STAGES.map((stage, idx) => {
             const value = stats[stage.statKey];
             const isActive = filter === stage.id;

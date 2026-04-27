@@ -202,6 +202,7 @@ type AutomationBlockerReason =
 
 const ACTIVE_SEQUENCE_STATUSES = ["QUEUED", "ACTIVE", "PAUSED", "SENDING"] as const;
 const MAILBOX_SENDABLE_STATUSES = ["ACTIVE", "WARMING"] as const;
+const READY_COMPATIBLE_LEAD_STATUSES = [READY_FOR_FIRST_TOUCH_STATUS, "ENRICHED"] as const;
 
 function normalizeEmail(email: string | null | undefined) {
   return (email || "").trim().toLowerCase();
@@ -744,7 +745,7 @@ async function listAutomationReadyLeads(prisma: PrismaLike) {
   return leads
     .filter((lead) => {
       if (activeLeadIds.has(lead.id)) return false;
-      if (lead.outreachStatus !== READY_FOR_FIRST_TOUCH_STATUS) return false;
+      if (!READY_COMPATIBLE_LEAD_STATUSES.includes(lead.outreachStatus as (typeof READY_COMPATIBLE_LEAD_STATUSES)[number])) return false;
       if (!isLeadOutreachEligible(lead)) return false;
       if (!lead.enrichmentData) return false;
       return true;
@@ -995,10 +996,10 @@ export async function queueLeadsForAutomation(input: {
       continue;
     }
 
-    if (lead.outreachStatus !== READY_FOR_FIRST_TOUCH_STATUS) {
+    if (!READY_COMPATIBLE_LEAD_STATUSES.includes(lead.outreachStatus as (typeof READY_COMPATIBLE_LEAD_STATUSES)[number])) {
       result.skipped.push({
         leadId,
-        reason: "Lead must be marked ready for first touch before queueing",
+        reason: "Lead must be enriched before queueing",
       });
       continue;
     }
@@ -1062,6 +1063,12 @@ export async function queueLeadsForAutomation(input: {
       sequenceId: sequence.id,
       mailboxId: allocation.mailbox.id,
     });
+    if (lead.outreachStatus !== READY_FOR_FIRST_TOUCH_STATUS) {
+      await prisma.lead.update({
+        where: { id: lead.id },
+        data: { outreachStatus: READY_FOR_FIRST_TOUCH_STATUS },
+      });
+    }
     pendingAssignments.set(
       allocation.mailbox.id,
       (pendingAssignments.get(allocation.mailbox.id) || 0) + 1,
@@ -1181,6 +1188,7 @@ export async function listAutomationOverview() {
     prisma.lead.count({ where: { outreachStatus: "ENRICHED", isArchived: false } }),
     prisma.lead.count({ where: { outreachStatus: READY_FOR_FIRST_TOUCH_STATUS, isArchived: false } }),
   ]);
+  const sendReadyCount = enrichedCount + readyForTouchCount;
 
   return {
     settings,
@@ -1205,8 +1213,8 @@ export async function listAutomationOverview() {
     pipeline: {
       needsEnrichment: needsEnrichCount,
       enriching: enrichingCount,
-      enriched: enrichedCount,
-      readyForTouch: readyForTouchCount,
+      enriched: 0,
+      readyForTouch: sendReadyCount,
     },
     recentRuns,
     stats: {
@@ -1902,6 +1910,41 @@ async function recoverStaleClaims(prisma: PrismaLike) {
   return staleClaims.length;
 }
 
+async function fastForwardInitialTouches(prisma: PrismaLike, now: Date) {
+  const sequences = (await prisma.outreachSequence.findMany({
+    where: {
+      status: { in: [...ACTIVE_SEQUENCE_STATUSES] },
+      nextScheduledAt: { gt: now },
+    },
+    select: { id: true },
+    take: 500,
+  })) as Array<{ id: string }>;
+
+  if (sequences.length === 0) return 0;
+
+  const sequenceIds = sequences.map((sequence) => sequence.id);
+  const updated = await prisma.outreachSequenceStep.updateMany({
+    where: {
+      sequenceId: { in: sequenceIds },
+      stepNumber: 1,
+      status: "SCHEDULED",
+      scheduledFor: { gt: now },
+    },
+    data: {
+      scheduledFor: now,
+    },
+  });
+
+  if (updated.count > 0) {
+    await prisma.outreachSequence.updateMany({
+      where: { id: { in: sequenceIds }, nextScheduledAt: { gt: now } },
+      data: { nextScheduledAt: now },
+    });
+  }
+
+  return updated.count;
+}
+
 async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: number) {
   // First recover any stale claims from crashed runs
   const recovered = await recoverStaleClaims(prisma);
@@ -2037,7 +2080,7 @@ async function setSequenceBlocked(
   }).catch(() => null);
 }
 
-export async function runAutomationScheduler() {
+export async function runAutomationScheduler(options: { immediate?: boolean } = {}) {
   const { runAutoPipeline } = await import("@/lib/auto-pipeline");
   const prisma = getPrisma();
   const settings = await getSettings(prisma);
@@ -2057,6 +2100,7 @@ export async function runAutomationScheduler() {
   let sentCount = 0;
   let failedCount = 0;
   let skippedCount = 0;
+  let fastForwardedCount = 0;
   let pipeline = { enriched: 0, enrichFailed: 0, qualified: 0, queued: 0, queueSkipped: 0 };
 
   try {
@@ -2091,9 +2135,12 @@ export async function runAutomationScheduler() {
     }
 
     const replySync = await syncAutomationReplies();
+    if (options.immediate) {
+      fastForwardedCount = await fastForwardInitialTouches(prisma, now);
+    }
     const claims = await claimDueSteps(prisma, run.id, settings.schedulerClaimBatch);
 
-    console.log(`[scheduler] Pipeline: ${JSON.stringify(pipeline)} | Replies: checked=${replySync.checked} stopped=${replySync.stopped} | Claims: ${claims.length}`);
+    console.log(`[scheduler] Pipeline: ${JSON.stringify(pipeline)} | Replies: checked=${replySync.checked} stopped=${replySync.stopped} | Fast-forwarded: ${fastForwardedCount} | Claims: ${claims.length}`);
 
     await Promise.allSettled(
       claims.map(async (claim) => {
@@ -2171,6 +2218,7 @@ export async function runAutomationScheduler() {
           source: "scheduler",
           replySync,
           pipeline,
+          fastForwarded: fastForwardedCount,
         }),
       },
     });
@@ -2181,6 +2229,7 @@ export async function runAutomationScheduler() {
       sent: sentCount,
       failed: failedCount,
       skipped: skippedCount,
+      fastForwarded: fastForwardedCount,
       pipeline,
       replySync,
     };

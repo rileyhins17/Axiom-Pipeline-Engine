@@ -2,7 +2,9 @@ export const READY_FOR_FIRST_TOUCH_STATUS = "READY_FOR_FIRST_TOUCH";
 
 export const OUTREACH_STATUS_OPTIONS = [
   { value: "NOT_CONTACTED", label: "Not Contacted", shortLabel: "Idle", classes: "border-white/10 bg-white/5 text-zinc-300" },
-  { value: READY_FOR_FIRST_TOUCH_STATUS, label: "Ready to Pitch", shortLabel: "Ready", classes: "border-purple-500/20 bg-purple-500/10 text-purple-300" },
+  { value: "ENRICHING", label: "Enriching", shortLabel: "Enriching", classes: "border-amber-500/20 bg-amber-500/10 text-amber-300" },
+  { value: "ENRICHED", label: "Ready to Send", shortLabel: "Ready", classes: "border-emerald-500/20 bg-emerald-500/10 text-emerald-300" },
+  { value: READY_FOR_FIRST_TOUCH_STATUS, label: "Ready to Send", shortLabel: "Ready", classes: "border-emerald-500/20 bg-emerald-500/10 text-emerald-300" },
   { value: "OUTREACHED", label: "Outreached", shortLabel: "Sent", classes: "border-cyan-500/20 bg-cyan-500/10 text-cyan-300" },
   { value: "FOLLOW_UP_DUE", label: "Follow-Up Due", shortLabel: "Due", classes: "border-amber-500/20 bg-amber-500/10 text-amber-300" },
   { value: "REPLIED", label: "Replied", shortLabel: "Replied", classes: "border-blue-500/20 bg-blue-500/10 text-blue-300" },

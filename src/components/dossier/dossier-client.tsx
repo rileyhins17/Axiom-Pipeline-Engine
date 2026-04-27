@@ -1,295 +1,363 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState, type ComponentType } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, ArrowLeft, Clock, FileText } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  Archive,
+  ArchiveRestore,
+  CheckCircle2,
+  Loader2,
+  Mail,
+  MapPin,
+  Phone,
+  Send,
+  Sparkles,
+} from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast-provider";
 import { cn } from "@/lib/utils";
-import {
-    DISPOSITION_OPTIONS,
-    addToCallList,
-    getArchiveOverride,
-    getLeadDisposition,
-    isInCallList,
-    removeFromCallList,
-    setArchiveOverride,
-} from "@/lib/ui/storage";
-import { getTierConfig } from "@/lib/ui/tokens";
-
-import { CallSheet } from "./call-sheet";
-import { ContactQuality } from "./contact-quality";
-import { DisqualifiersPanel } from "./disqualifiers-panel";
-import { DossierSkeleton } from "./dossier-skeleton";
-import { IdentityCard } from "./identity-card";
-import { OperationalHistory } from "./operational-history";
-import { PainSignalsPanel } from "./pain-signals-panel";
-import { QuickActions } from "./quick-actions";
-import { WebsiteAssessmentPanel } from "./website-assessment-panel";
 
 interface LeadData {
-    id: number;
-    businessName: string;
-    niche: string;
-    city: string;
-    address: string | null;
-    phone: string | null;
-    email: string | null;
-    rating: number | null;
-    reviewCount: number | null;
-    websiteStatus: string | null;
-    axiomScore: number | null;
-    axiomTier: string | null;
-    scoreBreakdown: string | null;
-    painSignals: string | null;
-    callOpener: string | null;
-    followUpQuestion: string | null;
-    axiomWebsiteAssessment: string | null;
-    emailType: string | null;
-    emailConfidence: number | null;
-    phoneConfidence: number | null;
-    disqualifiers: string | null;
-    disqualifyReason: string | null;
-    source: string | null;
-    isArchived: boolean;
-    lastUpdated: string | null;
-    createdAt: string;
+  id: number;
+  businessName: string;
+  niche: string;
+  city: string;
+  address: string | null;
+  phone: string | null;
+  email: string | null;
+  rating: number | null;
+  reviewCount: number | null;
+  websiteStatus: string | null;
+  axiomScore: number | null;
+  axiomTier: string | null;
+  outreachStatus: string | null;
+  enrichedAt: string | null;
+  enrichmentData: string | null;
+  isArchived: boolean;
+  createdAt: string;
 }
 
-function parseJSON<T>(raw: string | null, fallback: T): T {
-    if (!raw) return fallback;
-    try {
-        return JSON.parse(raw) as T;
-    } catch {
-        return fallback;
-    }
+const READY_STATUSES = new Set(["READY_FOR_FIRST_TOUCH", "ENRICHED"]);
+
+function statusLabel(status: string | null) {
+  if (!status) return "New";
+  const labels: Record<string, string> = {
+    NOT_CONTACTED: "New",
+    ENRICHING: "Enriching",
+    ENRICHED: "Ready",
+    READY_FOR_FIRST_TOUCH: "Ready",
+    OUTREACHED: "Sent",
+    FOLLOW_UP_DUE: "Follow-up",
+    REPLIED: "Replied",
+    INTERESTED: "Interested",
+    NOT_INTERESTED: "Declined",
+  };
+  return labels[status] || status;
+}
+
+function statusTone(status: string | null) {
+  if (status === "OUTREACHED" || status === "REPLIED" || status === "INTERESTED") {
+    return "border-cyan-400/25 bg-cyan-400/10 text-cyan-200";
+  }
+  if (READY_STATUSES.has(status || "")) {
+    return "border-emerald-400/25 bg-emerald-400/10 text-emerald-200";
+  }
+  if (status === "ENRICHING" || status === "FOLLOW_UP_DUE") {
+    return "border-amber-400/25 bg-amber-400/10 text-amber-200";
+  }
+  return "border-white/10 bg-white/[0.04] text-zinc-300";
+}
+
+function scoreTone(score: number | null) {
+  if (score == null) return "text-zinc-500";
+  if (score >= 70) return "text-emerald-300";
+  if (score >= 50) return "text-cyan-300";
+  if (score >= 35) return "text-amber-300";
+  return "text-zinc-500";
 }
 
 export function DossierClient({ leadId }: { leadId: number }) {
-    const router = useRouter();
-    const { toast } = useToast();
-    const [lead, setLead] = useState<LeadData | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-    const [archived, setArchived] = useState(false);
-    const [archiveSyncPending, setArchiveSyncPending] = useState(false);
-    const [inCallList, setInCallList] = useState(false);
+  const router = useRouter();
+  const { toast } = useToast();
+  const [lead, setLead] = useState<LeadData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<null | "archive" | "enrich" | "queue" | "send">(null);
 
-    useEffect(() => {
-        fetch(`/api/leads/${leadId}`)
-            .then((res) => {
-                if (!res.ok) throw new Error(res.status === 404 ? "Lead not found" : "Failed to load");
-                return res.json();
-            })
-            .then((data: LeadData) => {
-                setLead(data);
-                const override = getArchiveOverride(data.id);
-                setArchived(override !== null ? override : data.isArchived);
-                setArchiveSyncPending(override !== null && override !== data.isArchived);
-                setInCallList(isInCallList(data.id));
-            })
-            .catch((fetchError: Error) => setError(fetchError.message))
-            .finally(() => setLoading(false));
-    }, [leadId]);
-
-    useEffect(() => {
-        const handler = (event: KeyboardEvent) => {
-            const target = event.target as HTMLElement;
-            const isInput = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable;
-            if (isInput) return;
-
-            if (event.key === "n" || event.key === "N") {
-                event.preventDefault();
-                document.getElementById("dossier-note-input")?.focus();
-            }
-            if (event.key === "c" && !event.metaKey && !event.ctrlKey) {
-                event.preventDefault();
-                if (lead?.callOpener) {
-                    navigator.clipboard.writeText(lead.callOpener)
-                        .then(() => toast("Copied opener", { icon: "copy" }))
-                        .catch(() => {});
-                }
-            }
-        };
-        window.addEventListener("keydown", handler);
-        return () => window.removeEventListener("keydown", handler);
-    }, [lead, toast]);
-
-    const toggleArchive = useCallback(() => {
-        if (!lead) return;
-        const newVal = !archived;
-        setArchived(newVal);
-        setArchiveOverride(lead.id, newVal);
-        setArchiveSyncPending(newVal !== lead.isArchived);
-        toast(newVal ? "Archived (UI only)" : "Unarchived (UI only)", { type: "info" });
-    }, [lead, archived, toast]);
-
-    const toggleCallList = useCallback(() => {
-        if (!lead) return;
-        if (inCallList) {
-            removeFromCallList(lead.id);
-            setInCallList(false);
-            toast("Removed from call list", { type: "info" });
-        } else {
-            addToCallList(lead.id);
-            setInCallList(true);
-            toast("Added to call list", { type: "success" });
-        }
-    }, [lead, inCallList, toast]);
-
-    if (loading) {
-        return (
-            <div className="mx-auto max-w-[1500px]">
-                <div className="mb-6">
-                    <div className="h-8 w-48 animate-pulse rounded bg-white/[0.04]" />
-                </div>
-                <DossierSkeleton />
-            </div>
-        );
+  const loadLead = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/leads/${leadId}`);
+      if (!res.ok) throw new Error(res.status === 404 ? "Lead not found" : "Failed to load lead");
+      setLead(await res.json());
+      setError(null);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Failed to load lead");
+    } finally {
+      setLoading(false);
     }
+  };
 
-    if (error || !lead) {
-        return (
-            <div className="mx-auto max-w-7xl">
-                <button
-                    onClick={() => router.push("/vault")}
-                    className="mb-8 flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-white"
-                >
-                    <ArrowLeft className="h-4 w-4" /> Back to Vault
-                </button>
-                <div className="flex flex-col items-center justify-center py-24 text-center">
-                    <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-lg border border-red-500/10 bg-red-500/[0.04]">
-                        <AlertTriangle className="h-7 w-7 text-red-400/60" />
-                    </div>
-                    <h2 className="mb-1 text-lg font-bold text-white">Lead not found</h2>
-                    <p className="text-sm text-muted-foreground">{error || "This lead does not exist or has been deleted."}</p>
-                </div>
-            </div>
-        );
+  useEffect(() => {
+    void loadLead();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leadId]);
+
+  const enrichLead = async () => {
+    if (!lead) return;
+    setBusy("enrich");
+    try {
+      const res = await fetch("/api/outreach/enrich", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ leadIds: [lead.id] }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || "Failed to enrich lead");
+      toast("Lead enriched and ready.", { type: "success", icon: "note" });
+      await loadLead();
+    } catch (enrichError) {
+      toast(enrichError instanceof Error ? enrichError.message : "Failed to enrich lead", {
+        type: "error",
+        icon: "note",
+      });
+    } finally {
+      setBusy(null);
     }
+  };
 
-    const painSignals = parseJSON<Array<{ type: string; severity: number; evidence: string; source?: string }>>(lead.painSignals, []);
-    const assessment = parseJSON<{
-        speedRisk: number;
-        conversionRisk: number;
-        trustRisk: number;
-        seoRisk: number;
-        overallGrade: string;
-        topFixes: string[];
-    } | null>(lead.axiomWebsiteAssessment, null);
-    const scoreBreakdown = parseJSON<Record<string, string | number> | null>(lead.scoreBreakdown, null);
-    const disqualifiers = parseJSON<string[]>(lead.disqualifiers, []);
-    const disposition = getLeadDisposition(lead.id);
-    const dispOpt = disposition ? DISPOSITION_OPTIONS.find((option) => option.value === disposition.type) : null;
-    const tierConfig = getTierConfig(lead.axiomTier);
+  const queueLead = async (immediate: boolean) => {
+    if (!lead) return;
+    setBusy(immediate ? "send" : "queue");
+    try {
+      const res = await fetch("/api/outreach/automation/queue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ leadIds: [lead.id], immediate }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || "Failed to queue lead");
+      const queued = data?.queued?.length || 0;
+      const skipped = data?.skipped?.length || 0;
+      toast(
+        queued > 0
+          ? immediate
+            ? "Lead queued for immediate send."
+            : "Lead queued for automation."
+          : skipped > 0
+            ? data?.skipped?.[0]?.reason || "Lead was skipped."
+            : "Nothing changed.",
+        { type: queued > 0 ? "success" : "info", icon: "note" },
+      );
+      await loadLead();
+    } catch (queueError) {
+      toast(queueError instanceof Error ? queueError.message : "Failed to queue lead", {
+        type: "error",
+        icon: "note",
+      });
+    } finally {
+      setBusy(null);
+    }
+  };
 
+  const toggleArchive = async () => {
+    if (!lead) return;
+    setBusy("archive");
+    try {
+      const res = await fetch(`/api/leads/${lead.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isArchived: !lead.isArchived }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || "Failed to update lead");
+      setLead(data);
+      toast(data.isArchived ? "Lead archived." : "Lead restored.", { type: "success", icon: "note" });
+    } catch (archiveError) {
+      toast(archiveError instanceof Error ? archiveError.message : "Failed to update lead", {
+        type: "error",
+        icon: "note",
+      });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  if (loading) {
     return (
-        <div className="mx-auto max-w-[1500px] animate-slide-up">
-            <div className="mb-5 border-b border-white/[0.06] pb-4">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                    <button
-                        onClick={() => router.push("/vault")}
-                        className="flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-white"
-                    >
-                        <ArrowLeft className="h-4 w-4" /> Vault
-                    </button>
-                    <div className="flex flex-wrap items-center justify-end gap-2">
-                        {dispOpt ? (
-                            <span className="rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-[10px] font-mono text-zinc-300">
-                                {dispOpt.icon} {dispOpt.label}
-                            </span>
-                        ) : null}
-                        {lead.lastUpdated ? (
-                            <span className="flex items-center gap-1 text-[10px] font-mono text-muted-foreground/50">
-                                <Clock className="h-3 w-3" />
-                                {new Date(lead.lastUpdated).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                            </span>
-                        ) : null}
-                    </div>
-                </div>
-
-                <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-                    <div className="min-w-0">
-                        <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.22em] text-zinc-500">
-                            <FileText className={cn("h-3.5 w-3.5", tierConfig.text)} />
-                            Lead dossier
-                        </div>
-                        <h1 className="mt-2 truncate text-2xl font-semibold tracking-tight text-white md:text-3xl">
-                            {lead.businessName}
-                        </h1>
-                        <p className="mt-1 text-sm text-zinc-500">
-                            {lead.niche} in {lead.city} - verification, call prep, disposition, and local notes.
-                        </p>
-                    </div>
-                </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-5 xl:grid-cols-[320px_minmax(0,1fr)]">
-                <aside className="space-y-4 xl:sticky xl:top-4 xl:self-start">
-                    <IdentityCard
-                        businessName={lead.businessName}
-                        niche={lead.niche}
-                        city={lead.city}
-                        address={lead.address}
-                        axiomTier={lead.axiomTier}
-                        axiomScore={lead.axiomScore}
-                        websiteStatus={lead.websiteStatus}
-                        rating={lead.rating}
-                        reviewCount={lead.reviewCount}
-                        isArchived={archived}
-                    />
-                    <QuickActions
-                        phone={lead.phone}
-                        email={lead.email}
-                        address={lead.address}
-                        isArchived={archived}
-                        isInCallList={inCallList}
-                        onToggleArchive={toggleArchive}
-                        onToggleCallList={toggleCallList}
-                        archiveSyncPending={archiveSyncPending}
-                    />
-                    <ContactQuality
-                        emailType={lead.emailType}
-                        emailConfidence={lead.emailConfidence}
-                        phoneConfidence={lead.phoneConfidence}
-                    />
-
-                    {scoreBreakdown ? (
-                        <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-4">
-                            <div className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/40">
-                                Score breakdown
-                            </div>
-                            <div className="space-y-2">
-                                {Object.entries(scoreBreakdown).map(([key, val]) => (
-                                    <div key={key} className="flex items-center justify-between gap-3 text-xs">
-                                        <span className="truncate text-zinc-400 capitalize">{key.replace(/([A-Z])/g, " $1").trim()}</span>
-                                        <span className="font-mono font-bold text-white">{String(val)}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    ) : null}
-                </aside>
-
-                <main className="grid min-w-0 grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
-                    <section className="min-w-0 space-y-5">
-                        <PainSignalsPanel painSignals={painSignals} />
-                        <WebsiteAssessmentPanel assessment={assessment} />
-                        <DisqualifiersPanel
-                            disqualifiers={disqualifiers}
-                            disqualifyReason={lead.disqualifyReason}
-                        />
-                        <OperationalHistory leadId={lead.id} />
-                    </section>
-                    <aside className="min-w-0 lg:sticky lg:top-4 lg:self-start">
-                        <CallSheet
-                            callOpener={lead.callOpener}
-                            followUpQuestion={lead.followUpQuestion}
-                            painSignals={painSignals}
-                        />
-                    </aside>
-                </main>
-            </div>
-        </div>
+      <div className="mx-auto max-w-5xl space-y-4">
+        <div className="h-8 w-40 animate-pulse rounded-lg bg-white/[0.05]" />
+        <div className="h-72 animate-pulse rounded-2xl border border-white/10 bg-white/[0.03]" />
+      </div>
     );
+  }
+
+  if (error || !lead) {
+    return (
+      <div className="mx-auto max-w-5xl">
+        <button
+          onClick={() => router.push("/outreach")}
+          className="mb-8 flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-white"
+        >
+          <ArrowLeft className="h-4 w-4" /> Outreach
+        </button>
+        <div className="flex flex-col items-center justify-center py-24 text-center">
+          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-lg border border-red-500/10 bg-red-500/[0.04]">
+            <AlertTriangle className="h-7 w-7 text-red-400/60" />
+          </div>
+          <h2 className="mb-1 text-lg font-bold text-white">Lead not found</h2>
+          <p className="text-sm text-muted-foreground">{error || "This lead does not exist or has been deleted."}</p>
+        </div>
+      </div>
+    );
+  }
+
+  const ready = READY_STATUSES.has(lead.outreachStatus || "");
+  const canEnrich = lead.outreachStatus === "NOT_CONTACTED" || lead.outreachStatus === "ENRICHING" || !lead.enrichmentData;
+  const canQueue = ready && !!lead.email;
+
+  return (
+    <div className="mx-auto max-w-5xl animate-slide-up space-y-5">
+      <button
+        onClick={() => router.push("/outreach")}
+        className="flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-white"
+      >
+        <ArrowLeft className="h-4 w-4" /> Outreach
+      </button>
+
+      <section className="overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/70 shadow-[0_22px_80px_rgba(0,0,0,0.22)]">
+        <div className="border-b border-white/10 p-5 md:p-6">
+          <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={cn("rounded-md border px-2 py-1 text-[10px] font-semibold uppercase tracking-widest", statusTone(lead.outreachStatus))}>
+                  {statusLabel(lead.outreachStatus)}
+                </span>
+                {lead.axiomTier ? (
+                  <span className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[10px] font-semibold text-zinc-300">
+                    Tier {lead.axiomTier}
+                  </span>
+                ) : null}
+              </div>
+              <h1 className="mt-3 text-3xl font-semibold tracking-tight text-white md:text-4xl">{lead.businessName}</h1>
+              <p className="mt-2 text-sm text-zinc-400">
+                {lead.niche} in {lead.city || "unknown city"}
+              </p>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-right">
+              <div className={cn("text-4xl font-semibold tabular-nums", scoreTone(lead.axiomScore))}>
+                {lead.axiomScore ?? "-"}
+              </div>
+              <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">Axiom score</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-0 divide-y divide-white/10 md:grid-cols-3 md:divide-x md:divide-y-0">
+          <InfoBlock icon={Mail} label="Email" value={lead.email || "No email"} muted={!lead.email} />
+          <InfoBlock icon={Phone} label="Phone" value={lead.phone || "No phone"} muted={!lead.phone} />
+          <InfoBlock icon={MapPin} label="Location" value={lead.address || lead.city || "No address"} muted={!lead.address && !lead.city} />
+        </div>
+      </section>
+
+      <section className="grid gap-4 md:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="rounded-2xl border border-white/10 bg-zinc-950/60 p-5">
+          <div className="flex items-center gap-2 text-sm font-semibold text-zinc-100">
+            <CheckCircle2 className="h-4 w-4 text-emerald-300" />
+            Outreach readiness
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <ReadinessItem label="Email" ok={!!lead.email} value={lead.email ? "Available" : "Missing"} />
+            <ReadinessItem label="Enrichment" ok={!!lead.enrichmentData || !!lead.enrichedAt} value={lead.enrichmentData || lead.enrichedAt ? "Complete" : "Needed"} />
+            <ReadinessItem label="Automation" ok={ready} value={ready ? "Ready" : "Waiting"} />
+          </div>
+        </div>
+
+        <div className="space-y-2 rounded-2xl border border-white/10 bg-zinc-950/60 p-4">
+          <Button
+            type="button"
+            onClick={() => void enrichLead()}
+            disabled={busy !== null || !canEnrich || !lead.email}
+            className="h-10 w-full cursor-pointer justify-center gap-2 rounded-lg border border-cyan-500/30 bg-cyan-500/10 text-cyan-100 hover:bg-cyan-500/20 disabled:opacity-40"
+          >
+            {busy === "enrich" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            Enrich and ready
+          </Button>
+          <Button
+            type="button"
+            onClick={() => void queueLead(false)}
+            disabled={busy !== null || !canQueue}
+            className="h-10 w-full cursor-pointer justify-center gap-2 rounded-lg bg-white text-zinc-950 hover:bg-zinc-200 disabled:opacity-40"
+          >
+            {busy === "queue" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
+            Queue automation
+          </Button>
+          <Button
+            type="button"
+            onClick={() => void queueLead(true)}
+            disabled={busy !== null || !canQueue}
+            className="h-10 w-full cursor-pointer justify-center gap-2 rounded-lg border border-amber-500/30 bg-amber-400 text-black hover:bg-amber-300 disabled:opacity-40"
+          >
+            {busy === "send" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            Send now
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void toggleArchive()}
+            disabled={busy !== null}
+            className="h-10 w-full cursor-pointer justify-center gap-2 rounded-lg border-white/10 bg-white/[0.02] text-zinc-300 hover:bg-white/[0.06]"
+          >
+            {busy === "archive" ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : lead.isArchived ? (
+              <ArchiveRestore className="h-4 w-4" />
+            ) : (
+              <Archive className="h-4 w-4" />
+            )}
+            {lead.isArchived ? "Restore lead" : "Archive lead"}
+          </Button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function InfoBlock({
+  icon: Icon,
+  label,
+  value,
+  muted,
+}: {
+  icon: ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+  muted?: boolean;
+}) {
+  return (
+    <div className="flex min-w-0 items-center gap-3 p-4">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] text-zinc-400">
+        <Icon className="h-4 w-4" />
+      </span>
+      <div className="min-w-0">
+        <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">{label}</div>
+        <div className={cn("mt-0.5 truncate text-sm", muted ? "text-zinc-600" : "text-zinc-200")}>{value}</div>
+      </div>
+    </div>
+  );
+}
+
+function ReadinessItem({ label, ok, value }: { label: string; ok: boolean; value: string }) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-xs text-zinc-500">{label}</span>
+        <span className={cn("h-2 w-2 rounded-full", ok ? "bg-emerald-400" : "bg-zinc-600")} />
+      </div>
+      <div className={cn("mt-2 text-sm font-medium", ok ? "text-zinc-100" : "text-zinc-500")}>{value}</div>
+    </div>
+  );
 }

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 
 import { AppShell } from "@/components/app-shell";
+import { ToastProvider } from "@/components/ui/toast-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { PerformanceProvider } from "@/lib/ui/performance";
 
@@ -32,7 +33,9 @@ export default function RootLayout({
       <body className={`${inter.variable} ${jetbrainsMono.variable} antialiased`}>
         <PerformanceProvider>
           <TooltipProvider delayDuration={0}>
-            <AppShell>{children}</AppShell>
+            <ToastProvider>
+              <AppShell>{children}</AppShell>
+            </ToastProvider>
           </TooltipProvider>
         </PerformanceProvider>
       </body>
