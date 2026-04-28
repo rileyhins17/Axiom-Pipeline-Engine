@@ -32,20 +32,33 @@ export function AppSidebar() {
   const pathname = usePathname();
   const [stats, setStats] = React.useState<LeadStats | null>(null);
 
+  // Fetch stats from the API
+  const fetchStats = React.useCallback(async () => {
+    try {
+      const response = await fetch("/api/leads/stats");
+      const data = await response.json();
+      setStats({
+        total: data.total ?? 0,
+        todayLeads: data.todayLeads ?? 0,
+        readyForTouch: data.readyForTouch,
+        followUp: data.followUp,
+        replied: data.replied,
+      });
+    } catch {
+      setStats({ total: 0, todayLeads: 0 });
+    }
+  }, []);
+
+  // Initial fetch and set up polling
   React.useEffect(() => {
-    fetch("/api/leads/stats")
-      .then((r) => r.json())
-      .then((data) =>
-        setStats({
-          total: data.total ?? 0,
-          todayLeads: data.todayLeads ?? 0,
-          readyForTouch: data.readyForTouch,
-          followUp: data.followUp,
-          replied: data.replied,
-        }),
-      )
-      .catch(() => setStats({ total: 0, todayLeads: 0 }));
-  }, [pathname]);
+    // Fetch immediately on mount
+    fetchStats();
+
+    // Poll every 10 seconds for real-time updates
+    const interval = setInterval(fetchStats, 10000);
+
+    return () => clearInterval(interval);
+  }, [fetchStats]);
 
   return (
     <Sidebar className="v2-sidebar">
@@ -127,7 +140,7 @@ export function AppSidebar() {
               </div>
               <div className="leading-tight">
                 <div className="text-[9.5px] uppercase tracking-[0.18em] text-zinc-500">Workspace</div>
-                <div className="text-xs font-semibold text-zinc-100">Axiom Sales US</div>
+                <div className="text-xs font-semibold text-zinc-100">Axiom Sales CA</div>
               </div>
             </div>
             <span className="font-mono text-[10px] text-zinc-600">prod</span>
