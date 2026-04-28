@@ -2280,6 +2280,48 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
   });
   const settings = await getSettings(prisma);
   const now = new Date();
+  const staleRunThreshold = addMinutes(now, -5);
+
+  const staleRuns = await prisma.outreachRun.findMany({
+    where: {
+      status: "RUNNING",
+      startedAt: { lte: staleRunThreshold },
+    },
+  }) as OutreachRunRecord[];
+  await Promise.all(staleRuns.map((staleRun) => prisma.outreachRun.update({
+    where: { id: staleRun.id },
+    data: {
+      status: "FAILED",
+      finishedAt: now,
+      metadata: JSON.stringify({
+        source: "scheduler",
+        error: "stale running run recovered before scheduler start",
+      }),
+    },
+  }))).catch((error) => {
+    console.warn("[scheduler] Failed to recover stale running runs:", error);
+  });
+
+  const activeRun = await prisma.outreachRun.findFirst({
+    where: {
+      status: "RUNNING",
+      startedAt: { gt: staleRunThreshold },
+    },
+    orderBy: { startedAt: "desc" },
+  }) as OutreachRunRecord | null;
+
+  if (activeRun && !options.immediate) {
+    console.log(`[scheduler] Skipped because run ${activeRun.id} is still active`);
+    return {
+      runId: "skipped-active-run",
+      claimed: 0,
+      sent: 0,
+      failed: 0,
+      skipped: 0,
+      pipeline: { enriched: 0, enrichFailed: 0, qualified: 0, queued: 0, queueSkipped: 0 },
+      replySync: { checked: 0, stopped: 0 },
+    };
+  }
 
   // Master kill switch — when scheduler kill switch is off, no enrich /
   // qualify / queue / send happens at all.
