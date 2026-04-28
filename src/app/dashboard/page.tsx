@@ -243,8 +243,16 @@ export default async function DashboardPage() {
   const intakeTone: ToneKey = adequateToday >= AUTONOMOUS_DAILY_LEAD_INTAKE_CAP ? "amber" : "emerald";
   const sendTone: ToneKey = sendsToday.total >= TARGET_DAILY_SEND ? "amber" : "cyan";
 
-  const aidanConnected = automation.mailboxes.some((m) => m.gmailAddress === "aidan@getaxiom.ca");
-  const rileyConnected = automation.mailboxes.some((m) => m.gmailAddress === "riley@getaxiom.ca");
+  // Direct mailbox-table check — independent of listAutomationOverview()
+  // so a broken helper doesn't make the banner falsely show "not connected".
+  const connectedRows = await getDatabase()
+    .prepare(`SELECT LOWER("gmailAddress") AS gmailAddress FROM "OutreachMailbox"`)
+    .all<{ gmailAddress: string }>()
+    .then((r) => r.results ?? [])
+    .catch(() => [] as Array<{ gmailAddress: string }>);
+  const connectedSet = new Set(connectedRows.map((r) => (r.gmailAddress || "").toLowerCase()));
+  const aidanConnected = connectedSet.has("aidan@getaxiom.ca");
+  const rileyConnected = connectedSet.has("riley@getaxiom.ca");
 
   return (
     <div className="mx-auto flex max-w-[1440px] flex-col gap-5">
