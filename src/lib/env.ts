@@ -25,6 +25,15 @@ const envSchema = z.object({
   SCRAPE_CONCURRENCY_LIMIT: z.coerce.number().int().positive().default(1),
   SCRAPE_TIMEOUT_MS: z.coerce.number().int().positive().default(1800000),
   WORKER_HEARTBEAT_STALE_MS: z.coerce.number().int().positive().default(60000),
+  // Master kill switches for autonomous operation. Default safe: intake +
+  // queue on, sends OFF until lead quality is trusted.
+  AUTONOMOUS_INTAKE_ENABLED: z.coerce.boolean().default(true),
+  AUTONOMOUS_QUEUE_ENABLED: z.coerce.boolean().default(true),
+  AUTONOMOUS_SEND_ENABLED: z.coerce.boolean().default(false),
+  AUTONOMOUS_MAX_SENDS_PER_DAY: z.coerce.number().int().nonnegative().default(20),
+  // Cooldown so we don't email two contacts at the same business / domain
+  // within N days. Reputation guard.
+  AUTONOMOUS_DOMAIN_COOLDOWN_DAYS: z.coerce.number().int().nonnegative().default(14),
 });
 
 export type AppEnv = z.infer<typeof envSchema>;
@@ -58,6 +67,11 @@ export function getServerEnv(): AppEnv {
     SCRAPE_CONCURRENCY_LIMIT: bindings?.SCRAPE_CONCURRENCY_LIMIT ?? process.env.SCRAPE_CONCURRENCY_LIMIT,
     SCRAPE_TIMEOUT_MS: bindings?.SCRAPE_TIMEOUT_MS ?? process.env.SCRAPE_TIMEOUT_MS,
     WORKER_HEARTBEAT_STALE_MS: bindings?.WORKER_HEARTBEAT_STALE_MS ?? process.env.WORKER_HEARTBEAT_STALE_MS,
+    AUTONOMOUS_INTAKE_ENABLED: bindings?.AUTONOMOUS_INTAKE_ENABLED ?? process.env.AUTONOMOUS_INTAKE_ENABLED,
+    AUTONOMOUS_QUEUE_ENABLED: bindings?.AUTONOMOUS_QUEUE_ENABLED ?? process.env.AUTONOMOUS_QUEUE_ENABLED,
+    AUTONOMOUS_SEND_ENABLED: bindings?.AUTONOMOUS_SEND_ENABLED ?? process.env.AUTONOMOUS_SEND_ENABLED,
+    AUTONOMOUS_MAX_SENDS_PER_DAY: bindings?.AUTONOMOUS_MAX_SENDS_PER_DAY ?? process.env.AUTONOMOUS_MAX_SENDS_PER_DAY,
+    AUTONOMOUS_DOMAIN_COOLDOWN_DAYS: bindings?.AUTONOMOUS_DOMAIN_COOLDOWN_DAYS ?? process.env.AUTONOMOUS_DOMAIN_COOLDOWN_DAYS,
   });
 
   return cachedEnv;

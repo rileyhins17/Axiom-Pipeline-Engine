@@ -10,15 +10,22 @@ import { isLeadOutreachEligible } from "@/lib/lead-qualification";
  * pipeline and expects leads to move.
  */
 export const MAILBOX_DAILY_SEND_TARGET = 40;
-export const MAILBOX_HOURLY_SEND_TARGET = 12;
+/** Hourly cap kept low (6) during early autonomy so even if 20 sends queue
+ *  up at once, they pace out across multiple hours like a human operator. */
+export const MAILBOX_HOURLY_SEND_TARGET = 6;
 /** Min delay between sends from a single mailbox. 2 min is still natural
  *  spacing (human operators take ~1-3 min per personalized email). */
 export const MAILBOX_MIN_DELAY_SECONDS = 120;
 export const MAILBOX_MAX_DELAY_SECONDS = 420;
 
-/** Min Axiom score to auto-queue. Lowered from 55 → 45 so more leads flow
- *  through the funnel without manual approval. */
-export const AUTONOMOUS_QUEUE_MIN_SCORE = 45;
+/** Tiered score thresholds. Three gates with rising bars:
+ *  intake (45) lets a lead INTO the database;
+ *  queue  (55) lets it enter the outreach sequence;
+ *  send   (65) lets it actually receive an email.
+ *  This keeps the database full but protects sender reputation. */
+export const AUTONOMOUS_INTAKE_MIN_SCORE = 45;
+export const AUTONOMOUS_QUEUE_MIN_SCORE = 55;
+export const AUTONOMOUS_SEND_MIN_SCORE = 65;
 /** Max leads to queue per scheduler tick. With cron every 1 min this is
  *  3000/hour peak which is more than enough headroom. */
 export const AUTONOMOUS_QUEUE_BATCH_SIZE = 50;
@@ -50,6 +57,50 @@ export const AUTOMATION_SETTINGS_DEFAULTS = {
   replySyncStaleMinutes: 15,
 } satisfies Omit<OutreachAutomationSettingRecord, "id" | "createdAt" | "updatedAt">;
 
+/** Government / school / chain / franchise patterns we never email. */
+const HARD_DISQUALIFIER_PATTERNS = [
+  /\b(government|gov\.|municipal(ity)?|city of|county of|state of|provincial)\b/i,
+  /\b(school|university|college|academy|district|board of education)\b/i,
+  /\b(walmart|costco|home depot|lowe'?s|mcdonald'?s|starbucks|target|kroger)\b/i,
+  /\b(franchise corporate|hq|head office)\b/i,
+];
+
+/** Free-mail providers used by businesses are usually owner-personal
+ *  inboxes (acceptable) BUT govt./edu domains we hard-block. */
+const BLOCKED_EMAIL_DOMAINS = new Set([
+  ".gov",
+  ".gov.ca",
+  ".gov.us",
+  ".gc.ca",
+  ".edu",
+  ".mil",
+  ".k12.us",
+]);
+
+export function isHardDisqualified(lead: {
+  businessName?: string | null;
+  category?: string | null;
+  email?: string | null;
+}): { disqualified: boolean; reason?: string } {
+  const text = `${lead.businessName || ""} ${lead.category || ""}`.trim();
+  if (text) {
+    for (const pattern of HARD_DISQUALIFIER_PATTERNS) {
+      if (pattern.test(text)) {
+        return { disqualified: true, reason: "blocked_segment" };
+      }
+    }
+  }
+  const email = (lead.email || "").toLowerCase().trim();
+  if (email) {
+    for (const suffix of BLOCKED_EMAIL_DOMAINS) {
+      if (email.endsWith(suffix)) {
+        return { disqualified: true, reason: "blocked_email_domain" };
+      }
+    }
+  }
+  return { disqualified: false };
+}
+
 export function shouldAutonomouslyQueueLead(lead: LeadRecord) {
   if (!isLeadOutreachEligible(lead)) {
     return false;
@@ -68,10 +119,13 @@ export function shouldAutonomouslyQueueLead(lead: LeadRecord) {
   // Skip role/department inboxes for auto-queue. info@, contact@, hello@,
   // sales@ etc. are classified as emailType='generic' and have near-zero
   // reply rates + high spam-flag risk. Owner/staff emails only.
-  // A human can still manually queue a generic email via the outreach UI
-  // if they really want to.
   const emailType = (lead.emailType || "").toLowerCase();
   if (emailType === "generic") return false;
+
+  // Already-contacted leads should never re-enter the queue autonomously.
+  if (lead.firstContactedAt) return false;
+
+  if (isHardDisqualified(lead).disqualified) return false;
 
   return true;
 }

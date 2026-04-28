@@ -46,14 +46,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
+  // Display name is derived from the live session email (local part,
+  // capitalized) — never from the stored User.name. This prevents the
+  // header from showing a stale name like "Riley Hinsperger" when a
+  // different user is logged in. Initials follow the same source.
+  const sessionEmail = session?.user?.email ?? "";
+  const localPart = sessionEmail.split("@")[0] ?? "";
+  const displayName = localPart
+    ? localPart.charAt(0).toUpperCase() + localPart.slice(1).toLowerCase()
+    : "";
   const initials = (() => {
-    if (!session?.user?.name) return session?.user?.email?.[0]?.toUpperCase() ?? "?";
-    return session.user.name
-      .split(" ")
-      .map((word: string) => word[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2);
+    if (!displayName) return sessionEmail?.[0]?.toUpperCase() ?? "?";
+    return displayName.slice(0, 2).toUpperCase();
   })();
 
   return (
@@ -81,12 +85,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <div className="hidden items-center gap-3 pl-2 lg:flex">
               <div className="text-right leading-tight">
                 <div className="text-xs font-semibold text-white">
-                  {loading ? "Loading…" : session?.user?.name || session?.user?.email || "User"}
+                  {loading ? "Loading…" : displayName || sessionEmail || "User"}
                 </div>
-                <div className="text-[10.5px] uppercase tracking-[0.14em] text-zinc-500">
-                  {session?.user?.role
-                    ? session.user.role.charAt(0).toUpperCase() + session.user.role.slice(1)
-                    : "Member"}
+                <div className="font-mono text-[10.5px] text-zinc-500">
+                  {sessionEmail || "—"}
                 </div>
               </div>
               <div className="relative flex size-9 items-center justify-center rounded-full border border-emerald-400/30 bg-gradient-to-br from-emerald-400/20 to-cyan-400/10 text-xs font-semibold text-emerald-100">

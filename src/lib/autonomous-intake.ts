@@ -2,8 +2,9 @@ import { writeAuditEvent } from "@/lib/audit";
 import { getDatabase } from "@/lib/cloudflare";
 import {
   AUTONOMOUS_DAILY_LEAD_INTAKE_CAP,
-  AUTONOMOUS_QUEUE_MIN_SCORE,
+  AUTONOMOUS_INTAKE_MIN_SCORE,
 } from "@/lib/automation-policy";
+import { getServerEnv } from "@/lib/env";
 import { createScrapeJob } from "@/lib/scrape-jobs";
 import {
   markScrapeTargetDispatched,
@@ -44,7 +45,7 @@ export async function countAdequateLeadsToday(): Promise<number> {
          AND COALESCE("email",'') != ''
          AND COALESCE("isArchived", 0) = 0`,
     )
-    .bind(since, AUTONOMOUS_QUEUE_MIN_SCORE)
+    .bind(since, AUTONOMOUS_INTAKE_MIN_SCORE)
     .first<{ count: number | string }>();
 
   return Number(row?.count || 0);
@@ -72,6 +73,11 @@ async function countActiveOrPendingScrapeJobs(): Promise<number> {
  * Designed to be called from the Cloudflare cron handler in worker.mjs.
  */
 export async function runAutonomousIntake(): Promise<IntakeResult> {
+  const env = getServerEnv();
+  if (!env.AUTONOMOUS_INTAKE_ENABLED) {
+    return { dispatched: false, reason: "intake_disabled_kill_switch" };
+  }
+
   const activeJobs = await countActiveOrPendingScrapeJobs();
   if (activeJobs > 0) {
     return { dispatched: false, reason: "scrape job already active" };

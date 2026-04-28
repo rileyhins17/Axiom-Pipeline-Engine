@@ -42,7 +42,15 @@
     "RATE_LIMIT_MAX_SCRAPE": "20",
     "RATE_LIMIT_MAX_EXPORT": "20",
     "SCRAPE_CONCURRENCY_LIMIT": "1",
-    "SCRAPE_TIMEOUT_MS": "1800000"
+    "SCRAPE_TIMEOUT_MS": "1800000",
+    // Master kill switches. Default safe: scrape + queue ON, sends OFF
+    // until lead quality is verified. Flip AUTONOMOUS_SEND_ENABLED to true
+    // when ready to actually send email.
+    "AUTONOMOUS_INTAKE_ENABLED": "true",
+    "AUTONOMOUS_QUEUE_ENABLED": "true",
+    "AUTONOMOUS_SEND_ENABLED": "false",
+    "AUTONOMOUS_MAX_SENDS_PER_DAY": "20",
+    "AUTONOMOUS_DOMAIN_COOLDOWN_DAYS": "14"
   },
   "d1_databases": [
     {

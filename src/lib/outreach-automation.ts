@@ -198,7 +198,13 @@ type AutomationBlockerReason =
   | "daily_cap_reached"
   | "awaiting_follow_up_window"
   | "generation_failed_retryable"
-  | "send_failed_retryable";
+  | "send_failed_retryable"
+  | "below_send_min_score"
+  | "blocked_segment"
+  | "blocked_email_domain"
+  | "hard_disqualified"
+  | "domain_cooldown_active"
+  | "global_daily_cap_reached";
 
 const ACTIVE_SEQUENCE_STATUSES = ["QUEUED", "ACTIVE", "PAUSED", "SENDING"] as const;
 const MAILBOX_SENDABLE_STATUSES = ["ACTIVE", "WARMING"] as const;
@@ -1690,9 +1696,105 @@ async function sendScheduledStep(
     throw new AutomationSkipError("policy_ineligible");
   }
 
+  // Send-time gate: lead must clear AUTONOMOUS_SEND_MIN_SCORE (65) — a
+  // higher bar than the queue threshold (55). Mid-tier leads stay queued
+  // but never actually email until their score crosses the send line OR a
+  // human manually approves.
+  const { AUTONOMOUS_SEND_MIN_SCORE, isHardDisqualified } = await import("@/lib/automation-policy");
+  if (
+    typeof context.lead.axiomScore !== "number" ||
+    !Number.isFinite(context.lead.axiomScore) ||
+    context.lead.axiomScore < AUTONOMOUS_SEND_MIN_SCORE
+  ) {
+    await prisma.outreachSequenceStep.update({
+      where: { id: claim.step.id },
+      data: {
+        status: "SCHEDULED",
+        claimedAt: null,
+        claimedByRunId: null,
+        errorMessage: "below_send_min_score",
+      },
+    });
+    throw new AutomationSkipError("below_send_min_score");
+  }
+
+  // Hard disqualifiers (gov / school / chain / blocked email domain).
+  const hardDq = isHardDisqualified({
+    businessName: context.lead.businessName,
+    category: context.lead.category,
+    email: context.lead.email,
+  });
+  if (hardDq.disqualified) {
+    const reason = (hardDq.reason || "hard_disqualified") as AutomationBlockerReason;
+    await stopSequenceInternal(prisma, claim.sequence, "DISQUALIFIED");
+    throw new AutomationSkipError(reason);
+  }
+
   const recipientEmail = context.lead.email;
   if (!recipientEmail) {
     throw new AutomationSkipError("missing_valid_email");
+  }
+
+  // Same-domain cooldown — never email two contacts at the same business
+  // (= same recipient email domain) within AUTONOMOUS_DOMAIN_COOLDOWN_DAYS.
+  // Reputation guard against scrape duplicates pointing at the same shop.
+  const recipientDomain = getDomainFromEmail(recipientEmail);
+  if (recipientDomain) {
+    const { getServerEnv: _getEnv } = await import("@/lib/env");
+    const { getDatabase } = await import("@/lib/cloudflare");
+    const cooldownDays = _getEnv().AUTONOMOUS_DOMAIN_COOLDOWN_DAYS;
+    if (cooldownDays > 0) {
+      const since = new Date(Date.now() - cooldownDays * 24 * 60 * 60 * 1000);
+      const row = await getDatabase()
+        .prepare(
+          `SELECT 1 AS hit FROM "OutreachEmail"
+           WHERE "status" = 'sent'
+             AND "sentAt" >= ?
+             AND LOWER("recipientEmail") LIKE ?
+             AND "leadId" != ?
+           LIMIT 1`,
+        )
+        .bind(since.toISOString(), `%@${recipientDomain.toLowerCase()}`, context.lead.id)
+        .first<{ hit: number }>();
+      if (row) {
+        await prisma.outreachSequenceStep.update({
+          where: { id: claim.step.id },
+          data: {
+            status: "SCHEDULED",
+            claimedAt: null,
+            claimedByRunId: null,
+            errorMessage: "domain_cooldown_active",
+            scheduledFor: addMinutes(new Date(), 60 * 24),
+          },
+        });
+        throw new AutomationSkipError("domain_cooldown_active");
+      }
+    }
+  }
+
+  // Global daily cap across ALL mailboxes (separate from per-mailbox cap).
+  // Default 20/day; tightens during early autonomy.
+  const { getServerEnv: _envFn } = await import("@/lib/env");
+  const globalCap = _envFn().AUTONOMOUS_MAX_SENDS_PER_DAY;
+  if (globalCap > 0) {
+    const startOfDay = new Date();
+    startOfDay.setUTCHours(0, 0, 0, 0);
+    const sentToday = await prisma.outreachEmail.count({
+      where: { status: "sent", sentAt: { gte: startOfDay } },
+    });
+    if (sentToday >= globalCap) {
+      await prisma.outreachSequenceStep.update({
+        where: { id: claim.step.id },
+        data: {
+          status: "SCHEDULED",
+          claimedAt: null,
+          claimedByRunId: null,
+          errorMessage: "global_daily_cap_reached",
+          scheduledFor: addMinutes(new Date(), 60 * 24),
+        },
+      });
+      throw new AutomationSkipError("global_daily_cap_reached");
+    }
   }
 
   const suppression = await prisma.outreachSuppression.findFirst({
@@ -2100,9 +2202,26 @@ async function setSequenceBlocked(
 
 export async function runAutomationScheduler(options: { immediate?: boolean } = {}) {
   const { runAutoPipeline } = await import("@/lib/auto-pipeline");
+  const { getServerEnv } = await import("@/lib/env");
+  const env = getServerEnv();
   const prisma = getPrisma();
   const settings = await getSettings(prisma);
   const now = new Date();
+
+  // Master kill switch — when scheduler kill switch is off, no enrich /
+  // qualify / queue / send happens at all.
+  if (!env.AUTONOMOUS_QUEUE_ENABLED && !env.AUTONOMOUS_SEND_ENABLED) {
+    console.log("[scheduler] Skipped — both AUTONOMOUS_QUEUE_ENABLED and AUTONOMOUS_SEND_ENABLED are false");
+    return {
+      runId: "skipped",
+      claimed: 0,
+      sent: 0,
+      failed: 0,
+      skipped: 0,
+      pipeline: { enriched: 0, enrichFailed: 0, qualified: 0, queued: 0, queueSkipped: 0 },
+      replySync: { checked: 0, stopped: 0 },
+    };
+  }
 
   console.log(`[scheduler] Run starting at ${now.toISOString()} | enabled=${settings.enabled} paused=${settings.globalPaused}`);
 
@@ -2145,14 +2264,52 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
       };
     }
 
-    // Auto-pipeline: enrich → qualify → queue new leads
-    try {
-      pipeline = await runAutoPipeline("system");
-    } catch (pipelineError) {
-      console.error("[scheduler] Auto-pipeline error (non-fatal):", pipelineError);
+    // Auto-pipeline: enrich → qualify → queue new leads (gated by kill switch)
+    if (env.AUTONOMOUS_QUEUE_ENABLED) {
+      try {
+        pipeline = await runAutoPipeline("system");
+      } catch (pipelineError) {
+        console.error("[scheduler] Auto-pipeline error (non-fatal):", pipelineError);
+      }
+    } else {
+      console.log("[scheduler] AUTONOMOUS_QUEUE_ENABLED=false — skipping enrich/qualify/queue");
     }
 
     const replySync = await syncAutomationReplies();
+
+    // Send loop is gated by AUTONOMOUS_SEND_ENABLED (default OFF). When off
+    // we still run reply-sync and pipeline, but don't claim or send any
+    // sequence steps.
+    if (!env.AUTONOMOUS_SEND_ENABLED) {
+      console.log("[scheduler] AUTONOMOUS_SEND_ENABLED=false — skipping send loop");
+      await prisma.outreachRun.update({
+        where: { id: run.id },
+        data: {
+          finishedAt: new Date(),
+          status: "OK",
+          sentCount: 0,
+          failedCount: 0,
+          skippedCount: 0,
+          claimedCount: 0,
+          metadata: JSON.stringify({
+            source: "scheduler",
+            reason: "send_kill_switch_off",
+            pipeline,
+            replySync,
+          }),
+        },
+      });
+      return {
+        runId: run.id,
+        claimed: 0,
+        sent: 0,
+        failed: 0,
+        skipped: 0,
+        pipeline,
+        replySync,
+      };
+    }
+
     if (options.immediate) {
       fastForwardedCount = await fastForwardInitialTouches(prisma, now);
     }
@@ -2160,21 +2317,45 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
 
     console.log(`[scheduler] Pipeline: ${JSON.stringify(pipeline)} | Replies: checked=${replySync.checked} stopped=${replySync.stopped} | Fast-forwarded: ${fastForwardedCount} | Claims: ${claims.length}`);
 
+    const { recordSendDecision } = await import("@/lib/send-decisions");
+
     await Promise.allSettled(
       claims.map(async (claim) => {
+        const baseDecision = {
+          leadId: claim.sequence.leadId,
+          sequenceId: claim.sequence.id,
+          stepId: claim.step.id,
+          mailboxId: claim.mailbox.id,
+          senderEmail: claim.mailbox.gmailAddress,
+        };
         try {
           await sendScheduledStep(prisma, claim, run.id);
           sentCount += 1;
+          await recordSendDecision({
+            ...baseDecision,
+            decision: "SENT",
+            reason: null,
+          });
           console.log(`[scheduler] SENT step ${claim.step.stepNumber} for sequence ${claim.sequence.id} (lead ${claim.sequence.leadId})`);
         } catch (error) {
           if (error instanceof AutomationSkipError) {
             skippedCount += 1;
+            await recordSendDecision({
+              ...baseDecision,
+              decision: "BLOCKED",
+              reason: error.reason,
+            });
             await setSequenceBlocked(prisma, claim, error.reason);
             return;
           }
 
           if (error instanceof AutomationStoppedError) {
             skippedCount += 1;
+            await recordSendDecision({
+              ...baseDecision,
+              decision: "SKIPPED",
+              reason: "sequence_stopped",
+            });
             return;
           }
 

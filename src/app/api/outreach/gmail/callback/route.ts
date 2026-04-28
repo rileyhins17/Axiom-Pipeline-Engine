@@ -26,13 +26,13 @@ export async function GET(request: NextRequest) {
     if (error) {
       console.error("Gmail OAuth error:", error);
       return NextResponse.redirect(
-        `${baseUrl}/outreach?gmail_error=${encodeURIComponent(error)}`,
+        `${baseUrl}/settings?gmail_error=${encodeURIComponent(error)}`,
       );
     }
 
     if (!code) {
       return NextResponse.redirect(
-        `${baseUrl}/outreach?gmail_error=missing_code`,
+        `${baseUrl}/settings?gmail_error=missing_code`,
       );
     }
 
@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
 
     if (!tokens.refresh_token) {
       return NextResponse.redirect(
-        `${baseUrl}/outreach?gmail_error=no_refresh_token`,
+        `${baseUrl}/settings?gmail_error=no_refresh_token`,
       );
     }
 
@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
 
     if (!userInfo.email) {
       return NextResponse.redirect(
-        `${baseUrl}/outreach?gmail_error=no_email`,
+        `${baseUrl}/settings?gmail_error=no_email`,
       );
     }
 
@@ -106,13 +106,13 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    return NextResponse.redirect(`${baseUrl}/outreach?gmail_connected=true`);
+    return NextResponse.redirect(`${baseUrl}/settings?gmail_connected=true`);
   } catch (error: any) {
     console.error("Gmail callback error:", error);
     const env = getServerEnv();
     const baseUrl = env.APP_BASE_URL.replace(/\/$/, "");
     return NextResponse.redirect(
-      `${baseUrl}/outreach?gmail_error=${encodeURIComponent(error.message || "callback_failed")}`,
+      `${baseUrl}/settings?gmail_error=${encodeURIComponent(error.message || "callback_failed")}`,
     );
   }
 }
