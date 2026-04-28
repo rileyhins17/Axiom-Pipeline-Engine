@@ -3,6 +3,7 @@ import { Bot, Clock3, Mail, Pause, Play, Reply } from "lucide-react";
 
 import { AUTOMATION_SETTINGS_DEFAULTS, MAILBOX_DAILY_SEND_TARGET } from "@/lib/automation-policy";
 import { listAutomationOverview } from "@/lib/outreach-automation";
+import { getDatabase } from "@/lib/cloudflare";
 import { requireSession } from "@/lib/session";
 import { formatAppDateTime } from "@/lib/time";
 
@@ -11,7 +12,7 @@ export const dynamic = "force-dynamic";
 function emptyOverview() {
   return {
     settings: { ...AUTOMATION_SETTINGS_DEFAULTS },
-    mailboxes: [] as Array<{ id: string; gmailAddress: string; status: string; sentToday: number; sentThisHour: number; dailyLimit: number; hourlyLimit: number; warmupLevel: number; lastSentAt: Date | null }>,
+    mailboxes: [] as Array<{ id: string; gmailAddress: string; status: string; sentToday: number; sentThisHour: number; dailyLimit: number; hourlyLimit: number; warmupLevel: number; lastSentAt: Date | string | null }>,
     sequences: [] as Array<{ id: string; state: string; leadId: number; lead?: { businessName: string; city: string; email: string } | null; nextSendAt: Date | null; lastSentAt: Date | null; currentStep: string; blockerLabel: string | null }>,
     recentSent: [] as Array<{ id: string; sentAt: Date; subject: string; senderEmail: string; recipientEmail: string; lead?: { businessName: string } | null }>,
     engine: {
@@ -29,6 +30,57 @@ function emptyOverview() {
     stats: { ready: 0, queued: 0, sending: 0, waiting: 0, blocked: 0, active: 0, paused: 0, stopped: 0, completed: 0, replied: 0, scheduledToday: 0 },
     recentRuns: [],
   };
+}
+
+async function listFallbackMailboxes() {
+  const result = await getDatabase()
+    .prepare(
+      `SELECT
+         m."id",
+         m."gmailAddress",
+         m."status",
+         m."dailyLimit",
+         m."hourlyLimit",
+         m."warmupLevel",
+         m."lastSentAt",
+         (
+           SELECT COUNT(*)
+           FROM "OutreachEmail" e
+           WHERE e."mailboxId" = m."id"
+             AND e."status" = 'sent'
+             AND datetime(e."sentAt") >= datetime('now', 'start of day')
+         ) AS "sentToday",
+         (
+           SELECT COUNT(*)
+           FROM "OutreachEmail" e
+           WHERE e."mailboxId" = m."id"
+             AND e."status" = 'sent'
+             AND datetime(e."sentAt") >= datetime('now', '-1 hour')
+         ) AS "sentThisHour"
+       FROM "OutreachMailbox" m
+       WHERE m."gmailConnectionId" IS NOT NULL
+       ORDER BY m."updatedAt" DESC`,
+    )
+    .all<{
+      id: string;
+      gmailAddress: string;
+      status: string;
+      dailyLimit: number;
+      hourlyLimit: number;
+      warmupLevel: number;
+      lastSentAt: Date | string | null;
+      sentToday: number;
+      sentThisHour: number;
+    }>();
+
+  return (result.results ?? []).map((mailbox) => ({
+    ...mailbox,
+    dailyLimit: Number(mailbox.dailyLimit || MAILBOX_DAILY_SEND_TARGET),
+    hourlyLimit: Number(mailbox.hourlyLimit || 1),
+    warmupLevel: Number(mailbox.warmupLevel || 0),
+    sentToday: Number(mailbox.sentToday || 0),
+    sentThisHour: Number(mailbox.sentThisHour || 0),
+  }));
 }
 
 function relativeAgo(date: Date | string | null | undefined): string {
@@ -54,7 +106,12 @@ function relativeAgo(date: Date | string | null | undefined): string {
 export default async function AutomationPage() {
   await requireSession();
 
-  const overview = await listAutomationOverview().catch(() => emptyOverview());
+  const overview = await listAutomationOverview().catch(async (error) => {
+    console.error("[automation] Overview failed, using mailbox fallback:", error);
+    const fallback = emptyOverview();
+    fallback.mailboxes = await listFallbackMailboxes().catch(() => []);
+    return fallback;
+  });
 
   const queued = overview.sequences.filter((s) => s.state === "QUEUED" || s.state === "SENDING");
   const waiting = overview.sequences.filter((s) => s.state === "WAITING");

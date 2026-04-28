@@ -35,7 +35,47 @@ export const AUTONOMOUS_QUEUE_BATCH_SIZE = 50;
  *  dispatching new ScrapeJobs until midnight UTC. Combined with two
  *  mailboxes at 40/day each (= 80 sends/day), this keeps a healthy
  *  intake-to-send ratio without manual gating. */
-export const AUTONOMOUS_DAILY_LEAD_INTAKE_CAP = 50;
+export const AUTONOMOUS_DAILY_LEAD_INTAKE_CAP = 100;
+
+export function isAdequateAutonomousLead(lead: {
+  axiomScore?: number | null;
+  axiomTier?: string | null;
+  businessName?: string | null;
+  category?: string | null;
+  email?: string | null;
+  emailType?: string | null;
+  isArchived?: boolean | number | null;
+}) {
+  if (typeof lead.axiomScore !== "number" || !Number.isFinite(lead.axiomScore)) {
+    return false;
+  }
+
+  if (lead.axiomScore < AUTONOMOUS_INTAKE_MIN_SCORE) {
+    return false;
+  }
+
+  if (lead.axiomTier === "D") {
+    return false;
+  }
+
+  if (!String(lead.email || "").trim()) {
+    return false;
+  }
+
+  if (String(lead.emailType || "").trim().toLowerCase() === "generic") {
+    return false;
+  }
+
+  if (lead.isArchived === true || lead.isArchived === 1) {
+    return false;
+  }
+
+  if (isHardDisqualified(lead).disqualified) {
+    return false;
+  }
+
+  return true;
+}
 
 export const AUTOMATION_SETTINGS_DEFAULTS = {
   enabled: true,

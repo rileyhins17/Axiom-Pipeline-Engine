@@ -23,9 +23,13 @@ export interface IntakeResult {
   cap?: number;
 }
 
-function startOfTodayUtc(): Date {
-  const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
+function sqlDateTime(date: Date): string {
+  return date.toISOString().slice(0, 19).replace("T", " ");
+}
+
+export function getAutonomousDailyLeadCap() {
+  const env = getServerEnv();
+  return env.AUTONOMOUS_DAILY_LEAD_INTAKE_CAP || AUTONOMOUS_DAILY_LEAD_INTAKE_CAP;
 }
 
 /**
@@ -34,11 +38,11 @@ function startOfTodayUtc(): Date {
  * non-generic email, has email, not archived. SQL-side for speed.
  */
 export async function countAdequateLeadsToday(): Promise<number> {
-  const since = startOfTodayUtc().toISOString();
+  const since = sqlDateTime(new Date(Date.now() - 24 * 60 * 60 * 1000));
   const row = await getDatabase()
     .prepare(
       `SELECT COUNT(*) AS count FROM "Lead"
-       WHERE "createdAt" >= ?
+       WHERE datetime("createdAt") >= datetime(?)
          AND "axiomScore" >= ?
          AND COALESCE("axiomTier",'') != 'D'
          AND LOWER(COALESCE("emailType",'')) != 'generic'
@@ -84,12 +88,13 @@ export async function runAutonomousIntake(): Promise<IntakeResult> {
   }
 
   const adequateToday = await countAdequateLeadsToday();
-  if (adequateToday >= AUTONOMOUS_DAILY_LEAD_INTAKE_CAP) {
+  const dailyLeadCap = getAutonomousDailyLeadCap();
+  if (adequateToday >= dailyLeadCap) {
     return {
       dispatched: false,
       reason: "daily intake cap reached",
       adequateToday,
-      cap: AUTONOMOUS_DAILY_LEAD_INTAKE_CAP,
+      cap: dailyLeadCap,
     };
   }
 
@@ -121,7 +126,7 @@ export async function runAutonomousIntake(): Promise<IntakeResult> {
       region: target.region,
       country: target.country,
       adequateToday,
-      cap: AUTONOMOUS_DAILY_LEAD_INTAKE_CAP,
+      cap: dailyLeadCap,
     },
   });
 
@@ -132,6 +137,6 @@ export async function runAutonomousIntake(): Promise<IntakeResult> {
     niche: target.niche,
     city: target.city,
     adequateToday,
-    cap: AUTONOMOUS_DAILY_LEAD_INTAKE_CAP,
+    cap: dailyLeadCap,
   };
 }

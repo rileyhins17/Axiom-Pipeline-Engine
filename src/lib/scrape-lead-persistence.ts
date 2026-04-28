@@ -1,5 +1,7 @@
 import { extractDomain } from "@/lib/dedupe";
 import { validateAgentLeadPayload } from "@/lib/agent-protocol";
+import { countAdequateLeadsToday, getAutonomousDailyLeadCap } from "@/lib/autonomous-intake";
+import { isAdequateAutonomousLead } from "@/lib/automation-policy";
 import { getPrisma, type LeadRecord } from "@/lib/prisma";
 import {
   appendScrapeJobEvent,
@@ -76,7 +78,7 @@ function normalizeLeadPayload(lead: Record<string, unknown>) {
 export async function persistScrapeJobLead(input: {
   jobId: string;
   lead: ScrapeLeadWriteInput;
-}): Promise<LeadRecord> {
+}): Promise<LeadRecord | null> {
   const currentJob = await getScrapeJob(input.jobId);
   if (!currentJob) {
     throw new Error("Job not found");
@@ -120,6 +122,28 @@ export async function persistScrapeJobLead(input: {
       message: `[LEAD] Validation failed: ${validation.error}`,
     });
     throw new Error(validation.error);
+  }
+
+  if (currentJob.actorUserId === "system") {
+    if (!isAdequateAutonomousLead(validation.lead)) {
+      await appendScrapeJobEvent(input.jobId, "log", {
+        jobId: input.jobId,
+        jobStatus: currentJob.status,
+        message: `[LEAD] Skipped non-adequate autonomous lead: ${validation.lead.businessName} (${validation.lead.axiomScore ?? "n/a"}/100).`,
+      });
+      return null;
+    }
+
+    const cap = getAutonomousDailyLeadCap();
+    const adequateToday = await countAdequateLeadsToday();
+    if (adequateToday >= cap) {
+      await appendScrapeJobEvent(input.jobId, "log", {
+        jobId: input.jobId,
+        jobStatus: currentJob.status,
+        message: `[LEAD] Skipped autonomous lead because the rolling 24h adequate-lead cap is reached (${adequateToday}/${cap}).`,
+      });
+      return null;
+    }
   }
 
   const prisma = getPrisma();

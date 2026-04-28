@@ -119,6 +119,7 @@ export async function GET(request: NextRequest) {
       await ensureMailboxForConnection(connection, {
         label: userInfo.name || gmailAddress.split("@")[0],
         status: "ACTIVE",
+        forceStatus: true,
       });
     }
 

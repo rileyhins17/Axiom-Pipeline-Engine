@@ -529,7 +529,7 @@ async function getSettings(prisma: PrismaLike) {
 
 export async function ensureMailboxForConnection(
   connection: GmailConnectionRecord,
-  options?: { label?: string; timezone?: string; status?: string },
+  options?: { label?: string; timezone?: string; status?: string; forceStatus?: boolean },
 ) {
   const prisma = getPrisma();
   const gmailAddress = normalizeGmailAddress(connection.gmailAddress);
@@ -541,6 +541,9 @@ export async function ensureMailboxForConnection(
       ],
     },
   });
+  const status = options?.forceStatus
+    ? (options?.status ?? existing?.status ?? "WARMING")
+    : (existing?.status ?? options?.status ?? "WARMING");
 
   const data = {
     userId: connection.userId,
@@ -548,7 +551,7 @@ export async function ensureMailboxForConnection(
     gmailAddress,
     label: options?.label ?? existing?.label ?? gmailAddress.split("@")[0],
     timezone: options?.timezone ?? existing?.timezone ?? "America/Toronto",
-    status: options?.status ?? existing?.status ?? "WARMING",
+    status,
     dailyLimit: MAILBOX_DAILY_SEND_TARGET,
     hourlyLimit: MAILBOX_HOURLY_SEND_TARGET,
     minDelaySeconds: MAILBOX_MIN_DELAY_SECONDS,
@@ -683,6 +686,7 @@ async function listSendableMailboxes(prisma: PrismaLike) {
   return prisma.outreachMailbox.findMany({
     where: {
       status: { in: [...MAILBOX_SENDABLE_STATUSES] },
+      gmailConnectionId: { not: null },
     },
     orderBy: { lastSentAt: "asc" },
   }) as Promise<OutreachMailboxRecord[]>;
@@ -1139,6 +1143,9 @@ export async function listAutomationOverview() {
   const prisma = getPrisma();
   const now = new Date();
   const settings = await getSettings(prisma);
+  await syncMailboxesForGmailConnections().catch((error) => {
+    console.warn("[automation] Failed to sync Gmail mailboxes before overview:", error);
+  });
   const [mailboxes, sequences, recentRuns, ready, recentSentRaw] = await Promise.all([
     prisma.outreachMailbox.findMany({ orderBy: { updatedAt: "desc" } }) as Promise<OutreachMailboxRecord[]>,
     prisma.outreachSequence.findMany({ orderBy: { createdAt: "desc" }, take: 300 }) as Promise<OutreachSequenceRecord[]>,
@@ -1527,11 +1534,18 @@ export async function syncAutomationReplies() {
       const batch = sequences.slice(i, i + 5);
       await Promise.all(
         batch.map(async (sequence) => {
-          checked += 1;
-          const reply = await detectReplyForSequence(prisma, sequence);
-          if (reply.detected) {
-            await markReplyStop(prisma, sequence, reply);
-            stopped += 1;
+          try {
+            checked += 1;
+            const reply = await detectReplyForSequence(prisma, sequence);
+            if (reply.detected) {
+              await markReplyStop(prisma, sequence, reply);
+              stopped += 1;
+            }
+          } catch (error) {
+            console.error(`[automation] Reply sync failed for sequence ${sequence.id}:`, error);
+            if (isMailboxAuthFailure(error)) {
+              await markMailboxDisconnected(prisma, mailbox.id);
+            }
           }
         }),
       );
@@ -1639,6 +1653,25 @@ function classifySendFailure(error: unknown) {
   }
 
   return { kind: "retryable" as const, reason: "send_failed_retryable" as AutomationBlockerReason };
+}
+
+function isMailboxAuthFailure(error: unknown) {
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  return (
+    message.includes("unauthorized") ||
+    message.includes("invalid_grant") ||
+    message.includes("refresh token") ||
+    message.includes("gmail connection is missing")
+  );
+}
+
+async function markMailboxDisconnected(prisma: PrismaLike, mailboxId: string) {
+  await prisma.outreachMailbox.update({
+    where: { id: mailboxId },
+    data: { status: "DISCONNECTED", updatedAt: new Date() },
+  }).catch((error) => {
+    console.warn(`[automation] Failed to mark mailbox ${mailboxId} disconnected:`, error);
+  });
 }
 
 async function sendScheduledStep(
@@ -1798,7 +1831,7 @@ async function sendScheduledStep(
   }
 
   // Global daily cap across ALL mailboxes (separate from per-mailbox cap).
-  // Default 20/day; tightens during early autonomy.
+  // Default matches two warmed mailboxes at 40/day each.
   const { getServerEnv: _envFn } = await import("@/lib/env");
   const globalCap = _envFn().AUTONOMOUS_MAX_SENDS_PER_DAY;
   if (globalCap > 0) {
@@ -2128,6 +2161,14 @@ async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: numbe
     if (!mailbox) {
       continue;
     }
+    if (!mailbox.gmailConnectionId || !MAILBOX_SENDABLE_STATUSES.includes(mailbox.status as (typeof MAILBOX_SENDABLE_STATUSES)[number])) {
+      continue;
+    }
+
+    const nextPendingStep = await getNextPendingStep(prisma, sequence.id);
+    if (!nextPendingStep || nextPendingStep.id !== step.id) {
+      continue;
+    }
 
     // Fair distribution: don't let one mailbox hog all claims in a single batch
     const currentMailboxClaims = mailboxClaimCounts.get(mailbox.id) || 0;
@@ -2230,6 +2271,9 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
   const { getServerEnv } = await import("@/lib/env");
   const env = getServerEnv();
   const prisma = getPrisma();
+  await syncMailboxesForGmailConnections().catch((error) => {
+    console.warn("[scheduler] Failed to sync Gmail mailboxes before run:", error);
+  });
   const settings = await getSettings(prisma);
   const now = new Date();
 
@@ -2365,6 +2409,9 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
         } catch (error) {
           if (error instanceof AutomationSkipError) {
             skippedCount += 1;
+            if (error.reason === "mailbox_disconnected") {
+              await markMailboxDisconnected(prisma, claim.mailbox.id);
+            }
             await recordSendDecision({
               ...baseDecision,
               decision: "BLOCKED",
@@ -2419,6 +2466,9 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
 
           if (classification.kind === "blocked") {
             failedCount += 1;
+            if (classification.reason === "mailbox_disconnected") {
+              await markMailboxDisconnected(prisma, claim.mailbox.id);
+            }
             await setSequenceBlocked(prisma, claim, classification.reason);
             return;
           }

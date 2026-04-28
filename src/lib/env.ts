@@ -30,7 +30,8 @@ const envSchema = z.object({
   AUTONOMOUS_INTAKE_ENABLED: z.coerce.boolean().default(true),
   AUTONOMOUS_QUEUE_ENABLED: z.coerce.boolean().default(true),
   AUTONOMOUS_SEND_ENABLED: z.coerce.boolean().default(false),
-  AUTONOMOUS_MAX_SENDS_PER_DAY: z.coerce.number().int().nonnegative().default(20),
+  AUTONOMOUS_DAILY_LEAD_INTAKE_CAP: z.coerce.number().int().positive().default(100),
+  AUTONOMOUS_MAX_SENDS_PER_DAY: z.coerce.number().int().nonnegative().default(80),
   // Cooldown so we don't email two contacts at the same business / domain
   // within N days. Reputation guard.
   AUTONOMOUS_DOMAIN_COOLDOWN_DAYS: z.coerce.number().int().nonnegative().default(14),
@@ -70,6 +71,7 @@ export function getServerEnv(): AppEnv {
     AUTONOMOUS_INTAKE_ENABLED: bindings?.AUTONOMOUS_INTAKE_ENABLED ?? process.env.AUTONOMOUS_INTAKE_ENABLED,
     AUTONOMOUS_QUEUE_ENABLED: bindings?.AUTONOMOUS_QUEUE_ENABLED ?? process.env.AUTONOMOUS_QUEUE_ENABLED,
     AUTONOMOUS_SEND_ENABLED: bindings?.AUTONOMOUS_SEND_ENABLED ?? process.env.AUTONOMOUS_SEND_ENABLED,
+    AUTONOMOUS_DAILY_LEAD_INTAKE_CAP: bindings?.AUTONOMOUS_DAILY_LEAD_INTAKE_CAP ?? process.env.AUTONOMOUS_DAILY_LEAD_INTAKE_CAP,
     AUTONOMOUS_MAX_SENDS_PER_DAY: bindings?.AUTONOMOUS_MAX_SENDS_PER_DAY ?? process.env.AUTONOMOUS_MAX_SENDS_PER_DAY,
     AUTONOMOUS_DOMAIN_COOLDOWN_DAYS: bindings?.AUTONOMOUS_DOMAIN_COOLDOWN_DAYS ?? process.env.AUTONOMOUS_DOMAIN_COOLDOWN_DAYS,
   });
