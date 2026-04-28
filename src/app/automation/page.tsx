@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Bot, Clock3, Mail, Pause, Play, Reply } from "lucide-react";
 
 import { AUTOMATION_SETTINGS_DEFAULTS, MAILBOX_DAILY_SEND_TARGET } from "@/lib/automation-policy";
+import { EmergencyControlCard } from "@/components/emergency-control-card";
 import { listAutomationOverview } from "@/lib/outreach-automation";
 import { getDatabase } from "@/lib/cloudflare";
 import { requireSession } from "@/lib/session";
@@ -131,6 +132,39 @@ export default async function AutomationPage() {
         <EngineBadge mode={overview.engine.mode} />
       </header>
 
+      <section className="grid gap-4 xl:grid-cols-[1.3fr_0.7fr]">
+        <div className="v2-card overflow-hidden p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="v2-eyebrow">Live posture</div>
+              <div className="mt-2 text-sm text-zinc-300">
+                {overview.settings.emergencyPaused
+                  ? "The engine is halted at the settings gate."
+                  : "Automation is live and the scheduler can send on the next eligible tick."}
+              </div>
+            </div>
+            <span className={`v2-pill ${overview.settings.emergencyPaused ? "border-red-400/30 bg-red-500/[0.12] text-red-200" : "v2-pill-accent"}`}>
+              {overview.settings.emergencyPaused ? "Emergency stop" : "Live"}
+            </span>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <MiniStat label="Queued" value={overview.engine.queuedCount} tone="cyan" />
+            <MiniStat label="Waiting" value={overview.engine.waitingCount} tone="violet" />
+            <MiniStat label="Blocked" value={overview.engine.blockedCount} tone={overview.engine.blockedCount > 0 ? "amber" : "zinc"} />
+          </div>
+        </div>
+
+        <EmergencyControlCard
+          compact
+          initialState={{
+            emergencyPaused: overview.settings.emergencyPaused,
+            emergencyPausedAt: overview.settings.emergencyPausedAt ? overview.settings.emergencyPausedAt.toISOString() : null,
+            emergencyPausedBy: overview.settings.emergencyPausedBy,
+            emergencyPauseReason: overview.settings.emergencyPauseReason,
+          }}
+        />
+      </section>
+
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Stat label="Queued" value={overview.engine.queuedCount} icon={<Clock3 className="size-4" />} tone="cyan" />
         <Stat label="Waiting (follow-up)" value={overview.engine.waitingCount} icon={<Clock3 className="size-4" />} tone="violet" />
@@ -229,19 +263,30 @@ function Stat({ label, value, icon, tone }: { label: string; value: number; icon
   const text =
     tone === "cyan" ? "text-cyan-300" : tone === "violet" ? "text-violet-300" : tone === "amber" ? "text-amber-300" : tone === "emerald" ? "text-emerald-300" : "text-zinc-300";
   return (
-    <div className="rounded-md border border-white/[0.06] bg-[#0b131d] p-4">
+    <div className="v2-stat stat-card">
       <div className="flex items-center justify-between text-zinc-500">
         <span className="text-[11px] font-medium uppercase tracking-[0.16em]">{label}</span>
         <span className={text}>{icon}</span>
       </div>
-      <div className={`mt-2 font-mono text-3xl font-semibold tabular-nums ${text}`}>{value.toLocaleString()}</div>
+      <div className={`mt-2 animate-counter-up font-mono text-3xl font-semibold tabular-nums ${text}`}>{value.toLocaleString()}</div>
+    </div>
+  );
+}
+
+function MiniStat({ label, value, tone }: { label: string; value: number; tone: "cyan" | "violet" | "amber" | "zinc" }) {
+  const text =
+    tone === "cyan" ? "text-cyan-300" : tone === "violet" ? "text-violet-300" : tone === "amber" ? "text-amber-300" : "text-zinc-300";
+  return (
+    <div className="v2-tile px-4 py-3">
+      <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">{label}</div>
+      <div className={`mt-1 font-mono text-2xl font-semibold tabular-nums ${text}`}>{value.toLocaleString()}</div>
     </div>
   );
 }
 
 function Card({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
   return (
-    <div className="overflow-hidden rounded-md border border-white/[0.06] bg-[#0b131d]">
+    <div className="v2-card overflow-hidden">
       <header className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
         <div>
           <div className="text-sm font-semibold text-white">{title}</div>
@@ -308,7 +353,7 @@ function Bar({ label, pct, value, tone }: { label: string; pct: number; value: s
         <span className="font-mono tabular-nums text-zinc-400">{value}</span>
       </div>
       <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/[0.05]">
-        <div className={`h-full ${bar}`} style={{ width: `${pct}%` }} />
+        <div className={`h-full ${bar} progress-animate`} style={{ width: `${pct}%` }} />
       </div>
     </div>
   );

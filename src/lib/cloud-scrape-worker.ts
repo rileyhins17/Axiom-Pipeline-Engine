@@ -2,6 +2,7 @@ import { writeAuditEvent } from "@/lib/audit";
 import { getCloudflareBindings } from "@/lib/cloudflare";
 import { generateDedupeKey } from "@/lib/dedupe";
 import { getServerEnv } from "@/lib/env";
+import { getAutomationSettings } from "@/lib/outreach-automation";
 import { getPrisma } from "@/lib/prisma";
 import { executeScrapeJob } from "@/lib/scrape-engine-worker";
 import { persistScrapeJobLead } from "@/lib/scrape-lead-persistence";
@@ -114,6 +115,10 @@ async function runClaimedJob(job: ScrapeJobRecord, existingDedupeKeys: string[])
       }
 
       try {
+        if (await getAutomationSettings().then((settings) => settings.emergencyPaused).catch(() => false)) {
+          cancelRequested = true;
+          return;
+        }
         const currentJob = await touchScrapeJobHeartbeat(job.id, job.claimedBy || DEFAULT_CLOUD_WORKER_NAME);
         if (!currentJob || currentJob.status === "completed" || currentJob.status === "failed" || currentJob.status === "canceled") {
           cancelRequested = true;
@@ -227,6 +232,10 @@ export async function runCloudScrapeWorker() {
   const env = getServerEnv();
   if (!isEnabled(env.CLOUD_SCRAPE_ENABLED)) {
     return { claimed: false, reason: "Cloud scrape disabled" };
+  }
+
+  if (await getAutomationSettings().then((settings) => settings.emergencyPaused).catch(() => false)) {
+    return { claimed: false, reason: "Emergency kill switch active" };
   }
 
   const workerName = env.CLOUD_SCRAPE_WORKER_NAME || DEFAULT_CLOUD_WORKER_NAME;

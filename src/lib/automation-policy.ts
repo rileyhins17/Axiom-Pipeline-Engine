@@ -80,6 +80,10 @@ export function isAdequateAutonomousLead(lead: {
 export const AUTOMATION_SETTINGS_DEFAULTS = {
   enabled: true,
   globalPaused: false,
+  emergencyPaused: false,
+  emergencyPausedAt: null,
+  emergencyPausedBy: null,
+  emergencyPauseReason: null,
   sendWindowStartHour: 0,
   sendWindowStartMinute: 0,
   sendWindowEndHour: 23,

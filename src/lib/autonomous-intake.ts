@@ -5,6 +5,7 @@ import {
   AUTONOMOUS_INTAKE_MIN_SCORE,
 } from "@/lib/automation-policy";
 import { getServerEnv } from "@/lib/env";
+import { getAutomationSettings } from "@/lib/outreach-automation";
 import { createScrapeJob } from "@/lib/scrape-jobs";
 import {
   markScrapeTargetDispatched,
@@ -80,6 +81,11 @@ export async function runAutonomousIntake(): Promise<IntakeResult> {
   const env = getServerEnv();
   if (!env.AUTONOMOUS_INTAKE_ENABLED) {
     return { dispatched: false, reason: "intake_disabled_kill_switch" };
+  }
+
+  const settings = await getAutomationSettings();
+  if (settings.emergencyPaused) {
+    return { dispatched: false, reason: "emergency_stop_active" };
   }
 
   const activeJobs = await countActiveOrPendingScrapeJobs();

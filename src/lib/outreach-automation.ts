@@ -187,6 +187,7 @@ type AutomationBlockerReason =
   | "suppressed"
   | "manual_pause"
   | "global_pause"
+  | "emergency_stop"
   | "mailbox_disconnected"
   | "mailbox_disabled"
   | "missing_valid_email"
@@ -357,6 +358,11 @@ function getBlockerMeta(reason: AutomationBlockerReason) {
         label: "Global pause is on",
         detail: "Automation is paused for every sequence right now.",
       };
+    case "emergency_stop":
+      return {
+        label: "Emergency stop active",
+        detail: "A manual emergency stop is engaged across the automation engine.",
+      };
     case "mailbox_disconnected":
       return {
         label: "Mailbox disconnected",
@@ -421,12 +427,13 @@ function getBlockerMeta(reason: AutomationBlockerReason) {
 }
 
 const BLOCKER_PRECEDENCE: AutomationBlockerReason[] = [
-  "reply_detected",
-  "suppressed",
-  "manual_pause",
-  "global_pause",
-  "mailbox_disconnected",
-  "mailbox_disabled",
+    "reply_detected",
+    "suppressed",
+    "manual_pause",
+    "global_pause",
+    "emergency_stop",
+    "mailbox_disconnected",
+    "mailbox_disabled",
   "missing_valid_email",
   "missing_enrichment",
   "policy_ineligible",
@@ -491,9 +498,15 @@ function normalizeAutomationSettings(settings: OutreachAutomationSettingRecord) 
     typeof value === "number" && Number.isFinite(value) ? value : fallback;
   const pickBool = (value: unknown, fallback: boolean) =>
     typeof value === "boolean" ? value : fallback;
+  const pickText = (value: unknown, fallback: string | null) =>
+    typeof value === "string" && value.trim() ? value.trim() : fallback;
   return {
     ...settings,
     weekdaysOnly: pickBool(settings.weekdaysOnly, AUTOMATION_SETTINGS_DEFAULTS.weekdaysOnly),
+    emergencyPaused: pickBool(settings.emergencyPaused, AUTOMATION_SETTINGS_DEFAULTS.emergencyPaused),
+    emergencyPausedAt: coerceDate(settings.emergencyPausedAt),
+    emergencyPausedBy: pickText(settings.emergencyPausedBy, AUTOMATION_SETTINGS_DEFAULTS.emergencyPausedBy),
+    emergencyPauseReason: pickText(settings.emergencyPauseReason, AUTOMATION_SETTINGS_DEFAULTS.emergencyPauseReason),
     sendWindowStartHour: pickNumber(settings.sendWindowStartHour, AUTOMATION_SETTINGS_DEFAULTS.sendWindowStartHour),
     sendWindowStartMinute: pickNumber(settings.sendWindowStartMinute, AUTOMATION_SETTINGS_DEFAULTS.sendWindowStartMinute),
     sendWindowEndHour: pickNumber(settings.sendWindowEndHour, AUTOMATION_SETTINGS_DEFAULTS.sendWindowEndHour),
@@ -505,6 +518,15 @@ function normalizeAutomationSettings(settings: OutreachAutomationSettingRecord) 
     schedulerClaimBatch: pickNumber(settings.schedulerClaimBatch, AUTOMATION_SETTINGS_DEFAULTS.schedulerClaimBatch),
     replySyncStaleMinutes: pickNumber(settings.replySyncStaleMinutes, AUTOMATION_SETTINGS_DEFAULTS.replySyncStaleMinutes),
   };
+}
+
+export async function getAutomationSettings(prisma: PrismaLike = getPrisma()) {
+  return getSettings(prisma);
+}
+
+export async function isAutomationEmergencyPaused(prisma: PrismaLike = getPrisma()) {
+  const settings = await getSettings(prisma);
+  return settings.emergencyPaused;
 }
 
 async function getSettings(prisma: PrismaLike) {
@@ -864,6 +886,10 @@ async function getSequenceRuntimeBlockers(
     blockers.push("global_pause");
   }
 
+  if (settings.emergencyPaused) {
+    blockers.push("emergency_stop");
+  }
+
   const lead = sequence.lead;
   const mailbox = sequence.mailbox;
 
@@ -992,12 +1018,16 @@ export async function queueLeadsForAutomation(input: {
   const result: QueueAutomationResult = { queued: [], skipped: [] };
   const pendingAssignments = new Map<string, number>();
 
-  if (!settings.enabled || settings.globalPaused) {
+  if (!settings.enabled || settings.globalPaused || settings.emergencyPaused) {
     return {
       queued: [],
       skipped: input.leadIds.map((leadId) => ({
         leadId,
-        reason: settings.globalPaused ? "Automation is globally paused" : "Automation is disabled",
+        reason: settings.emergencyPaused
+          ? "Emergency stop is active"
+          : settings.globalPaused
+            ? "Automation is globally paused"
+            : "Automation is disabled",
       })),
     };
   }
@@ -1238,7 +1268,7 @@ export async function listAutomationOverview() {
     finished,
     recentSent,
     engine: {
-      mode: !settings.enabled ? "DISABLED" : settings.globalPaused ? "PAUSED" : "ACTIVE",
+      mode: !settings.enabled ? "DISABLED" : settings.emergencyPaused ? "DISABLED" : settings.globalPaused ? "PAUSED" : "ACTIVE",
       nextSendAt,
       scheduledToday,
       blockedCount,
@@ -1683,6 +1713,20 @@ async function sendScheduledStep(
   const context = await buildStepContext(prisma, claim.sequence, claim.step);
   if (!context) {
     throw new Error("Sequence context could not be loaded");
+  }
+
+  const settings = await getSettings(prisma);
+  if (settings.emergencyPaused) {
+    await prisma.outreachSequenceStep.update({
+      where: { id: claim.step.id },
+      data: {
+        status: "SCHEDULED",
+        claimedAt: null,
+        claimedByRunId: null,
+        errorMessage: "emergency_stop",
+      },
+    });
+    throw new AutomationSkipError("emergency_stop");
   }
 
   const config = JSON.parse(claim.sequence.sequenceConfigSnapshot) as OutreachSequenceConfig;
@@ -2338,7 +2382,22 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
     };
   }
 
-  console.log(`[scheduler] Run starting at ${now.toISOString()} | enabled=${settings.enabled} paused=${settings.globalPaused}`);
+  if (settings.emergencyPaused) {
+    console.log("[scheduler] Skipped — emergency kill switch is active");
+    return {
+      runId: "skipped-emergency-stop",
+      claimed: 0,
+      sent: 0,
+      failed: 0,
+      skipped: 0,
+      pipeline: { enriched: 0, enrichFailed: 0, qualified: 0, queued: 0, queueSkipped: 0 },
+      replySync: { checked: 0, stopped: 0 },
+    };
+  }
+
+  console.log(
+    `[scheduler] Run starting at ${now.toISOString()} | enabled=${settings.enabled} paused=${settings.globalPaused} emergency=${settings.emergencyPaused}`,
+  );
 
   const run = await prisma.outreachRun.create({
     data: {
@@ -2409,6 +2468,32 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
           metadata: JSON.stringify({
             source: "scheduler",
             reason: "send_kill_switch_off",
+            pipeline,
+            replySync,
+          }),
+        },
+      });
+      return {
+        runId: run.id,
+        claimed: 0,
+        sent: 0,
+        failed: 0,
+        skipped: 0,
+        pipeline,
+        replySync,
+      };
+    }
+
+    const liveSettings = await getAutomationSettings(prisma);
+    if (liveSettings.emergencyPaused) {
+      await prisma.outreachRun.update({
+        where: { id: run.id },
+        data: {
+          finishedAt: new Date(),
+          status: "SKIPPED",
+          metadata: JSON.stringify({
+            source: "scheduler",
+            reason: "emergency_stop",
             pipeline,
             replySync,
           }),

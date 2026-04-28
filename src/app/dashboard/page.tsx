@@ -21,7 +21,6 @@ import { listAutomationOverview } from "@/lib/outreach-automation";
 import { getPrisma } from "@/lib/prisma";
 import { listScrapeJobs } from "@/lib/scrape-jobs";
 import { listRecentScrapeTargets, pickNextScrapeTarget, countActiveScrapeTargets } from "@/lib/scrape-targets";
-import { isContactedOutreachStatus } from "@/lib/outreach";
 import { requireSession } from "@/lib/session";
 import { formatAppDateTime } from "@/lib/time";
 
@@ -277,6 +276,17 @@ export default async function DashboardPage() {
         </div>
       </header>
 
+      {automation.settings.emergencyPaused ? (
+        <div className="v2-card border-red-400/25 bg-red-500/[0.07] px-4 py-3">
+          <div className="flex items-center gap-3">
+            <span className="v2-pill border-red-400/30 bg-red-500/[0.12] text-red-200">Emergency stop active</span>
+            <span className="text-sm text-red-100/80">
+              Intake, queueing, and sending are blocked until the stop is cleared in Settings.
+            </span>
+          </div>
+        </div>
+      ) : null}
+
       {(!aidanConnected || !rileyConnected) ? (
         <div className="flex items-center gap-3 rounded-md border border-amber-400/25 bg-amber-400/[0.05] px-4 py-3 text-sm">
           <Activity className="size-4 text-amber-300" />
@@ -402,7 +412,7 @@ function Panel({
   children: ReactNode;
 }) {
   return (
-    <div className="overflow-hidden rounded-lg border border-white/[0.06] bg-[#0b131d]">
+    <div className="v2-card overflow-hidden">
       <header className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
         <div>
           <div className="text-sm font-semibold text-white">{title}</div>
@@ -460,7 +470,7 @@ function RatioMeter({
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <div className={`font-mono text-2xl font-semibold tabular-nums ${t.text}`}>{value}</div>
+          <div className={`animate-counter-up font-mono text-2xl font-semibold tabular-nums ${t.text}`}>{value}</div>
           <div className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">/ {cap}</div>
         </div>
       </div>
@@ -511,7 +521,7 @@ function MailboxBar({
       </div>
       <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.05]">
         {connected ? (
-          <div className={`h-full ${t.bar} transition-[width]`} style={{ width: `${pct}%` }} />
+          <div className={`h-full ${t.bar} progress-animate transition-[width]`} style={{ width: `${pct}%` }} />
         ) : null}
       </div>
     </div>

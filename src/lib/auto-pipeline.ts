@@ -15,7 +15,7 @@ import {
   AUTONOMOUS_QUEUE_BATCH_SIZE,
   shouldAutonomouslyQueueLead,
 } from "@/lib/automation-policy";
-import { queueLeadsForAutomation } from "@/lib/outreach-automation";
+import { getAutomationSettings, queueLeadsForAutomation } from "@/lib/outreach-automation";
 import { getPrisma } from "@/lib/prisma";
 import type { LeadRecord } from "@/lib/prisma";
 
@@ -233,6 +233,18 @@ async function autoQueue(systemUserId: string): Promise<{ queued: number; skippe
  */
 export async function runAutoPipeline(systemUserId: string): Promise<AutoPipelineResult> {
   const prisma = getPrisma();
+  const settings = await getAutomationSettings(prisma);
+
+  if (settings.emergencyPaused) {
+    console.log("[auto-pipeline] Skipped — emergency kill switch is active");
+    return {
+      enriched: 0,
+      enrichFailed: 0,
+      qualified: 0,
+      queued: 0,
+      queueSkipped: 0,
+    };
+  }
 
   // Step 0: Reset leads that got stuck in ENRICHING from a prior tick that
   // died mid-call (worker CPU timeout, transient upstream failure, etc.).

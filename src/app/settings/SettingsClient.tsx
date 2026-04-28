@@ -3,6 +3,8 @@
 import type { ComponentType, ReactNode } from "react";
 import { CheckCircle2, Mail, Monitor, ShieldCheck, TimerReset, XCircle } from "lucide-react";
 
+import { EmergencyControlCard } from "@/components/emergency-control-card";
+
 type RuntimeStatus = {
   currentUserEmail: string;
   appBaseUrl: string;
@@ -18,6 +20,13 @@ type MailboxStatus = {
   email: string;
   connected: boolean;
   status: string | null;
+};
+
+type EmergencyState = {
+  emergencyPaused: boolean;
+  emergencyPausedAt: string | null;
+  emergencyPausedBy: string | null;
+  emergencyPauseReason: string | null;
 };
 
 function StatusPill({ label, state }: { label: string; state: "ready" | "attention" }) {
@@ -37,27 +46,33 @@ function StatusPill({ label, state }: { label: string; state: "ready" | "attenti
 export function SettingsClient({
   runtimeStatus,
   mailboxes,
+  emergencyControl,
 }: {
   runtimeStatus: RuntimeStatus;
   mailboxes: MailboxStatus[];
+  emergencyControl: EmergencyState;
 }) {
   return (
-    <div className="mx-auto max-w-5xl space-y-5">
-      <header className="rounded-2xl border border-white/10 bg-zinc-950/70 p-5 shadow-[0_22px_80px_rgba(0,0,0,0.22)]">
+    <div className="mx-auto max-w-6xl space-y-5">
+      <header className="v2-card p-5">
         <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-300">Settings</p>
-            <h1 className="mt-1 text-3xl font-semibold tracking-tight text-white">Operator console</h1>
+            <p className="v2-eyebrow">Settings</p>
+            <h1 className="mt-2 text-[32px] font-semibold tracking-[-0.022em] text-white">Operator console</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">
               The pipeline is fully autonomous. The only human action ever required is the one-time Gmail OAuth
               for each sender mailbox.
             </p>
           </div>
-          <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-zinc-500">
+          <div className="v2-pill self-start">
             Signed in as <span className="font-mono text-zinc-300">{runtimeStatus.currentUserEmail}</span>
           </div>
         </div>
       </header>
+
+      <section>
+        <EmergencyControlCard initialState={emergencyControl} />
+      </section>
 
       <section>
         <Panel>
@@ -127,7 +142,7 @@ export function SettingsClient({
 
 function MailboxRow({ mailbox }: { mailbox: MailboxStatus }) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-xl border border-white/10 bg-black/20 p-4">
+    <div className="v2-tile flex items-center justify-between gap-4 p-4 transition hover:border-white/[0.12]">
       <div className="flex items-center gap-3">
         <div className={`flex h-10 w-10 items-center justify-center rounded-lg border ${mailbox.connected ? "border-emerald-400/30 bg-emerald-400/[0.08]" : "border-zinc-700 bg-black/30"}`}>
           {mailbox.connected ? <CheckCircle2 className="h-4 w-4 text-emerald-300" /> : <XCircle className="h-4 w-4 text-zinc-500" />}
@@ -146,7 +161,7 @@ function MailboxRow({ mailbox }: { mailbox: MailboxStatus }) {
       ) : (
         <a
           href={`/api/outreach/gmail/connect?email=${encodeURIComponent(mailbox.email)}`}
-          className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-950 hover:bg-emerald-400 cursor-pointer whitespace-nowrap"
+          className="v2-btn-primary inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold cursor-pointer whitespace-nowrap"
         >
           <Mail className="h-4 w-4" />
           Connect Gmail
@@ -157,7 +172,7 @@ function MailboxRow({ mailbox }: { mailbox: MailboxStatus }) {
 }
 
 function Panel({ children }: { children: ReactNode }) {
-  return <div className="rounded-2xl border border-white/10 bg-zinc-950/60 p-5 shadow-[0_18px_60px_rgba(0,0,0,0.16)]">{children}</div>;
+  return <div className="v2-card p-5">{children}</div>;
 }
 
 function SectionTitle({
@@ -172,7 +187,7 @@ function SectionTitle({
   return (
     <div className="mb-4">
       <div className="flex items-center gap-2 text-sm font-semibold text-zinc-100">
-        <Icon className="h-4 w-4 text-zinc-400" />
+        <Icon className="h-4 w-4 text-emerald-300" />
         {title}
       </div>
       <p className="mt-1 text-xs leading-5 text-zinc-500">{detail}</p>
@@ -182,7 +197,7 @@ function SectionTitle({
 
 function StatusRow({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-xl border border-white/10 bg-black/20 p-3">
+    <div className="flex items-center justify-between gap-4 rounded-xl border border-white/[0.06] bg-black/25 p-3">
       <span className="text-zinc-300">{label}</span>
       {children}
     </div>
@@ -191,7 +206,7 @@ function StatusRow({ label, children }: { label: string; children: ReactNode }) 
 
 function Limit({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+    <div className="rounded-xl border border-white/[0.06] bg-black/25 p-3">
       <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">{label}</div>
       <div className="mt-1 font-mono text-sm text-zinc-200">{value}</div>
     </div>

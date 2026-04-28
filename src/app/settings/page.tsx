@@ -2,7 +2,7 @@ import { SettingsClient } from "./SettingsClient";
 
 import { getCloudflareBindings, getDatabase } from "@/lib/cloudflare";
 import { getServerEnv } from "@/lib/env";
-import { syncMailboxesForGmailConnections } from "@/lib/outreach-automation";
+import { getAutomationSettings, syncMailboxesForGmailConnections } from "@/lib/outreach-automation";
 import { getPrisma } from "@/lib/prisma";
 import { requireAdminSession } from "@/lib/session";
 
@@ -29,6 +29,12 @@ export default async function SettingsPage() {
   const env = getServerEnv();
   const bindings = getCloudflareBindings();
   const prisma = getPrisma();
+  const automationSettings = await getAutomationSettings(prisma).catch(() => ({
+    emergencyPaused: false,
+    emergencyPausedAt: null,
+    emergencyPausedBy: null,
+    emergencyPauseReason: null,
+  }));
 
   // Three independent sources, OR'd together — connection state is
   // critical and any one of them blanking shouldn't hide a real connection.
@@ -75,6 +81,12 @@ export default async function SettingsPage() {
         cloudScrapeEnabled: env.CLOUD_SCRAPE_ENABLED,
       }}
       mailboxes={mailboxes}
+      emergencyControl={{
+        emergencyPaused: automationSettings.emergencyPaused,
+        emergencyPausedAt: automationSettings.emergencyPausedAt ? automationSettings.emergencyPausedAt.toISOString() : null,
+        emergencyPausedBy: automationSettings.emergencyPausedBy,
+        emergencyPauseReason: automationSettings.emergencyPauseReason,
+      }}
     />
   );
 }
