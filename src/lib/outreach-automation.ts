@@ -1672,6 +1672,24 @@ async function sendScheduledStep(
     throw new AutomationSkipError("policy_ineligible");
   }
 
+  // Defense-in-depth: refuse to send to generic role inboxes
+  // (info@, contact@, sales@, etc.) at the moment of send, even if a sequence
+  // somehow got created for one. Auto-queue already filters these, but a
+  // legacy sequence could still exist.
+  const sendEmailType = (context.lead.emailType || "").toLowerCase();
+  if (sendEmailType === "generic") {
+    await prisma.outreachSequenceStep.update({
+      where: { id: claim.step.id },
+      data: {
+        status: "SCHEDULED",
+        claimedAt: null,
+        claimedByRunId: null,
+        errorMessage: "generic_email_blocked",
+      },
+    });
+    throw new AutomationSkipError("policy_ineligible");
+  }
+
   const recipientEmail = context.lead.email;
   if (!recipientEmail) {
     throw new AutomationSkipError("missing_valid_email");

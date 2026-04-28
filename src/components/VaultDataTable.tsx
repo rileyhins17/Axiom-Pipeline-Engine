@@ -1,7 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import React, { useCallback, useMemo, useState } from "react";
 import {
     ArrowUpDown,
     CheckCircle2,
@@ -14,7 +13,6 @@ import {
     Download,
     ExternalLink,
     FileSpreadsheet,
-    FileText,
     Filter,
     Globe,
     Mail,
@@ -23,14 +21,11 @@ import {
     Share2,
     SlidersHorizontal,
     Star,
-    Trash2,
     User,
     X,
     XCircle,
 } from "lucide-react";
 
-import { OutreachEditorSheet } from "@/components/outreach/outreach-editor-sheet";
-import { OutreachStatusBadge } from "@/components/outreach/outreach-status-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -102,7 +97,6 @@ function getWebsiteLabel(status: string | null) {
 
 function StatusBadge({ status }: { status: string | null }) {
     const missing = status === "MISSING";
-
     return (
         <span
             className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[10px] font-medium ${
@@ -113,6 +107,15 @@ function StatusBadge({ status }: { status: string | null }) {
         >
             {missing ? <XCircle className="h-3 w-3" /> : <CheckCircle2 className="h-3 w-3" />}
             {getWebsiteLabel(status)}
+        </span>
+    );
+}
+
+function OutreachStatusInline({ status }: { status: string | null }) {
+    if (!status || !isContactedOutreachStatus(status)) return null;
+    return (
+        <span className="inline-flex items-center rounded-md border border-cyan-500/20 bg-cyan-500/[0.07] px-2 py-0.5 text-[10px] font-medium text-cyan-300">
+            {status.replace(/_/g, " ").toLowerCase()}
         </span>
     );
 }
@@ -196,7 +199,7 @@ function LeadDetails({ lead }: { lead: Lead }) {
             <div className="min-w-0 space-y-3">
                 <div className="flex items-center justify-between gap-3">
                     <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Notes</div>
-                    {isContactedOutreachStatus(lead.outreachStatus) ? <OutreachStatusBadge status={lead.outreachStatus} /> : null}
+                    <OutreachStatusInline status={lead.outreachStatus} />
                 </div>
                 <p className="min-w-0 whitespace-pre-wrap break-words text-xs leading-5 text-zinc-300">
                     {lead.tacticalNote || "No tactical note generated."}
@@ -219,15 +222,7 @@ function LeadDetails({ lead }: { lead: Lead }) {
     );
 }
 
-function TriFilter({
-    label,
-    value,
-    onChange,
-}: {
-    label: string;
-    value: ContactFilter;
-    onChange: (value: ContactFilter) => void;
-}) {
+function TriFilter({ label, value, onChange }: { label: string; value: ContactFilter; onChange: (value: ContactFilter) => void }) {
     return (
         <div className="space-y-1.5">
             <Label className="text-[10px] uppercase tracking-[0.18em] text-zinc-600">{label}</Label>
@@ -253,26 +248,8 @@ function TriFilter({
     );
 }
 
-function ActiveFilter({
-    label,
-    onClear,
-}: {
-    label: string;
-    onClear: () => void;
-}) {
-    return (
-        <span className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-[11px] text-zinc-400">
-            {label}
-            <button type="button" onClick={onClear} className="text-zinc-600 hover:text-white" aria-label={`Clear ${label}`}>
-                <X className="h-3 w-3" />
-            </button>
-        </span>
-    );
-}
-
 export default function VaultDataTable({ initialLeads }: { initialLeads: Lead[] }) {
-    const router = useRouter();
-    const [leads, setLeads] = useState<Lead[]>(initialLeads);
+    const [leads] = useState<Lead[]>(initialLeads);
     const [search, setSearch] = useState("");
     const [showFilters, setShowFilters] = useState(false);
     const [statusFilter, setStatusFilter] = useState("ALL");
@@ -282,18 +259,11 @@ export default function VaultDataTable({ initialLeads }: { initialLeads: Lead[] 
     const [hasSocialFilter, setHasSocialFilter] = useState<ContactFilter>("ALL");
     const [nicheFilter, setNicheFilter] = useState("ALL");
     const [cityFilter, setCityFilter] = useState("ALL");
-    const [minRating, setMinRating] = useState("");
-    const [maxRating, setMaxRating] = useState("");
-    const [minReviews, setMinReviews] = useState("");
-    const [maxReviews, setMaxReviews] = useState("");
-    const [dateFrom, setDateFrom] = useState("");
-    const [dateTo, setDateTo] = useState("");
     const [sortKey, setSortKey] = useState<SortKey>("createdAt");
     const [sortDir, setSortDir] = useState<SortDir>("desc");
     const [page, setPage] = useState(0);
     const [perPage, setPerPage] = useState(25);
     const [expandedId, setExpandedId] = useState<number | null>(null);
-    const [deleting, setDeleting] = useState<number | null>(null);
     const [showExport, setShowExport] = useState(false);
     const [exportColumns, setExportColumns] = useState<Record<ExportColumnKey, boolean>>(defaultExportColumns);
     const [exportFormat, setExportFormat] = useState<ExportFormat>("csv");
@@ -322,28 +292,8 @@ export default function VaultDataTable({ initialLeads }: { initialLeads: Lead[] 
         if (hasSocialFilter !== "ALL") count++;
         if (nicheFilter !== "ALL") count++;
         if (cityFilter !== "ALL") count++;
-        if (minRating) count++;
-        if (maxRating) count++;
-        if (minReviews) count++;
-        if (maxReviews) count++;
-        if (dateFrom) count++;
-        if (dateTo) count++;
         return count;
-    }, [
-        statusFilter,
-        hasEmailFilter,
-        hasPhoneFilter,
-        hasContactFilter,
-        hasSocialFilter,
-        nicheFilter,
-        cityFilter,
-        minRating,
-        maxRating,
-        minReviews,
-        maxReviews,
-        dateFrom,
-        dateTo,
-    ]);
+    }, [statusFilter, hasEmailFilter, hasPhoneFilter, hasContactFilter, hasSocialFilter, nicheFilter, cityFilter]);
 
     const clearAllFilters = useCallback(() => {
         setStatusFilter("ALL");
@@ -353,12 +303,6 @@ export default function VaultDataTable({ initialLeads }: { initialLeads: Lead[] 
         setHasSocialFilter("ALL");
         setNicheFilter("ALL");
         setCityFilter("ALL");
-        setMinRating("");
-        setMaxRating("");
-        setMinReviews("");
-        setMaxReviews("");
-        setDateFrom("");
-        setDateTo("");
         setSearch("");
     }, []);
 
@@ -391,21 +335,6 @@ export default function VaultDataTable({ initialLeads }: { initialLeads: Lead[] 
             if (hasSocialFilter === "NO" && hasText(lead.socialLink)) return false;
             if (nicheFilter !== "ALL" && lead.niche !== nicheFilter) return false;
             if (cityFilter !== "ALL" && lead.city !== cityFilter) return false;
-            if (minRating && (lead.rating == null || lead.rating < Number.parseFloat(minRating))) return false;
-            if (maxRating && (lead.rating == null || lead.rating > Number.parseFloat(maxRating))) return false;
-            if (minReviews && (lead.reviewCount == null || lead.reviewCount < Number.parseInt(minReviews, 10))) return false;
-            if (maxReviews && (lead.reviewCount == null || lead.reviewCount > Number.parseInt(maxReviews, 10))) return false;
-
-            if (dateFrom) {
-                const leadDate = new Date(lead.createdAt);
-                if (leadDate < new Date(dateFrom)) return false;
-            }
-            if (dateTo) {
-                const leadDate = new Date(lead.createdAt);
-                const to = new Date(dateTo);
-                to.setHours(23, 59, 59, 999);
-                if (leadDate > to) return false;
-            }
 
             return true;
         });
@@ -423,55 +352,25 @@ export default function VaultDataTable({ initialLeads }: { initialLeads: Lead[] 
         });
 
         return filtered;
-    }, [
-        leads,
-        search,
-        statusFilter,
-        hasEmailFilter,
-        hasPhoneFilter,
-        hasContactFilter,
-        hasSocialFilter,
-        nicheFilter,
-        cityFilter,
-        minRating,
-        maxRating,
-        minReviews,
-        maxReviews,
-        dateFrom,
-        dateTo,
-        sortKey,
-        sortDir,
-    ]);
+    }, [leads, search, statusFilter, hasEmailFilter, hasPhoneFilter, hasContactFilter, hasSocialFilter, nicheFilter, cityFilter, sortKey, sortDir]);
 
     const totalPages = Math.max(1, Math.ceil(processedLeads.length / perPage));
+
+    // React 19 idiom: reset page during render when filter signature changes,
+    // and clamp page to valid range. Avoids the cascading-effect anti-pattern.
+    const filterSignature = `${search}|${statusFilter}|${hasEmailFilter}|${hasPhoneFilter}|${hasContactFilter}|${hasSocialFilter}|${nicheFilter}|${cityFilter}|${perPage}`;
+    const [prevFilterSignature, setPrevFilterSignature] = useState(filterSignature);
+    if (prevFilterSignature !== filterSignature) {
+        setPrevFilterSignature(filterSignature);
+        if (page !== 0) setPage(0);
+    } else if (page > totalPages - 1) {
+        setPage(totalPages - 1);
+    }
+
     const pagedLeads = useMemo(
         () => processedLeads.slice(page * perPage, (page + 1) * perPage),
         [page, perPage, processedLeads],
     );
-
-    useEffect(() => {
-        setPage(0);
-    }, [
-        search,
-        statusFilter,
-        hasEmailFilter,
-        hasPhoneFilter,
-        hasContactFilter,
-        hasSocialFilter,
-        nicheFilter,
-        cityFilter,
-        minRating,
-        maxRating,
-        minReviews,
-        maxReviews,
-        dateFrom,
-        dateTo,
-        perPage,
-    ]);
-
-    useEffect(() => {
-        if (page > totalPages - 1) setPage(totalPages - 1);
-    }, [page, totalPages]);
 
     const handleSort = useCallback((key: SortKey) => {
         setSortKey((currentKey) => {
@@ -484,32 +383,12 @@ export default function VaultDataTable({ initialLeads }: { initialLeads: Lead[] 
         });
     }, []);
 
-    const handleDelete = useCallback(async (id: number) => {
-        setDeleting(id);
-        try {
-            const res = await fetch("/api/leads/delete", {
-                method: "DELETE",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ id }),
-            });
-            if (res.ok) {
-                setLeads((prev) => prev.filter((lead) => lead.id !== id));
-                setExpandedId((current) => (current === id ? null : current));
-            }
-        } catch (error) {
-            console.error("Delete failed:", error);
-        } finally {
-            setDeleting(null);
-        }
-    }, []);
-
     const handleExport = useCallback(() => {
         const separator = exportFormat === "csv" ? "," : "\t";
         const extension = exportFormat === "csv" ? "csv" : "tsv";
         const selectedColumns = EXPORT_COLUMNS.filter((column) => exportColumns[column.key]);
         const headers = selectedColumns.map((column) => column.label);
-        const dataToExport =
-            exportScope === "all" ? leads : exportScope === "page" ? pagedLeads : processedLeads;
+        const dataToExport = exportScope === "all" ? leads : exportScope === "page" ? pagedLeads : processedLeads;
 
         const rows = dataToExport.map((lead) =>
             selectedColumns.map((column) => {
@@ -527,40 +406,13 @@ export default function VaultDataTable({ initialLeads }: { initialLeads: Lead[] 
         const blob = new Blob([content], { type: `${mimeType};charset=utf-8;` });
         const url = URL.createObjectURL(blob);
         const anchor = document.createElement("a");
-        const filenameParts = ["omniscient_v4_leads"];
-
-        if (exportScope === "filtered" && activeFilterCount > 0) {
-            if (statusFilter === "MISSING") filenameParts.push("no_website");
-            else if (statusFilter === "ACTIVE") filenameParts.push("has_website");
-            if (hasEmailFilter === "YES") filenameParts.push("with_email");
-            if (hasEmailFilter === "NO") filenameParts.push("no_email");
-            if (nicheFilter !== "ALL") filenameParts.push(nicheFilter.toLowerCase().replace(/\s+/g, "_"));
-            if (cityFilter !== "ALL") filenameParts.push(cityFilter.toLowerCase().replace(/\s+/g, "_"));
-        }
-
-        filenameParts.push(new Date().toISOString().slice(0, 10));
+        const filename = `omniscient_leads_${new Date().toISOString().slice(0, 10)}.${extension}`;
         anchor.href = url;
-        anchor.download = `${filenameParts.join("_")}.${extension}`;
+        anchor.download = filename;
         anchor.click();
         URL.revokeObjectURL(url);
         setShowExport(false);
-    }, [
-        activeFilterCount,
-        cityFilter,
-        exportColumns,
-        exportFormat,
-        exportScope,
-        hasEmailFilter,
-        leads,
-        nicheFilter,
-        pagedLeads,
-        processedLeads,
-        statusFilter,
-    ]);
-
-    const handleOutreachSaved = useCallback((updatedLead: Partial<Lead> & { id: number }) => {
-        setLeads((prev) => prev.map((lead) => (lead.id === updatedLead.id ? { ...lead, ...updatedLead } : lead)));
-    }, []);
+    }, [exportColumns, exportFormat, exportScope, leads, pagedLeads, processedLeads]);
 
     const toggleExportColumn = useCallback((key: ExportColumnKey) => {
         setExportColumns((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -714,28 +566,6 @@ export default function VaultDataTable({ initialLeads }: { initialLeads: Lead[] 
                             </select>
                         </div>
                     </div>
-
-                    <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
-                        {[
-                            { label: "Min rating", value: minRating, setter: setMinRating, type: "number", placeholder: "4.0" },
-                            { label: "Max rating", value: maxRating, setter: setMaxRating, type: "number", placeholder: "5.0" },
-                            { label: "Min reviews", value: minReviews, setter: setMinReviews, type: "number", placeholder: "10" },
-                            { label: "Max reviews", value: maxReviews, setter: setMaxReviews, type: "number", placeholder: "100" },
-                            { label: "From", value: dateFrom, setter: setDateFrom, type: "date", placeholder: "" },
-                            { label: "To", value: dateTo, setter: setDateTo, type: "date", placeholder: "" },
-                        ].map((field) => (
-                            <div key={field.label} className="space-y-1.5">
-                                <Label className="text-[10px] uppercase tracking-[0.18em] text-zinc-600">{field.label}</Label>
-                                <Input
-                                    type={field.type}
-                                    value={field.value}
-                                    onChange={(event) => field.setter(event.target.value)}
-                                    placeholder={field.placeholder}
-                                    className="h-9 border-white/[0.08] bg-black/30 text-xs focus:border-emerald-500/50"
-                                />
-                            </div>
-                        ))}
-                    </div>
                 </div>
             ) : null}
 
@@ -820,125 +650,7 @@ export default function VaultDataTable({ initialLeads }: { initialLeads: Lead[] 
                 </div>
             ) : null}
 
-            {activeFilterCount > 0 && !showFilters ? (
-                <div className="flex flex-wrap gap-1.5">
-                    {statusFilter !== "ALL" ? (
-                        <ActiveFilter
-                            label={`Website: ${statusFilter === "MISSING" ? "No site" : "Verified"}`}
-                            onClear={() => setStatusFilter("ALL")}
-                        />
-                    ) : null}
-                    {hasEmailFilter !== "ALL" ? (
-                        <ActiveFilter label={`Email: ${hasEmailFilter === "YES" ? "Has" : "Missing"}`} onClear={() => setHasEmailFilter("ALL")} />
-                    ) : null}
-                    {hasPhoneFilter !== "ALL" ? (
-                        <ActiveFilter label={`Phone: ${hasPhoneFilter === "YES" ? "Has" : "Missing"}`} onClear={() => setHasPhoneFilter("ALL")} />
-                    ) : null}
-                    {hasContactFilter !== "ALL" ? (
-                        <ActiveFilter label={`Contact: ${hasContactFilter === "YES" ? "Has" : "Missing"}`} onClear={() => setHasContactFilter("ALL")} />
-                    ) : null}
-                    {hasSocialFilter !== "ALL" ? (
-                        <ActiveFilter label={`Social: ${hasSocialFilter === "YES" ? "Has" : "Missing"}`} onClear={() => setHasSocialFilter("ALL")} />
-                    ) : null}
-                    {nicheFilter !== "ALL" ? <ActiveFilter label={`Niche: ${nicheFilter}`} onClear={() => setNicheFilter("ALL")} /> : null}
-                    {cityFilter !== "ALL" ? <ActiveFilter label={`City: ${cityFilter}`} onClear={() => setCityFilter("ALL")} /> : null}
-                    {minRating || maxRating ? (
-                        <ActiveFilter label={`Rating: ${minRating || "0"}-${maxRating || "5"}`} onClear={() => { setMinRating(""); setMaxRating(""); }} />
-                    ) : null}
-                    {minReviews || maxReviews ? (
-                        <ActiveFilter label={`Reviews: ${minReviews || "0"}-${maxReviews || "max"}`} onClear={() => { setMinReviews(""); setMaxReviews(""); }} />
-                    ) : null}
-                    {dateFrom || dateTo ? (
-                        <ActiveFilter label={`Date: ${dateFrom || "start"}-${dateTo || "now"}`} onClear={() => { setDateFrom(""); setDateTo(""); }} />
-                    ) : null}
-                </div>
-            ) : null}
-
-            <div className="md:hidden">
-                {pagedLeads.length === 0 ? (
-                    <div className="border-y border-white/[0.06] py-12 text-center">
-                        <Globe className="mx-auto h-9 w-9 text-zinc-700" />
-                        <p className="mt-3 text-sm text-zinc-500">No matching leads</p>
-                        <p className="mt-1 text-[11px] text-zinc-700">
-                            {activeFilterCount > 0 ? "Adjust filters or clear the current slice." : "Run an extraction to populate Vault."}
-                        </p>
-                    </div>
-                ) : (
-                    <div className="divide-y divide-white/[0.06] border-y border-white/[0.06]">
-                        {pagedLeads.map((lead) => (
-                            <div key={lead.id} className="py-3">
-                                <button
-                                    type="button"
-                                    onClick={() => setExpandedId((current) => (current === lead.id ? null : lead.id))}
-                                    className="flex w-full items-start justify-between gap-3 text-left"
-                                >
-                                    <div className="min-w-0">
-                                        <div className="truncate text-sm font-medium text-white">{lead.businessName}</div>
-                                        <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-zinc-500">
-                                            <span>{lead.city || "Unknown city"}</span>
-                                            <span className="text-zinc-700">/</span>
-                                            <span className="font-mono text-zinc-400">{lead.niche || "No niche"}</span>
-                                            {lead.rating != null ? (
-                                                <span className="inline-flex items-center gap-1 text-amber-300">
-                                                    <Star className="h-3 w-3" />
-                                                    {lead.rating}
-                                                </span>
-                                            ) : null}
-                                        </div>
-                                    </div>
-                                    <div className="flex flex-col items-end gap-1.5">
-                                        <StatusBadge status={lead.websiteStatus} />
-                                        <ChevronDown className={`h-4 w-4 text-zinc-600 ${expandedId === lead.id ? "rotate-180" : ""}`} />
-                                    </div>
-                                </button>
-
-                                <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-                                    <ContactIndicators lead={lead} />
-                                    <div className="flex items-center gap-1">
-                                        <OutreachEditorSheet
-                                            lead={lead}
-                                            onSaved={handleOutreachSaved}
-                                            buttonLabel="Status"
-                                            buttonVariant="ghost"
-                                            buttonSize="sm"
-                                            buttonClassName="h-8 px-2 text-zinc-500 hover:text-cyan-300 hover:bg-cyan-500/10"
-                                        />
-                                        <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="sm"
-                                            className="h-8 px-2 text-emerald-300 hover:bg-emerald-500/10"
-                                            onClick={() => router.push(`/lead/${lead.id}`)}
-                                        >
-                                            <FileText className="h-3.5 w-3.5" />
-                                            Dossier
-                                        </Button>
-                                        <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="sm"
-                                            className="h-8 px-2 text-red-300 hover:bg-red-500/10"
-                                            onClick={() => void handleDelete(lead.id)}
-                                            disabled={deleting === lead.id}
-                                            aria-label={`Delete ${lead.businessName}`}
-                                        >
-                                            <Trash2 className={`h-3.5 w-3.5 ${deleting === lead.id ? "animate-pulse" : ""}`} />
-                                        </Button>
-                                    </div>
-                                </div>
-
-                                {expandedId === lead.id ? (
-                                    <div className="mt-4 border-t border-white/[0.06] pt-4">
-                                        <LeadDetails lead={lead} />
-                                    </div>
-                                ) : null}
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </div>
-
-            <div className="hidden overflow-hidden rounded-lg border border-white/[0.06] bg-black/20 md:block">
+            <div className="overflow-hidden rounded-lg border border-white/[0.06] bg-black/20">
                 <Table>
                     <TableHeader className="bg-black/40">
                         <TableRow className="border-white/[0.06] hover:bg-transparent">
@@ -978,7 +690,7 @@ export default function VaultDataTable({ initialLeads }: { initialLeads: Lead[] 
                                 </span>
                             </TableHead>
                             <TableHead className="w-[108px] text-xs font-semibold text-zinc-500">Website</TableHead>
-                            <TableHead className="w-[150px] text-right text-xs font-semibold text-zinc-500">Actions</TableHead>
+                            <TableHead className="w-[60px] text-right text-xs font-semibold text-zinc-500">·</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -988,7 +700,7 @@ export default function VaultDataTable({ initialLeads }: { initialLeads: Lead[] 
                                     <Globe className="mx-auto h-9 w-9 text-zinc-700" />
                                     <p className="mt-3 text-sm text-zinc-500">No matching leads</p>
                                     <p className="mt-1 text-[11px] text-zinc-700">
-                                        {activeFilterCount > 0 ? "Adjust filters or clear the current slice." : "Run an extraction to populate Vault."}
+                                        {activeFilterCount > 0 ? "Adjust filters or wait for the next autonomous scrape." : "Waiting for autonomous intake to populate Vault."}
                                     </p>
                                 </TableCell>
                             </TableRow>
@@ -1018,11 +730,7 @@ export default function VaultDataTable({ initialLeads }: { initialLeads: Lead[] 
                                         </TableCell>
                                         <TableCell>
                                             <ContactIndicators lead={lead} />
-                                            {isContactedOutreachStatus(lead.outreachStatus) ? (
-                                                <div className="mt-1">
-                                                    <OutreachStatusBadge status={lead.outreachStatus} />
-                                                </div>
-                                            ) : null}
+                                            <OutreachStatusInline status={lead.outreachStatus} />
                                         </TableCell>
                                         <TableCell>
                                             <span className="inline-flex items-center gap-1 font-mono text-sm text-zinc-300">
@@ -1036,39 +744,8 @@ export default function VaultDataTable({ initialLeads }: { initialLeads: Lead[] 
                                         <TableCell>
                                             <StatusBadge status={lead.websiteStatus} />
                                         </TableCell>
-                                        <TableCell onClick={(event) => event.stopPropagation()}>
-                                            <div className="flex items-center justify-end gap-1">
-                                                <ChevronDown className={`h-4 w-4 text-zinc-700 ${expandedId === lead.id ? "rotate-180" : ""}`} />
-                                                <OutreachEditorSheet
-                                                    lead={lead}
-                                                    onSaved={handleOutreachSaved}
-                                                    buttonLabel="Status"
-                                                    buttonVariant="ghost"
-                                                    buttonSize="sm"
-                                                    buttonClassName="h-7 px-2 text-zinc-600 hover:text-cyan-300 hover:bg-cyan-500/10"
-                                                />
-                                                <Button
-                                                    type="button"
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    className="h-7 w-7 p-0 text-zinc-600 hover:bg-emerald-500/10 hover:text-emerald-300"
-                                                    onClick={() => router.push(`/lead/${lead.id}`)}
-                                                    title="Open dossier"
-                                                >
-                                                    <FileText className="h-3.5 w-3.5" />
-                                                </Button>
-                                                <Button
-                                                    type="button"
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    className="h-7 w-7 p-0 text-zinc-600 hover:bg-red-500/10 hover:text-red-300"
-                                                    onClick={() => void handleDelete(lead.id)}
-                                                    disabled={deleting === lead.id}
-                                                    title="Delete lead"
-                                                >
-                                                    <Trash2 className={`h-3.5 w-3.5 ${deleting === lead.id ? "animate-pulse" : ""}`} />
-                                                </Button>
-                                            </div>
+                                        <TableCell className="text-right">
+                                            <ChevronDown className={`h-4 w-4 text-zinc-700 ${expandedId === lead.id ? "rotate-180" : ""}`} />
                                         </TableCell>
                                     </TableRow>
                                     {expandedId === lead.id ? (

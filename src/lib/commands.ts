@@ -4,7 +4,6 @@ import {
   Keyboard,
   Mail,
   Bot,
-  Play,
   Search,
   Shield,
   Star,
@@ -106,15 +105,6 @@ export const COMMANDS: Command[] = [
     icon: FileText,
     keywords: ["download", "all", "full", "csv"],
     action: { type: "export", format: "csv" },
-  },
-  {
-    id: "run-open-hunt",
-    category: "run",
-    label: "Open Lead Generator",
-    description: "Open the lead generation workspace",
-    icon: Play,
-    keywords: ["start", "new", "hunt", "extract", "lead generator", "campaign"],
-    action: { type: "navigate", path: "/hunt" },
   },
   {
     id: "run-open-automation",

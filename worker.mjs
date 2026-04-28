@@ -6,6 +6,7 @@ import openNextWorkerModule, {
 
 import { runAutomationScheduler } from "./src/lib/outreach-automation";
 import { runCloudScrapeWorker } from "./src/lib/cloud-scrape-worker";
+import { runAutonomousIntake } from "./src/lib/autonomous-intake";
 import { setCloudflareBindings } from "./src/lib/cloudflare";
 
 const worker = openNextWorkerModule;
@@ -21,12 +22,17 @@ export default {
     setCloudflareBindings(env);
     ctx.waitUntil(
       Promise.allSettled([
-        runAutomationScheduler(),
+        runAutonomousIntake(),
         runCloudScrapeWorker(),
+        runAutomationScheduler(),
       ]).then((results) => {
-        for (const result of results) {
+        const labels = ["intake", "scrape", "scheduler"];
+        for (let i = 0; i < results.length; i++) {
+          const result = results[i];
           if (result.status === "rejected") {
-            console.error("Scheduled task failed:", result.reason);
+            console.error(`[cron:${labels[i]}] failed:`, result.reason);
+          } else {
+            console.log(`[cron:${labels[i]}] ok`, result.value);
           }
         }
       }),

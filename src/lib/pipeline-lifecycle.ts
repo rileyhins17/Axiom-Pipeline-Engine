@@ -185,37 +185,6 @@ export function getMissingDataSummary(lead: PipelineLeadLike) {
   return missing;
 }
 
-export function getLifecycleOwnerHref(input: {
-  hasActiveSequence?: boolean;
-  hasSentAnyStep?: boolean;
-  outreachStatus?: string | null | undefined;
-  isArchived?: boolean | null | undefined;
-  enrichedAt?: string | Date | null | undefined;
-  enrichmentData?: string | null | undefined;
-  source?: string | null | undefined;
-  axiomScore?: number | null | undefined;
-  email?: string | null | undefined;
-  emailConfidence?: number | null | undefined;
-  emailFlags?: string | null | string[] | undefined;
-  emailType?: string | null | undefined;
-  websiteStatus?: string | null | undefined;
-}) {
-  switch (getCanonicalLifecycleStage(input)) {
-    case "FOLLOW_UP":
-      return "/automation";
-    case "INITIAL_OUTREACH":
-      return "/outreach?stage=initial";
-    case "QUALIFICATION":
-      return "/outreach?stage=qualification";
-    case "INTAKE":
-      return "/hunt";
-    case "CLOSED":
-      return "/vault";
-    default:
-      return "/outreach?stage=enrichment";
-  }
-}
-
 export function getLifecycleStageLabel(input: {
   enrichedAt?: string | Date | null | undefined;
   enrichmentData?: string | null | undefined;

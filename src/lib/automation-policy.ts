@@ -23,6 +23,13 @@ export const AUTONOMOUS_QUEUE_MIN_SCORE = 45;
  *  3000/hour peak which is more than enough headroom. */
 export const AUTONOMOUS_QUEUE_BATCH_SIZE = 50;
 
+/** Hard ceiling on new ADEQUATE leads (axiomScore >= 45, non-D, non-generic
+ *  email) intaken per UTC day. Once hit, the autonomous-intake tick stops
+ *  dispatching new ScrapeJobs until midnight UTC. Combined with two
+ *  mailboxes at 40/day each (= 80 sends/day), this keeps a healthy
+ *  intake-to-send ratio without manual gating. */
+export const AUTONOMOUS_DAILY_LEAD_INTAKE_CAP = 50;
+
 export const AUTOMATION_SETTINGS_DEFAULTS = {
   enabled: true,
   globalPaused: false,

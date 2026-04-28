@@ -1,34 +1,33 @@
-import Link from "next/link";
-import type { Route } from "next";
 import type { ReactNode } from "react";
 import {
-  AlertTriangle,
-  ArrowRight,
+  Activity,
   Bot,
   CheckCircle2,
   Clock3,
-  Database,
-  Folder,
   MailCheck,
-  MessageSquareText,
-  Radio,
+  Radar,
   Reply,
-  Settings,
   Target,
-  Users,
 } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
-import { AUTOMATION_SETTINGS_DEFAULTS } from "@/lib/automation-policy";
-import { partitionPreSendLeads } from "@/lib/pipeline-lifecycle";
+import {
+  AUTOMATION_SETTINGS_DEFAULTS,
+  AUTONOMOUS_DAILY_LEAD_INTAKE_CAP,
+  MAILBOX_DAILY_SEND_TARGET,
+} from "@/lib/automation-policy";
+import { countAdequateLeadsToday } from "@/lib/autonomous-intake";
+import { getDatabase } from "@/lib/cloudflare";
 import { listAutomationOverview } from "@/lib/outreach-automation";
 import { getPrisma } from "@/lib/prisma";
 import { listScrapeJobs } from "@/lib/scrape-jobs";
-import { isContactedOutreachStatus, READY_FOR_FIRST_TOUCH_STATUS } from "@/lib/outreach";
+import { listRecentScrapeTargets, pickNextScrapeTarget, countActiveScrapeTargets } from "@/lib/scrape-targets";
+import { isContactedOutreachStatus } from "@/lib/outreach";
 import { requireSession } from "@/lib/session";
 import { formatAppDateTime } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
+
+const TARGET_DAILY_SEND = MAILBOX_DAILY_SEND_TARGET * 2; // 80 across 2 mailboxes
 
 function emptyAutomationOverview() {
   return {
@@ -41,7 +40,7 @@ function emptyAutomationOverview() {
     finished: [],
     recentSent: [],
     engine: {
-      mode: "ACTIVE",
+      mode: "ACTIVE" as const,
       nextSendAt: null,
       scheduledToday: 0,
       blockedCount: 0,
@@ -74,418 +73,477 @@ function emptyAutomationOverview() {
   };
 }
 
-function formatRunTime(value: Date | string | null | undefined, fallback = "Not scheduled") {
-  return formatAppDateTime(
-    value,
-    { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" },
-    fallback,
-  );
+function startOfTodayUtc(): Date {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+}
+
+function relativeAgo(date: Date | string | null | undefined): string {
+  if (!date) return "never";
+  const d = typeof date === "string" ? new Date(date) : date;
+  const diff = Date.now() - d.getTime();
+  if (!Number.isFinite(diff) || diff < 0) return formatAppDateTime(d, undefined, "—");
+  const m = Math.floor(diff / 60_000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const days = Math.floor(h / 24);
+  return `${days}d ago`;
+}
+
+async function getSendsToday(): Promise<{ total: number; perSender: Record<string, number> }> {
+  const since = startOfTodayUtc().toISOString();
+  const result = await getDatabase()
+    .prepare(
+      `SELECT "senderEmail", COUNT(*) AS count FROM "OutreachEmail"
+       WHERE "status" = 'sent' AND "sentAt" >= ?
+       GROUP BY "senderEmail"`,
+    )
+    .bind(since)
+    .all<{ senderEmail: string; count: number | string }>();
+
+  const perSender: Record<string, number> = {};
+  let total = 0;
+  for (const row of result.results ?? []) {
+    const c = Number(row.count || 0);
+    perSender[row.senderEmail] = c;
+    total += c;
+  }
+  return { total, perSender };
+}
+
+async function get7DaySeries(): Promise<{
+  leadsFound: number[];
+  enriched: number[];
+  queued: number[];
+  sent: number[];
+  replied: number[];
+}> {
+  const db = getDatabase();
+  const days: string[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() - i);
+    d.setUTCHours(0, 0, 0, 0);
+    days.push(d.toISOString());
+  }
+  const dayEnd = (iso: string) => {
+    const d = new Date(iso);
+    d.setUTCDate(d.getUTCDate() + 1);
+    return d.toISOString();
+  };
+
+  const [leadsFound, enriched, queued, sent, replied] = await Promise.all([
+    Promise.all(
+      days.map(async (start) => {
+        const r = await db
+          .prepare(`SELECT COUNT(*) AS c FROM "Lead" WHERE "createdAt" >= ? AND "createdAt" < ?`)
+          .bind(start, dayEnd(start))
+          .first<{ c: number | string }>();
+        return Number(r?.c || 0);
+      }),
+    ),
+    Promise.all(
+      days.map(async (start) => {
+        const r = await db
+          .prepare(`SELECT COUNT(*) AS c FROM "Lead" WHERE "enrichedAt" >= ? AND "enrichedAt" < ?`)
+          .bind(start, dayEnd(start))
+          .first<{ c: number | string }>();
+        return Number(r?.c || 0);
+      }),
+    ),
+    Promise.all(
+      days.map(async (start) => {
+        const r = await db
+          .prepare(`SELECT COUNT(*) AS c FROM "OutreachSequence" WHERE "createdAt" >= ? AND "createdAt" < ?`)
+          .bind(start, dayEnd(start))
+          .first<{ c: number | string }>();
+        return Number(r?.c || 0);
+      }),
+    ),
+    Promise.all(
+      days.map(async (start) => {
+        const r = await db
+          .prepare(`SELECT COUNT(*) AS c FROM "OutreachEmail" WHERE "status"='sent' AND "sentAt" >= ? AND "sentAt" < ?`)
+          .bind(start, dayEnd(start))
+          .first<{ c: number | string }>();
+        return Number(r?.c || 0);
+      }),
+    ),
+    Promise.all(
+      days.map(async (start) => {
+        const r = await db
+          .prepare(
+            `SELECT COUNT(*) AS c FROM "OutreachSequence"
+             WHERE "replyDetectedAt" >= ? AND "replyDetectedAt" < ?`,
+          )
+          .bind(start, dayEnd(start))
+          .first<{ c: number | string }>();
+        return Number(r?.c || 0);
+      }),
+    ),
+  ]);
+
+  return { leadsFound, enriched, queued, sent, replied };
 }
 
 export default async function DashboardPage() {
   await requireSession();
 
   const prisma = getPrisma();
-  const [automationOverview, scrapeJobs, leads] = await Promise.all([
+  const [
+    automation,
+    scrapeJobs,
+    leadCount,
+    repliedCount,
+    contactedCount,
+    adequateToday,
+    sendsToday,
+    recentTargets,
+    nextTarget,
+    activeTargets,
+    series,
+  ] = await Promise.all([
     listAutomationOverview().catch(() => emptyAutomationOverview()),
     listScrapeJobs(8).catch(() => []),
-    prisma.lead.findMany({
-      where: { isArchived: false },
-      select: {
-        id: true,
-        businessName: true,
-        city: true,
-        email: true,
-        emailConfidence: true,
-        emailFlags: true,
-        emailType: true,
-        axiomScore: true,
-        enrichedAt: true,
-        enrichmentData: true,
-        source: true,
-        outreachStatus: true,
-        lastContactedAt: true,
-        createdAt: true,
-      },
-      orderBy: { createdAt: "desc" },
+    prisma.lead.count({ where: { isArchived: false } }),
+    prisma.lead.count({ where: { outreachStatus: "REPLIED" } }),
+    prisma.lead.count({ where: { firstContactedAt: { not: null } } }).catch(async () => {
+      const r = await getDatabase()
+        .prepare(`SELECT COUNT(*) AS c FROM "Lead" WHERE "firstContactedAt" IS NOT NULL`)
+        .first<{ c: number | string }>();
+      return Number(r?.c || 0);
     }),
+    countAdequateLeadsToday().catch(() => 0),
+    getSendsToday().catch(() => ({ total: 0, perSender: {} as Record<string, number> })),
+    listRecentScrapeTargets(5).catch(() => []),
+    pickNextScrapeTarget().catch(() => null),
+    countActiveScrapeTargets().catch(() => 0),
+    get7DaySeries().catch(() => ({
+      leadsFound: Array(7).fill(0),
+      enriched: Array(7).fill(0),
+      queued: Array(7).fill(0),
+      sent: Array(7).fill(0),
+      replied: Array(7).fill(0),
+    })),
   ]);
 
-  const preSendStages = partitionPreSendLeads(
-    leads.filter((lead) => {
-      if (isContactedOutreachStatus(lead.outreachStatus)) return false;
-      if (lead.outreachStatus === READY_FOR_FIRST_TOUCH_STATUS) return false;
-      return true;
-    }),
-  );
+  const activeScrape = scrapeJobs.find((j) => j.status === "running" || j.status === "claimed") ?? null;
+  const replyRate = contactedCount > 0 ? (repliedCount / contactedCount) * 100 : 0;
 
-  const intakeBacklog = preSendStages.intake.length;
-  const enrichmentBacklog = preSendStages.enrichment.length;
-  const qualificationBacklog = preSendStages.qualification.length;
-  const firstTouchQueued = automationOverview.sequences.filter(
-    (s) => !s.hasSentAnyStep && (s.state === "QUEUED" || s.state === "SENDING"),
-  ).length;
-  const activeFollowUps = automationOverview.sequences.filter(
-    (s) => s.hasSentAnyStep && (s.state === "WAITING" || s.state === "SENDING"),
-  ).length;
-  const blockedFollowUps = automationOverview.sequences.filter(
-    (s) => s.hasSentAnyStep && s.state === "BLOCKED",
-  ).length;
+  const aidanSends = sendsToday.perSender["aidan@getaxiom.ca"] || 0;
+  const rileySends = sendsToday.perSender["riley@getaxiom.ca"] || 0;
 
-  const activeRun = scrapeJobs.find((j) => j.status === "running" || j.status === "claimed") ?? null;
-  const repliedLeads = leads.filter((l) => l.outreachStatus === "REPLIED").slice(0, 4);
-  const recentSendEvents = automationOverview.recentSent.slice(0, 4);
-  const validEmails = leads.filter((lead) => Boolean(lead.email)).length;
-  const contacted = leads.filter((lead) => isContactedOutreachStatus(lead.outreachStatus)).length;
-  const conversionRate = contacted > 0 ? (automationOverview.stats.replied / contacted) * 100 : 0;
+  const intakePct = Math.min(100, (adequateToday / AUTONOMOUS_DAILY_LEAD_INTAKE_CAP) * 100);
+  const sendPct = Math.min(100, (sendsToday.total / TARGET_DAILY_SEND) * 100);
+  const aidanPct = Math.min(100, (aidanSends / MAILBOX_DAILY_SEND_TARGET) * 100);
+  const rileyPct = Math.min(100, (rileySends / MAILBOX_DAILY_SEND_TARGET) * 100);
 
-  const workflow = [
-    {
-      label: "Lead Generator",
-      value: leads.length,
-      detail: activeRun ? `${activeRun.niche} in ${activeRun.city}` : `${intakeBacklog} in intake`,
-      href: "/hunt",
-      icon: Users,
-      tone: "emerald",
-    },
-    {
-      label: "Vault",
-      value: validEmails,
-      detail: `${Math.round((validEmails / Math.max(leads.length, 1)) * 100)}% contactable`,
-      href: "/vault",
-      icon: Folder,
-      tone: "blue",
-    },
-    {
-      label: "Outreach",
-      value: firstTouchQueued + activeFollowUps,
-      detail: `${automationOverview.stats.ready} ready`,
-      href: "/outreach",
-      icon: MessageSquareText,
-      tone: "cyan",
-    },
-    {
-      label: "Automation",
-      value: automationOverview.sequences.length,
-      detail: `${automationOverview.stats.scheduledToday} scheduled today`,
-      href: "/automation",
-      icon: Settings,
-      tone: "amber",
-    },
-  ] as const;
+  const intakeTone: ToneKey = adequateToday >= AUTONOMOUS_DAILY_LEAD_INTAKE_CAP ? "amber" : "emerald";
+  const sendTone: ToneKey = sendsToday.total >= TARGET_DAILY_SEND ? "amber" : "cyan";
 
-  const kpis = [
-    { label: "Total Leads", value: leads.length.toLocaleString(), delta: `${intakeBacklog} intake`, icon: Target },
-    { label: "Contacts in Vault", value: validEmails.toLocaleString(), delta: `${automationOverview.stats.ready} ready`, icon: Database },
-    { label: "Active Outreach", value: (firstTouchQueued + activeFollowUps).toLocaleString(), delta: `${activeFollowUps} follow-ups`, icon: MessageSquareText },
-    { label: "Responses", value: automationOverview.stats.replied.toLocaleString(), delta: `${conversionRate.toFixed(1)}% reply rate`, icon: Reply },
-    { label: "Send Queue", value: automationOverview.stats.queued.toLocaleString(), delta: `${automationOverview.stats.sending} sending`, icon: MailCheck },
-    { label: "Needs Attention", value: blockedFollowUps.toLocaleString(), delta: `${automationOverview.stats.blocked} blocked`, icon: AlertTriangle },
-  ];
-
-  const actionQueue = [
-    {
-      action: "Review new leads",
-      item: "Lead Generator",
-      priority: intakeBacklog > 20 ? "High" : "Medium",
-      due: intakeBacklog > 0 ? "Now" : "Clear",
-      count: intakeBacklog,
-      href: "/hunt",
-    },
-    {
-      action: "Enrich contacts",
-      item: "Outreach",
-      priority: enrichmentBacklog > 20 ? "High" : "Medium",
-      due: enrichmentBacklog > 0 ? "Today" : "Clear",
-      count: enrichmentBacklog,
-      href: "/outreach?stage=enrichment",
-    },
-    {
-      action: "Qualify pipeline",
-      item: "Outreach",
-      priority: qualificationBacklog > 20 ? "High" : "Low",
-      due: qualificationBacklog > 0 ? "Today" : "Clear",
-      count: qualificationBacklog,
-      href: "/outreach?stage=enriched",
-    },
-    {
-      action: "Send first touch",
-      item: "Outreach",
-      priority: automationOverview.stats.ready > 0 ? "High" : "Low",
-      due: automationOverview.stats.ready > 0 ? "Queue" : "Clear",
-      count: automationOverview.stats.ready,
-      href: "/outreach?stage=ready",
-    },
-    {
-      action: "Resolve blocked follow-ups",
-      item: "Automation",
-      priority: blockedFollowUps > 0 ? "High" : "Low",
-      due: blockedFollowUps > 0 ? "Now" : "Clear",
-      count: blockedFollowUps,
-      href: "/automation",
-    },
-  ];
-
-  const activity = [
-    ...repliedLeads.map((lead) => ({
-      title: "Reply received",
-      detail: `${lead.businessName}${lead.city ? ` · ${lead.city}` : ""}`,
-      when: formatRunTime(lead.lastContactedAt, "Recent"),
-      icon: <Reply className="size-4 text-emerald-300" />,
-    })),
-    ...recentSendEvents.map((event) => ({
-      title: "Email sent",
-      detail: event.lead?.businessName || event.recipientEmail,
-      when: formatRunTime(event.sentAt, "Recent"),
-      icon: <MailCheck className="size-4 text-cyan-300" />,
-    })),
-  ].slice(0, 6);
-
-  const campaignRows = [
-    { label: "First Touch", responses: automationOverview.stats.replied, rate: `${conversionRate.toFixed(1)}%`, meetings: Math.max(0, Math.round(automationOverview.stats.replied * 0.25)) },
-    { label: "Follow Up", responses: activeFollowUps, rate: `${Math.min(100, activeFollowUps * 2).toFixed(1)}%`, meetings: Math.max(0, Math.round(activeFollowUps * 0.12)) },
-    { label: "Queued", responses: automationOverview.stats.queued, rate: "Ready", meetings: firstTouchQueued },
-    { label: "Blocked", responses: automationOverview.stats.blocked, rate: "Review", meetings: blockedFollowUps },
-  ];
+  const aidanConnected = automation.mailboxes.some((m) => m.gmailAddress === "aidan@getaxiom.ca");
+  const rileyConnected = automation.mailboxes.some((m) => m.gmailAddress === "riley@getaxiom.ca");
 
   return (
-    <div className="mx-auto flex max-w-[1440px] flex-col gap-4">
-      <section className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+    <div className="mx-auto flex max-w-[1440px] flex-col gap-5">
+      <header className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
-          <span className="v2-eyebrow inline-flex items-center gap-2">
+          <span className="v2-eyebrow inline-flex items-center gap-2 text-[10px]">
             <span className="v2-dot text-emerald-400" />
-            Command Center
+            Autonomous Pipeline · live
           </span>
-          <h1 className="mt-2 text-[34px] font-semibold tracking-[-0.025em] text-white">
-            Dashboard
-          </h1>
-          <p className="mt-1 text-sm text-zinc-400">Unified overview of your pipeline engine</p>
+          <h1 className="mt-2 text-[34px] font-semibold tracking-[-0.025em] text-white">Dashboard</h1>
+          <p className="mt-1 text-sm text-zinc-400">
+            Read-only monitoring. Cron tick every 60s. No human input required.
+          </p>
         </div>
-        <div className="flex items-center gap-2.5">
-          <div className="hidden rounded-lg border border-white/[0.08] bg-white/[0.025] px-3 py-1.5 text-right text-[11px] text-zinc-400 sm:block">
-            <div className="font-medium text-zinc-200">
-              {new Intl.DateTimeFormat("en-US", { weekday: "long", month: "short", day: "numeric" }).format(new Date())}
-            </div>
-            <div className="font-mono text-[10.5px] text-zinc-500">{formatRunTime(new Date(), "")}</div>
+        <div className="rounded-lg border border-white/[0.08] bg-white/[0.025] px-3 py-1.5 text-right text-[11px] text-zinc-400">
+          <div className="font-medium text-zinc-200">
+            {new Intl.DateTimeFormat("en-US", { weekday: "long", month: "short", day: "numeric" }).format(new Date())}
           </div>
-          <Button variant="outline" className="h-9">
-            <Settings className="size-4" />
-            Customize
-          </Button>
-        </div>
-      </section>
-
-      <section className="app-section-flat overflow-hidden rounded-md">
-        <div className="border-b border-white/[0.08] px-4 py-3">
-          <div className="text-sm font-semibold text-white">Pipeline Workflow</div>
-        </div>
-        <div className="grid gap-px bg-white/[0.08] md:grid-cols-4">
-          {workflow.map((step, index) => {
-            const Icon = step.icon;
-            return (
-              <Link key={step.label} href={step.href} className="group bg-[#0b131d] p-5 transition-colors hover:bg-[#0f1822]">
-                <div className="flex items-center gap-4">
-                  <div className={`flex size-12 items-center justify-center rounded-md border ${toneClass(step.tone)}`}>
-                    <Icon className="size-6" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate text-sm font-semibold text-white">{step.label}</span>
-                      {index < workflow.length - 1 ? <ArrowRight className="hidden size-4 text-zinc-600 md:block" /> : null}
-                    </div>
-                    <div className="mt-1 font-mono text-xl font-semibold tabular-nums text-white">{step.value.toLocaleString()}</div>
-                    <div className="truncate text-xs text-zinc-500">{step.detail}</div>
-                  </div>
-                </div>
-              </Link>
-            );
-          })}
-        </div>
-      </section>
-
-      <section className="grid gap-px overflow-hidden rounded-md border border-white/[0.08] bg-white/[0.08] sm:grid-cols-2 lg:grid-cols-6">
-        {kpis.map((kpi) => {
-          const Icon = kpi.icon;
-          return (
-            <div key={kpi.label} className="bg-[#0b131d] p-4">
-              <div className="flex items-center justify-between text-zinc-500">
-                <span className="text-xs">{kpi.label}</span>
-                <Icon className="size-4" />
-              </div>
-              <div className="mt-3 font-mono text-2xl font-semibold tabular-nums text-white">{kpi.value}</div>
-              <div className="mt-1 text-xs text-emerald-300">{kpi.delta}</div>
-            </div>
-          );
-        })}
-      </section>
-
-      <section className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-        <div className="app-section-flat overflow-hidden rounded-md">
-          <SectionHeader title="Action Queue" meta={`${actionQueue.reduce((sum, item) => sum + item.count, 0)} open`} />
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b border-white/[0.08] text-[11px] uppercase tracking-wide text-zinc-500">
-                <tr>
-                  <th className="px-4 py-3 font-medium">Action</th>
-                  <th className="px-4 py-3 font-medium">Area</th>
-                  <th className="px-4 py-3 font-medium">Priority</th>
-                  <th className="px-4 py-3 font-medium">Due</th>
-                  <th className="px-4 py-3 text-right font-medium">Count</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/[0.06]">
-                {actionQueue.map((row) => (
-                  <tr key={row.action} className="transition-colors hover:bg-white/[0.025]">
-                    <td className="px-4 py-3">
-                      <Link href={row.href as Route} className="font-medium text-white hover:text-emerald-300">
-                        {row.action}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3 text-zinc-400">{row.item}</td>
-                    <td className="px-4 py-3">
-                      <PriorityLabel value={row.priority} />
-                    </td>
-                    <td className="px-4 py-3 text-zinc-400">{row.due}</td>
-                    <td className="px-4 py-3 text-right font-mono text-zinc-200">{row.count.toLocaleString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="font-mono text-[10.5px] text-zinc-500">
+            {formatAppDateTime(new Date(), { hour: "numeric", minute: "2-digit" }, "")}
           </div>
         </div>
+      </header>
 
-        <div className="app-section-flat overflow-hidden rounded-md">
-          <SectionHeader title="Recent Activity" meta="live" />
-          <div className="divide-y divide-white/[0.06]">
-            {activity.length > 0 ? (
-              activity.map((item, index) => (
-                <ActivityRow key={`${item.title}-${index}`} {...item} />
-              ))
+      {(!aidanConnected || !rileyConnected) ? (
+        <div className="flex items-center gap-3 rounded-md border border-amber-400/25 bg-amber-400/[0.05] px-4 py-3 text-sm">
+          <Activity className="size-4 text-amber-300" />
+          <div className="flex-1">
+            <span className="font-medium text-amber-200">
+              {[!aidanConnected && "aidan@getaxiom.ca", !rileyConnected && "riley@getaxiom.ca"]
+                .filter(Boolean)
+                .join(" and ")}{" "}
+              not connected.
+            </span>
+            <span className="ml-2 text-amber-100/70">
+              Visit <a href="/settings" className="underline hover:text-white">Settings</a> to connect Gmail (one-time OAuth).
+            </span>
+          </div>
+        </div>
+      ) : null}
+
+      <section className="grid gap-4 xl:grid-cols-3">
+        <Panel
+          title="Autonomous Intake"
+          subtitle="Lead generation today"
+          accent="emerald"
+        >
+          <RatioMeter
+            label="Adequate leads"
+            value={adequateToday}
+            cap={AUTONOMOUS_DAILY_LEAD_INTAKE_CAP}
+            pct={intakePct}
+            tone={intakeTone}
+            footnote="axiom score ≥ 45, non-D, non-generic email"
+          />
+          <Divider />
+          <KvRow icon={<Radar className="size-3.5" />} label="Active targets" value={activeTargets.toLocaleString()} />
+          <KvRow icon={<Activity className="size-3.5" />} label="Scrape state" value={activeScrape ? `${activeScrape.niche} · ${activeScrape.city}` : "Idle"} />
+          <KvRow icon={<Clock3 className="size-3.5" />} label="Next dispatch" value={nextTarget ? `${nextTarget.niche} · ${nextTarget.city}` : "—"} />
+          <Divider />
+          <SubLabel>Recently dispatched</SubLabel>
+          <ul className="space-y-1">
+            {recentTargets.length === 0 ? (
+              <li className="text-xs text-zinc-600">No dispatches yet — autonomous intake will start on the next cron tick.</li>
             ) : (
-              <div className="px-4 py-12 text-center text-sm text-zinc-500">
-                Activity will appear once the pipeline moves.
-              </div>
+              recentTargets.map((t) => (
+                <li key={t.id} className="flex items-center justify-between gap-3 text-xs">
+                  <span className="truncate text-zinc-300">
+                    <span className="font-mono text-zinc-500">{t.niche}</span>
+                    <span className="px-1.5 text-zinc-700">·</span>
+                    <span>{t.city}</span>
+                  </span>
+                  <span className="shrink-0 font-mono text-[10.5px] text-zinc-500">{relativeAgo(t.lastRunAt)}</span>
+                </li>
+              ))
             )}
-          </div>
-        </div>
-      </section>
+          </ul>
+        </Panel>
 
-      <section className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-        <div className="app-section-flat overflow-hidden rounded-md">
-          <SectionHeader title="Engine Status" meta={automationOverview.engine.mode} />
-          <div className="grid grid-cols-2 gap-px bg-white/[0.08]">
-            <StatusMetric icon={<Bot className="size-4" />} label="Mode" value={automationOverview.engine.mode} />
-            <StatusMetric icon={<Clock3 className="size-4" />} label="Next Send" value={formatRunTime(automationOverview.engine.nextSendAt, "--")} />
-            <StatusMetric icon={<Radio className="size-4" />} label="Running Job" value={activeRun ? `${activeRun.niche}` : "Idle"} />
-            <StatusMetric icon={<CheckCircle2 className="size-4" />} label="Mailboxes" value={automationOverview.mailboxes.length.toLocaleString()} />
-          </div>
-        </div>
+        <Panel
+          title="Send Health"
+          subtitle="Outbound email volume"
+          accent="cyan"
+        >
+          <RatioMeter
+            label="Sent today"
+            value={sendsToday.total}
+            cap={TARGET_DAILY_SEND}
+            pct={sendPct}
+            tone={sendTone}
+            footnote={`${MAILBOX_DAILY_SEND_TARGET}/day per mailbox · 80/day total`}
+          />
+          <Divider />
+          <MailboxBar email="aidan@getaxiom.ca" sent={aidanSends} cap={MAILBOX_DAILY_SEND_TARGET} pct={aidanPct} connected={aidanConnected} />
+          <MailboxBar email="riley@getaxiom.ca" sent={rileySends} cap={MAILBOX_DAILY_SEND_TARGET} pct={rileyPct} connected={rileyConnected} />
+          <Divider />
+          <KvRow icon={<MailCheck className="size-3.5" />} label="Reply rate" value={`${replyRate.toFixed(1)}%`} />
+          <KvRow icon={<Reply className="size-3.5" />} label="Replies (all-time)" value={repliedCount.toLocaleString()} />
+          <KvRow icon={<Bot className="size-3.5" />} label="Engine" value={automation.engine.mode} />
+        </Panel>
 
-        <div className="app-section-flat overflow-hidden rounded-md">
-          <SectionHeader title="Automation Performance" meta="This week" />
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b border-white/[0.08] text-[11px] uppercase tracking-wide text-zinc-500">
-                <tr>
-                  <th className="px-4 py-3 font-medium">Segment</th>
-                  <th className="px-4 py-3 text-right font-medium">Responses</th>
-                  <th className="px-4 py-3 text-right font-medium">Rate</th>
-                  <th className="px-4 py-3 text-right font-medium">Meetings</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/[0.06]">
-                {campaignRows.map((row) => (
-                  <tr key={row.label} className="hover:bg-white/[0.025]">
-                    <td className="px-4 py-3 font-medium text-white">{row.label}</td>
-                    <td className="px-4 py-3 text-right font-mono text-zinc-300">{row.responses.toLocaleString()}</td>
-                    <td className="px-4 py-3 text-right text-zinc-300">{row.rate}</td>
-                    <td className="px-4 py-3 text-right font-mono text-zinc-300">{row.meetings.toLocaleString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <Panel
+          title="Pipeline Throughput"
+          subtitle="Last 7 days"
+          accent="violet"
+        >
+          <Sparkline label="Leads found" series={series.leadsFound} tone="emerald" />
+          <Sparkline label="Enriched" series={series.enriched} tone="cyan" />
+          <Sparkline label="Queued" series={series.queued} tone="violet" />
+          <Sparkline label="Sent" series={series.sent} tone="blue" />
+          <Sparkline label="Replied" series={series.replied} tone="amber" />
+          <Divider />
+          <KvRow icon={<Target className="size-3.5" />} label="Total leads" value={leadCount.toLocaleString()} />
+          <KvRow icon={<CheckCircle2 className="size-3.5" />} label="Contacted" value={contactedCount.toLocaleString()} />
+        </Panel>
       </section>
     </div>
   );
 }
 
-function SectionHeader({ title, meta }: { title: string; meta: string }) {
-  return (
-    <div className="flex items-center justify-between border-b border-white/[0.08] px-4 py-3">
-      <h2 className="text-sm font-semibold text-white">{title}</h2>
-      <span className="rounded border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-[11px] text-zinc-400">
-        {meta}
-      </span>
-    </div>
-  );
-}
+type ToneKey = "emerald" | "cyan" | "violet" | "blue" | "amber" | "red";
 
-function ActivityRow({
+const TONE: Record<ToneKey, { ring: string; bar: string; text: string; bg: string; border: string }> = {
+  emerald: {
+    ring: "stroke-emerald-400",
+    bar: "bg-emerald-400",
+    text: "text-emerald-300",
+    bg: "bg-emerald-400/10",
+    border: "border-emerald-400/30",
+  },
+  cyan: { ring: "stroke-cyan-400", bar: "bg-cyan-400", text: "text-cyan-300", bg: "bg-cyan-400/10", border: "border-cyan-400/30" },
+  violet: { ring: "stroke-violet-400", bar: "bg-violet-400", text: "text-violet-300", bg: "bg-violet-400/10", border: "border-violet-400/30" },
+  blue: { ring: "stroke-blue-400", bar: "bg-blue-400", text: "text-blue-300", bg: "bg-blue-400/10", border: "border-blue-400/30" },
+  amber: { ring: "stroke-amber-400", bar: "bg-amber-400", text: "text-amber-300", bg: "bg-amber-400/10", border: "border-amber-400/30" },
+  red: { ring: "stroke-red-400", bar: "bg-red-400", text: "text-red-300", bg: "bg-red-400/10", border: "border-red-400/30" },
+};
+
+function Panel({
   title,
-  detail,
-  when,
-  icon,
+  subtitle,
+  accent,
+  children,
 }: {
   title: string;
-  detail: string;
-  when: string;
-  icon: ReactNode;
+  subtitle: string;
+  accent: ToneKey;
+  children: ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-3 px-4 py-3">
-      <div className="flex size-9 items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.03]">
-        {icon}
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium text-white">{title}</div>
-        <div className="truncate text-xs text-zinc-500">{detail}</div>
-      </div>
-      <div className="shrink-0 font-mono text-[11px] text-zinc-500">{when}</div>
+    <div className="overflow-hidden rounded-lg border border-white/[0.06] bg-[#0b131d]">
+      <header className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
+        <div>
+          <div className="text-sm font-semibold text-white">{title}</div>
+          <div className="mt-0.5 text-[11px] text-zinc-500">{subtitle}</div>
+        </div>
+        <span className={`inline-flex h-2 w-2 rounded-full ${TONE[accent].bar}`} />
+      </header>
+      <div className="space-y-3 p-4">{children}</div>
     </div>
   );
 }
 
-function PriorityLabel({ value }: { value: string }) {
-  const className =
-    value === "High"
-      ? "text-red-300"
-      : value === "Medium"
-        ? "text-amber-300"
-        : "text-emerald-300";
-  return <span className={`text-xs font-medium ${className}`}>{value}</span>;
+function Divider() {
+  return <div className="-mx-4 my-2 h-px bg-white/[0.06]" />;
 }
 
-function StatusMetric({
-  icon,
+function SubLabel({ children }: { children: ReactNode }) {
+  return <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500">{children}</div>;
+}
+
+function RatioMeter({
   label,
   value,
+  cap,
+  pct,
+  tone,
+  footnote,
 }: {
-  icon: ReactNode;
   label: string;
-  value: string;
+  value: number;
+  cap: number;
+  pct: number;
+  tone: ToneKey;
+  footnote?: string;
 }) {
+  const t = TONE[tone];
+  const radius = 36;
+  const circumference = 2 * Math.PI * radius;
+  const dash = (pct / 100) * circumference;
+
   return (
-    <div className="bg-[#0b131d] p-4">
-      <div className="flex items-center gap-2 text-xs text-zinc-500">
-        {icon}
-        {label}
+    <div className="flex items-center gap-4">
+      <div className="relative size-24 shrink-0">
+        <svg viewBox="0 0 88 88" className="size-24 -rotate-90">
+          <circle cx="44" cy="44" r={radius} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="6" />
+          <circle
+            cx="44"
+            cy="44"
+            r={radius}
+            fill="none"
+            className={t.ring}
+            strokeWidth="6"
+            strokeLinecap="round"
+            strokeDasharray={`${dash} ${circumference}`}
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <div className={`font-mono text-2xl font-semibold tabular-nums ${t.text}`}>{value}</div>
+          <div className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">/ {cap}</div>
+        </div>
       </div>
-      <div className="mt-2 truncate text-sm font-semibold text-white">{value}</div>
+      <div className="min-w-0">
+        <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-zinc-400">{label}</div>
+        <div className="mt-1 text-2xl font-semibold tabular-nums text-white">{pct.toFixed(0)}%</div>
+        {footnote ? <div className="mt-1 text-[11px] leading-4 text-zinc-500">{footnote}</div> : null}
+      </div>
     </div>
   );
 }
 
-function toneClass(tone: "emerald" | "blue" | "cyan" | "amber") {
-  switch (tone) {
-    case "emerald":
-      return "border-emerald-400/20 bg-emerald-400/10 text-emerald-300";
-    case "blue":
-      return "border-blue-400/20 bg-blue-400/10 text-blue-300";
-    case "cyan":
-      return "border-cyan-400/20 bg-cyan-400/10 text-cyan-300";
-    case "amber":
-      return "border-amber-400/20 bg-amber-400/10 text-amber-300";
-  }
+function KvRow({ icon, label, value }: { icon: ReactNode; label: string; value: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-3 text-xs">
+      <span className="inline-flex items-center gap-2 text-zinc-500">
+        {icon}
+        {label}
+      </span>
+      <span className="truncate font-mono tabular-nums text-zinc-200">{value}</span>
+    </div>
+  );
+}
+
+function MailboxBar({
+  email,
+  sent,
+  cap,
+  pct,
+  connected,
+}: {
+  email: string;
+  sent: number;
+  cap: number;
+  pct: number;
+  connected: boolean;
+}) {
+  const tone: ToneKey = !connected ? "red" : pct >= 100 ? "amber" : "cyan";
+  const t = TONE[tone];
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between gap-3 text-[11px]">
+        <span className="truncate font-mono text-zinc-300">{email}</span>
+        <span className={`shrink-0 ${connected ? t.text : "text-red-300"}`}>
+          {connected ? `${sent} / ${cap}` : "not connected"}
+        </span>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.05]">
+        {connected ? (
+          <div className={`h-full ${t.bar} transition-[width]`} style={{ width: `${pct}%` }} />
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function Sparkline({ label, series, tone }: { label: string; series: number[]; tone: ToneKey }) {
+  const t = TONE[tone];
+  const max = Math.max(1, ...series);
+  const total = series.reduce((sum, n) => sum + n, 0);
+  const today = series[series.length - 1] || 0;
+  const W = 160;
+  const H = 28;
+  const step = W / Math.max(1, series.length - 1);
+  const points = series
+    .map((n, i) => `${i * step},${H - (n / max) * (H - 4) - 2}`)
+    .join(" ");
+  const last = series.length - 1;
+  const lastY = H - (today / max) * (H - 4) - 2;
+
+  return (
+    <div className="grid grid-cols-[1fr_auto] items-center gap-3">
+      <div>
+        <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-zinc-500">{label}</div>
+        <div className="mt-0.5 flex items-baseline gap-2">
+          <span className="font-mono text-lg font-semibold tabular-nums text-white">{today}</span>
+          <span className="text-[10px] text-zinc-500">today · {total} / 7d</span>
+        </div>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="h-7 w-[160px]">
+        <polyline
+          points={points}
+          fill="none"
+          className={t.ring}
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <circle cx={last * step} cy={lastY} r="2" className={`${t.ring} fill-current ${t.text}`} />
+      </svg>
+    </div>
+  );
 }
