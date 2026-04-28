@@ -1636,6 +1636,7 @@ function classifySendFailure(error: unknown) {
 
   if (
     message.includes("timeout") ||
+    message.includes("abort") ||
     message.includes("rate limit") ||
     message.includes("too many requests") ||
     message.includes("temporar") ||
@@ -2064,13 +2065,13 @@ async function sendScheduledStep(
 }
 
 async function recoverStaleClaims(prisma: PrismaLike) {
-  const staleThreshold = addMinutes(new Date(), -10);
+  const staleThreshold = addMinutes(new Date(), -2);
   const staleClaims = await prisma.outreachSequenceStep.findMany({
     where: {
       status: "CLAIMED",
       claimedAt: { lte: staleThreshold },
     },
-    take: 20,
+    take: 100,
   }) as OutreachSequenceStepRecord[];
 
   for (const step of staleClaims) {
@@ -2170,9 +2171,12 @@ async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: numbe
       continue;
     }
 
-    // Fair distribution: don't let one mailbox hog all claims in a single batch
+    // Fair distribution: one claim per mailbox per cron tick. The scheduler
+    // runs every minute and send-time gates enforce cooldown/hour/day caps.
+    // Claiming more than one per mailbox creates stuck CLAIMED rows when any
+    // external provider call hangs.
     const currentMailboxClaims = mailboxClaimCounts.get(mailbox.id) || 0;
-    const maxPerMailbox = Math.max(2, Math.ceil(batchSize / 2));
+    const maxPerMailbox = 1;
     if (currentMailboxClaims >= maxPerMailbox) {
       continue;
     }
@@ -2388,96 +2392,94 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
 
     const { recordSendDecision } = await import("@/lib/send-decisions");
 
-    await Promise.allSettled(
-      claims.map(async (claim) => {
-        const baseDecision = {
-          leadId: claim.sequence.leadId,
-          sequenceId: claim.sequence.id,
-          stepId: claim.step.id,
-          mailboxId: claim.mailbox.id,
-          senderEmail: claim.mailbox.gmailAddress,
-        };
-        try {
-          await sendScheduledStep(prisma, claim, run.id);
-          sentCount += 1;
+    for (const claim of claims) {
+      const baseDecision = {
+        leadId: claim.sequence.leadId,
+        sequenceId: claim.sequence.id,
+        stepId: claim.step.id,
+        mailboxId: claim.mailbox.id,
+        senderEmail: claim.mailbox.gmailAddress,
+      };
+      try {
+        await sendScheduledStep(prisma, claim, run.id);
+        sentCount += 1;
+        await recordSendDecision({
+          ...baseDecision,
+          decision: "SENT",
+          reason: null,
+        });
+        console.log(`[scheduler] SENT step ${claim.step.stepNumber} for sequence ${claim.sequence.id} (lead ${claim.sequence.leadId})`);
+      } catch (error) {
+        if (error instanceof AutomationSkipError) {
+          skippedCount += 1;
+          if (error.reason === "mailbox_disconnected") {
+            await markMailboxDisconnected(prisma, claim.mailbox.id);
+          }
           await recordSendDecision({
             ...baseDecision,
-            decision: "SENT",
-            reason: null,
+            decision: "BLOCKED",
+            reason: error.reason,
           });
-          console.log(`[scheduler] SENT step ${claim.step.stepNumber} for sequence ${claim.sequence.id} (lead ${claim.sequence.leadId})`);
-        } catch (error) {
-          if (error instanceof AutomationSkipError) {
-            skippedCount += 1;
-            if (error.reason === "mailbox_disconnected") {
-              await markMailboxDisconnected(prisma, claim.mailbox.id);
-            }
-            await recordSendDecision({
-              ...baseDecision,
-              decision: "BLOCKED",
-              reason: error.reason,
-            });
-            await setSequenceBlocked(prisma, claim, error.reason);
-            return;
-          }
-
-          if (error instanceof AutomationStoppedError) {
-            skippedCount += 1;
-            await recordSendDecision({
-              ...baseDecision,
-              decision: "SKIPPED",
-              reason: "sequence_stopped",
-            });
-            return;
-          }
-
-          if (error instanceof AutomationRetryableSendError) {
-            failedCount += 1;
-            const latestStep = await prisma.outreachSequenceStep.findUnique({
-              where: { id: claim.step.id },
-            }) as OutreachSequenceStepRecord | null;
-            const attemptCount = latestStep?.attemptCount || claim.step.attemptCount || 0;
-            if (attemptCount <= 1) {
-              await rescheduleClaimStep(prisma, claim, 15, error.reason);
-            } else if (attemptCount <= 2) {
-              await rescheduleClaimStep(prisma, claim, 60, error.reason);
-            } else {
-              await setSequenceBlocked(prisma, claim, error.reason);
-            }
-            return;
-          }
-
-          const classification = classifySendFailure(error);
-          if (classification.kind === "retryable") {
-            failedCount += 1;
-            const latestStep = await prisma.outreachSequenceStep.findUnique({
-              where: { id: claim.step.id },
-            }) as OutreachSequenceStepRecord | null;
-            const attemptCount = latestStep?.attemptCount || claim.step.attemptCount || 0;
-            if (attemptCount <= 1) {
-              await rescheduleClaimStep(prisma, claim, 15, classification.reason);
-            } else if (attemptCount <= 2) {
-              await rescheduleClaimStep(prisma, claim, 60, classification.reason);
-            } else {
-              await setSequenceBlocked(prisma, claim, classification.reason);
-            }
-            return;
-          }
-
-          if (classification.kind === "blocked") {
-            failedCount += 1;
-            if (classification.reason === "mailbox_disconnected") {
-              await markMailboxDisconnected(prisma, claim.mailbox.id);
-            }
-            await setSequenceBlocked(prisma, claim, classification.reason);
-            return;
-          }
-
-          failedCount += 1;
-          await stopSequenceInternal(prisma, claim.sequence, classification.reason.toUpperCase());
+          await setSequenceBlocked(prisma, claim, error.reason);
+          continue;
         }
-      })
-    );
+
+        if (error instanceof AutomationStoppedError) {
+          skippedCount += 1;
+          await recordSendDecision({
+            ...baseDecision,
+            decision: "SKIPPED",
+            reason: "sequence_stopped",
+          });
+          continue;
+        }
+
+        if (error instanceof AutomationRetryableSendError) {
+          failedCount += 1;
+          const latestStep = await prisma.outreachSequenceStep.findUnique({
+            where: { id: claim.step.id },
+          }) as OutreachSequenceStepRecord | null;
+          const attemptCount = latestStep?.attemptCount || claim.step.attemptCount || 0;
+          if (attemptCount <= 1) {
+            await rescheduleClaimStep(prisma, claim, 15, error.reason);
+          } else if (attemptCount <= 2) {
+            await rescheduleClaimStep(prisma, claim, 60, error.reason);
+          } else {
+            await setSequenceBlocked(prisma, claim, error.reason);
+          }
+          continue;
+        }
+
+        const classification = classifySendFailure(error);
+        if (classification.kind === "retryable") {
+          failedCount += 1;
+          const latestStep = await prisma.outreachSequenceStep.findUnique({
+            where: { id: claim.step.id },
+          }) as OutreachSequenceStepRecord | null;
+          const attemptCount = latestStep?.attemptCount || claim.step.attemptCount || 0;
+          if (attemptCount <= 1) {
+            await rescheduleClaimStep(prisma, claim, 15, classification.reason);
+          } else if (attemptCount <= 2) {
+            await rescheduleClaimStep(prisma, claim, 60, classification.reason);
+          } else {
+            await setSequenceBlocked(prisma, claim, classification.reason);
+          }
+          continue;
+        }
+
+        if (classification.kind === "blocked") {
+          failedCount += 1;
+          if (classification.reason === "mailbox_disconnected") {
+            await markMailboxDisconnected(prisma, claim.mailbox.id);
+          }
+          await setSequenceBlocked(prisma, claim, classification.reason);
+          continue;
+        }
+
+        failedCount += 1;
+        await stopSequenceInternal(prisma, claim.sequence, classification.reason.toUpperCase());
+      }
+    }
 
     await prisma.outreachRun.update({
       where: { id: run.id },

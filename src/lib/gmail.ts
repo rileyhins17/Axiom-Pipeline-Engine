@@ -13,6 +13,7 @@ const GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo";
 const GMAIL_SEND_URL = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send";
 const GMAIL_THREAD_URL = "https://gmail.googleapis.com/gmail/v1/users/me/threads";
 const GOOGLE_REVOKE_URL = "https://oauth2.googleapis.com/revoke";
+const GMAIL_REQUEST_TIMEOUT_MS = 20000;
 
 const SCOPES = [
   "https://www.googleapis.com/auth/gmail.send",
@@ -190,6 +191,7 @@ export async function refreshAccessToken(refreshToken: string): Promise<{
   expires_in: number;
 }> {
   const env = getServerEnv();
+  const timeout = withTimeout(GMAIL_REQUEST_TIMEOUT_MS);
 
   const response = await fetch(GOOGLE_TOKEN_URL, {
     method: "POST",
@@ -200,7 +202,8 @@ export async function refreshAccessToken(refreshToken: string): Promise<{
       client_secret: env.GMAIL_CLIENT_SECRET!,
       grant_type: "refresh_token",
     }),
-  });
+    signal: timeout.signal,
+  }).finally(timeout.clear);
 
   if (!response.ok) {
     const text = await response.text();
@@ -287,6 +290,15 @@ function base64UrlEncode(str: string): string {
   return btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
+function withTimeout(ms: number) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), ms);
+  return {
+    signal: controller.signal,
+    clear: () => clearTimeout(timeoutId),
+  };
+}
+
 export type SendEmailResult = {
   messageId: string;
   threadId: string;
@@ -323,6 +335,7 @@ export async function sendGmailEmail(options: {
   const rawMessage = buildRfc2822Message(options);
   const encoded = base64UrlEncode(rawMessage);
   const payload: Record<string, string> = { raw: encoded };
+  const timeout = withTimeout(GMAIL_REQUEST_TIMEOUT_MS);
   if (options.threadId) {
     payload.threadId = options.threadId;
   }
@@ -334,7 +347,8 @@ export async function sendGmailEmail(options: {
       "Content-Type": "application/json",
     },
     body: JSON.stringify(payload),
-  });
+    signal: timeout.signal,
+  }).finally(timeout.clear);
 
   if (!response.ok) {
     const text = await response.text();
@@ -357,11 +371,13 @@ export async function getGmailThreadMetadata(
   accessToken: string,
   threadId: string,
 ): Promise<GmailThreadMetadata> {
+  const timeout = withTimeout(GMAIL_REQUEST_TIMEOUT_MS);
   const response = await fetch(`${GMAIL_THREAD_URL}/${encodeURIComponent(threadId)}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject`, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
-  });
+    signal: timeout.signal,
+  }).finally(timeout.clear);
 
   if (!response.ok) {
     const text = await response.text();

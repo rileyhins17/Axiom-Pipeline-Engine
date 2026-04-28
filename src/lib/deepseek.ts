@@ -9,8 +9,9 @@ import { getServerEnv } from "@/lib/env";
 
 const DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions";
 const DEFAULT_MODEL = "deepseek-chat";
-const MAX_RETRIES = 3;
+const MAX_RETRIES = 2;
 const INITIAL_RETRY_DELAY_MS = 1000;
+const REQUEST_TIMEOUT_MS = 20000;
 
 export type ChatMessage = {
   role: "system" | "user" | "assistant";
@@ -48,6 +49,15 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function withTimeout(ms: number) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), ms);
+  return {
+    signal: controller.signal,
+    clear: () => clearTimeout(timeoutId),
+  };
+}
+
 /**
  * Call the DeepSeek chat completions endpoint with automatic retries on
  * 429 / transient 5xx. Client errors (4xx other than 429) bubble immediately.
@@ -76,6 +86,7 @@ export async function chatCompletion(options: DeepSeekOptions): Promise<DeepSeek
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    const timeout = withTimeout(REQUEST_TIMEOUT_MS);
     try {
       const response = await fetch(DEEPSEEK_API_URL, {
         method: "POST",
@@ -84,6 +95,7 @@ export async function chatCompletion(options: DeepSeekOptions): Promise<DeepSeek
           Authorization: `Bearer ${env.DEEPSEEK_API_KEY}`,
         },
         body: JSON.stringify(body),
+        signal: timeout.signal,
       });
 
       if (response.status === 429) {
@@ -129,6 +141,8 @@ export async function chatCompletion(options: DeepSeekOptions): Promise<DeepSeek
       if (attempt < MAX_RETRIES - 1) {
         await sleep(INITIAL_RETRY_DELAY_MS * Math.pow(2, attempt));
       }
+    } finally {
+      timeout.clear();
     }
   }
 
