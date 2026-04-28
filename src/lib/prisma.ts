@@ -1021,6 +1021,17 @@ function buildWhereClause(where: WhereInput | undefined, params: unknown[]): str
           continue;
         }
 
+        if (operator === "notIn" && Array.isArray(operand)) {
+          if (operand.length === 0) {
+            operatorParts.push("1 = 1");
+            continue;
+          }
+
+          params.push(...operand.map(serializeValue));
+          operatorParts.push(`${fieldName} NOT IN (${operand.map(() => "?").join(", ")})`);
+          continue;
+        }
+
         if (operator === "not") {
           if (operand === null) {
             operatorParts.push(`${fieldName} IS NOT NULL`);

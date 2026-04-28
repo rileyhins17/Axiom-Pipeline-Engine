@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { buildOAuthUrl } from "@/lib/gmail";
+import { buildGmailOAuthState, buildOAuthUrl, normalizeGmailAddress } from "@/lib/gmail";
 import { requireAdminApiSession } from "@/lib/session";
 
 export async function GET(request: Request) {
@@ -10,15 +10,20 @@ export async function GET(request: Request) {
   }
 
   try {
-    // Use the user's session ID as the OAuth state for CSRF protection
-    const state = authResult.session.session.id;
-    const url = buildOAuthUrl(state);
+    const requestUrl = new URL(request.url);
+    const targetEmail = normalizeGmailAddress(requestUrl.searchParams.get("email"));
+    const state = buildGmailOAuthState({
+      sessionId: authResult.session.session.id,
+      targetEmail,
+    });
+    const url = buildOAuthUrl(state, { loginHint: targetEmail });
 
     return NextResponse.redirect(url);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Gmail OAuth connect error:", error);
+    const message = error instanceof Error ? error.message : "Failed to initiate Gmail connection";
     return NextResponse.json(
-      { error: error.message || "Failed to initiate Gmail connection" },
+      { error: message },
       { status: 500 },
     );
   }

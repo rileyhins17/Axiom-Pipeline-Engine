@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { listAutomationOverview } from "@/lib/outreach-automation";
+import { listAutomationOverview, syncMailboxesForGmailConnections } from "@/lib/outreach-automation";
 import { getPrisma } from "@/lib/prisma";
 import { requireApiSession } from "@/lib/session";
 
@@ -23,8 +23,13 @@ export async function GET(request: Request) {
         updatedAt: true,
       },
     });
-    const automation = await listAutomationOverview();
-    const mailboxes = automation.mailboxes.filter((mailbox) => mailbox.userId === authResult.session.user.id);
+    const syncedMailboxes = await syncMailboxesForGmailConnections(authResult.session.user.id);
+    const automation = await listAutomationOverview().catch(() => ({ mailboxes: [] }));
+    const automationMailboxes = automation.mailboxes.filter((mailbox) => mailbox.userId === authResult.session.user.id);
+    const mailboxesByAddress = new Map(
+      [...automationMailboxes, ...syncedMailboxes].map((mailbox) => [mailbox.gmailAddress.toLowerCase(), mailbox]),
+    );
+    const mailboxes = Array.from(mailboxesByAddress.values());
 
     if (connections.length === 0) {
       return NextResponse.json({ connected: false, connections: [], mailboxes: [] });
@@ -41,10 +46,11 @@ export async function GET(request: Request) {
       })),
       mailboxes,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Gmail status error:", error);
+    const message = error instanceof Error ? error.message : "Failed to check Gmail status";
     return NextResponse.json(
-      { error: error.message || "Failed to check Gmail status" },
+      { error: message },
       { status: 500 },
     );
   }

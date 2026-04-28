@@ -2,7 +2,7 @@ import {
   generateSequenceStepEmail,
   type OutreachSequenceStepType,
 } from "@/lib/outreach-email-generator";
-import { getValidAccessToken, getGmailThreadMetadata, sendGmailEmail } from "@/lib/gmail";
+import { getValidAccessToken, getGmailThreadMetadata, normalizeGmailAddress, sendGmailEmail } from "@/lib/gmail";
 import {
   AUTOMATION_SETTINGS_DEFAULTS,
   MAILBOX_DAILY_SEND_TARGET,
@@ -532,15 +532,21 @@ export async function ensureMailboxForConnection(
   options?: { label?: string; timezone?: string; status?: string },
 ) {
   const prisma = getPrisma();
+  const gmailAddress = normalizeGmailAddress(connection.gmailAddress);
   const existing = await prisma.outreachMailbox.findFirst({
-    where: { gmailAddress: connection.gmailAddress },
+    where: {
+      OR: [
+        { gmailConnectionId: connection.id },
+        { gmailAddress },
+      ],
+    },
   });
 
   const data = {
     userId: connection.userId,
     gmailConnectionId: connection.id,
-    gmailAddress: connection.gmailAddress,
-    label: options?.label ?? existing?.label ?? connection.gmailAddress.split("@")[0],
+    gmailAddress,
+    label: options?.label ?? existing?.label ?? gmailAddress.split("@")[0],
     timezone: options?.timezone ?? existing?.timezone ?? "America/Toronto",
     status: options?.status ?? existing?.status ?? "WARMING",
     dailyLimit: MAILBOX_DAILY_SEND_TARGET,
@@ -565,6 +571,25 @@ export async function ensureMailboxForConnection(
       updatedAt: new Date(),
     },
   });
+}
+
+export async function syncMailboxesForGmailConnections(userId?: string) {
+  const prisma = getPrisma();
+  const connections = await prisma.gmailConnection.findMany({
+    ...(userId ? { where: { userId } } : {}),
+    orderBy: { updatedAt: "desc" },
+  }) as GmailConnectionRecord[];
+
+  const mailboxes = await Promise.all(
+    connections.map((connection) => ensureMailboxForConnection(connection, { status: "ACTIVE" })),
+  );
+  const byAddress = new Map<string, OutreachMailboxRecord>();
+
+  for (const mailbox of mailboxes) {
+    byAddress.set(normalizeGmailAddress(mailbox.gmailAddress), mailbox);
+  }
+
+  return Array.from(byAddress.values());
 }
 
 export async function getMailboxForManualSend(userId: string) {

@@ -145,7 +145,7 @@ function MailboxRow({ mailbox }: { mailbox: MailboxStatus }) {
         </span>
       ) : (
         <a
-          href="/api/outreach/gmail/connect"
+          href={`/api/outreach/gmail/connect?email=${encodeURIComponent(mailbox.email)}`}
           className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-950 hover:bg-emerald-400 cursor-pointer whitespace-nowrap"
         >
           <Mail className="h-4 w-4" />
