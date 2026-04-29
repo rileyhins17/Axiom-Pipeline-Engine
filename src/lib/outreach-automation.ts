@@ -241,6 +241,7 @@ const ACTIVE_SEQUENCE_STATUSES = ["QUEUED", "ACTIVE", "PAUSED", "SENDING"] as co
 const CLAIMABLE_SEQUENCE_STATUSES = ["QUEUED", "ACTIVE", "SENDING"] as const;
 const TERMINAL_SEQUENCE_STATUSES = ["STOPPED", "FAILED", "COMPLETED"] as const;
 const MAILBOX_SENDABLE_STATUSES = ["ACTIVE", "WARMING"] as const;
+const D1_IN_CLAUSE_CHUNK_SIZE = 40;
 const REQUEUEABLE_STALE_STOP_REASONS = new Set([
   "below_send_min_score",
   "generation_failed_retryable",
@@ -256,6 +257,14 @@ const REQUEUEABLE_STALE_STOP_REASONS = new Set([
 
 function normalizeEmail(email: string | null | undefined) {
   return (email || "").trim().toLowerCase();
+}
+
+function chunkArray<T>(values: T[], size = D1_IN_CLAUSE_CHUNK_SIZE) {
+  const chunks: T[][] = [];
+  for (let index = 0; index < values.length; index += size) {
+    chunks.push(values.slice(index, index + size));
+  }
+  return chunks;
 }
 
 function getLocalDateParts(date: Date, timeZone: string) {
@@ -872,12 +881,16 @@ async function allocateMailbox(
 
 async function getActiveSequencesForLeads(prisma: PrismaLike, leadIds: number[]) {
   if (leadIds.length === 0) return [];
-  const sequences = await prisma.outreachSequence.findMany({
-    where: {
-      leadId: { in: leadIds },
-      status: { in: [...ACTIVE_SEQUENCE_STATUSES] },
-    },
-  }) as OutreachSequenceRecord[];
+  const sequences: OutreachSequenceRecord[] = [];
+  for (const chunk of chunkArray(leadIds)) {
+    const chunkSequences = (await prisma.outreachSequence.findMany({
+      where: {
+        leadId: { in: chunk },
+        status: { in: [...ACTIVE_SEQUENCE_STATUSES] },
+      },
+    })) as OutreachSequenceRecord[];
+    sequences.push(...chunkSequences);
+  }
 
   const blocking: OutreachSequenceRecord[] = [];
   for (const sequence of sequences) {
@@ -1209,10 +1222,7 @@ export async function queueLeadsForAutomation(input: {
     };
   }
 
-  const leads = (await prisma.lead.findMany({
-    where: { id: { in: input.leadIds } },
-  })) as LeadRecord[];
-  const leadMap = new Map(leads.map((lead) => [lead.id, lead]));
+  const leadMap = await getLeadMap(prisma, input.leadIds);
   const activeSequences = await getActiveSequencesForLeads(prisma, input.leadIds);
   const activeLeadIds = new Set(activeSequences.map((sequence) => sequence.leadId));
 
@@ -1312,17 +1322,25 @@ export async function queueLeadsForAutomation(input: {
 
 async function getLeadMap(prisma: PrismaLike, leadIds: number[]) {
   if (leadIds.length === 0) return new Map<number, LeadRecord>();
-  const leads = (await prisma.lead.findMany({
-    where: { id: { in: leadIds } },
-  })) as LeadRecord[];
+  const leads: LeadRecord[] = [];
+  for (const chunk of chunkArray(leadIds)) {
+    const chunkLeads = (await prisma.lead.findMany({
+      where: { id: { in: chunk } },
+    })) as LeadRecord[];
+    leads.push(...chunkLeads);
+  }
   return new Map(leads.map((lead) => [lead.id, lead]));
 }
 
 async function getMailboxMap(prisma: PrismaLike, mailboxIds: string[]) {
   if (mailboxIds.length === 0) return new Map<string, OutreachMailboxRecord>();
-  const mailboxes = (await prisma.outreachMailbox.findMany({
-    where: { id: { in: mailboxIds } },
-  })) as OutreachMailboxRecord[];
+  const mailboxes: OutreachMailboxRecord[] = [];
+  for (const chunk of chunkArray(mailboxIds)) {
+    const chunkMailboxes = (await prisma.outreachMailbox.findMany({
+      where: { id: { in: chunk } },
+    })) as OutreachMailboxRecord[];
+    mailboxes.push(...chunkMailboxes);
+  }
   return new Map(mailboxes.map((mailbox) => [mailbox.id, mailbox]));
 }
 
@@ -1342,12 +1360,16 @@ async function getNextPendingStepMap(prisma: PrismaLike, sequenceIds: string[]) 
     return nextBySequenceId;
   }
 
-  const pendingSteps = (await prisma.outreachSequenceStep.findMany({
-    where: {
-      sequenceId: { in: sequenceIds },
-      status: { in: ["SCHEDULED", "CLAIMED", "SENDING"] },
-    },
-  })) as OutreachSequenceStepRecord[];
+  const pendingSteps: OutreachSequenceStepRecord[] = [];
+  for (const chunk of chunkArray(sequenceIds)) {
+    const chunkSteps = (await prisma.outreachSequenceStep.findMany({
+      where: {
+        sequenceId: { in: chunk },
+        status: { in: ["SCHEDULED", "CLAIMED", "SENDING"] },
+      },
+    })) as OutreachSequenceStepRecord[];
+    pendingSteps.push(...chunkSteps);
+  }
 
   pendingSteps.sort((a, b) => {
     if (a.sequenceId !== b.sequenceId) {
@@ -1388,14 +1410,19 @@ async function getSuppressionContextForLeads(prisma: PrismaLike, leads: Array<Le
     return { suppressedEmails, suppressedDomains };
   }
 
-  const suppressions = (await prisma.outreachSuppression.findMany({
-    where: {
-      OR: [
-        ...(emails.size > 0 ? [{ email: { in: Array.from(emails) } }] : []),
-        ...(domains.size > 0 ? [{ domain: { in: Array.from(domains) } }] : []),
-      ],
-    },
-  })) as OutreachSuppressionRecord[];
+  const suppressions: OutreachSuppressionRecord[] = [];
+  for (const chunk of chunkArray(Array.from(emails))) {
+    const chunkSuppressions = (await prisma.outreachSuppression.findMany({
+      where: { email: { in: chunk } },
+    })) as OutreachSuppressionRecord[];
+    suppressions.push(...chunkSuppressions);
+  }
+  for (const chunk of chunkArray(Array.from(domains))) {
+    const chunkSuppressions = (await prisma.outreachSuppression.findMany({
+      where: { domain: { in: chunk } },
+    })) as OutreachSuppressionRecord[];
+    suppressions.push(...chunkSuppressions);
+  }
 
   for (const suppression of suppressions) {
     const email = normalizeEmail(suppression.email);
@@ -2407,30 +2434,34 @@ async function cleanupTerminalSequenceSteps(prisma: PrismaLike) {
   }
 
   const terminalSequenceIds = terminalSequences.map((sequence) => sequence.id);
-  const cleaned = await prisma.outreachSequenceStep.updateMany({
-    where: {
-      sequenceId: { in: terminalSequenceIds },
-      status: { in: ["SCHEDULED", "CLAIMED", "SENDING"] },
-    },
-    data: {
-      status: "SKIPPED",
-      claimedAt: null,
-      claimedByRunId: null,
-      errorMessage: "terminal_sequence_cleaned",
-    },
-  });
+  let cleanedCount = 0;
+  for (const chunk of chunkArray(terminalSequenceIds)) {
+    const cleaned = await prisma.outreachSequenceStep.updateMany({
+      where: {
+        sequenceId: { in: chunk },
+        status: { in: ["SCHEDULED", "CLAIMED", "SENDING"] },
+      },
+      data: {
+        status: "SKIPPED",
+        claimedAt: null,
+        claimedByRunId: null,
+        errorMessage: "terminal_sequence_cleaned",
+      },
+    });
+    cleanedCount += cleaned.count;
 
-  await prisma.outreachSequence.updateMany({
-    where: {
-      id: { in: terminalSequenceIds },
-      nextScheduledAt: { not: null },
-    },
-    data: {
-      nextScheduledAt: null,
-    },
-  }).catch(() => null);
+    await prisma.outreachSequence.updateMany({
+      where: {
+        id: { in: chunk },
+        nextScheduledAt: { not: null },
+      },
+      data: {
+        nextScheduledAt: null,
+      },
+    }).catch(() => null);
+  }
 
-  return cleaned.count;
+  return cleanedCount;
 }
 
 async function fastForwardInitialTouches(prisma: PrismaLike, now: Date) {
@@ -2446,26 +2477,30 @@ async function fastForwardInitialTouches(prisma: PrismaLike, now: Date) {
   if (sequences.length === 0) return 0;
 
   const sequenceIds = sequences.map((sequence) => sequence.id);
-  const updated = await prisma.outreachSequenceStep.updateMany({
-    where: {
-      sequenceId: { in: sequenceIds },
-      stepNumber: 1,
-      status: "SCHEDULED",
-      scheduledFor: { gt: now },
-    },
-    data: {
-      scheduledFor: now,
-    },
-  });
-
-  if (updated.count > 0) {
-    await prisma.outreachSequence.updateMany({
-      where: { id: { in: sequenceIds }, nextScheduledAt: { gt: now } },
-      data: { nextScheduledAt: now },
+  let updatedCount = 0;
+  for (const chunk of chunkArray(sequenceIds)) {
+    const updated = await prisma.outreachSequenceStep.updateMany({
+      where: {
+        sequenceId: { in: chunk },
+        stepNumber: 1,
+        status: "SCHEDULED",
+        scheduledFor: { gt: now },
+      },
+      data: {
+        scheduledFor: now,
+      },
     });
+    updatedCount += updated.count;
+
+    if (updated.count > 0) {
+      await prisma.outreachSequence.updateMany({
+        where: { id: { in: chunk }, nextScheduledAt: { gt: now } },
+        data: { nextScheduledAt: now },
+      });
+    }
   }
 
-  return updated.count;
+  return updatedCount;
 }
 
 async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: number) {
