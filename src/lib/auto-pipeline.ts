@@ -90,7 +90,10 @@ async function resetStuckEnriching(prisma: ReturnType<typeof getPrisma>): Promis
       outreachStatus: "ENRICHING",
       enrichedAt: null,
       isArchived: false,
-      updatedAt: { lt: cutoff },
+      OR: [
+        { lastUpdated: { lt: cutoff } },
+        { lastUpdated: null },
+      ],
     },
     select: { id: true },
     take: 200,

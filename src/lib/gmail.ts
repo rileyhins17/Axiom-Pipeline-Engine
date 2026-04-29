@@ -257,14 +257,12 @@ function buildRfc2822Message(options: {
   bodyPlain: string;
 }): string {
   const boundary = `boundary_${crypto.randomUUID().replace(/-/g, "")}`;
-  const fromHeader = options.fromName
-    ? `"${options.fromName.replace(/"/g, '\\"')}" <${options.from}>`
-    : options.from;
+  const fromHeader = formatAddressHeader(options.from, options.fromName);
 
   const lines = [
     `From: ${fromHeader}`,
-    `To: ${options.to}`,
-    `Subject: ${options.subject}`,
+    `To: ${sanitizeHeaderValue(options.to)}`,
+    `Subject: ${encodeMimeHeader(options.subject)}`,
     `MIME-Version: 1.0`,
     `Content-Type: multipart/alternative; boundary="${boundary}"`,
     ``,
@@ -272,13 +270,13 @@ function buildRfc2822Message(options: {
     `Content-Type: text/plain; charset="UTF-8"`,
     `Content-Transfer-Encoding: base64`,
     ``,
-    btoa(unescape(encodeURIComponent(options.bodyPlain))),
+    base64EncodeUtf8(options.bodyPlain),
     ``,
     `--${boundary}`,
     `Content-Type: text/html; charset="UTF-8"`,
     `Content-Transfer-Encoding: base64`,
     ``,
-    btoa(unescape(encodeURIComponent(options.bodyHtml))),
+    base64EncodeUtf8(options.bodyHtml),
     ``,
     `--${boundary}--`,
   ];
@@ -286,8 +284,47 @@ function buildRfc2822Message(options: {
   return lines.join("\r\n");
 }
 
-function base64UrlEncode(str: string): string {
-  return btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+function sanitizeHeaderValue(value: string) {
+  return value.replace(/[\r\n]+/g, " ").trim();
+}
+
+function base64EncodeUtf8(value: string): string {
+  const bytes = new TextEncoder().encode(value);
+  let binary = "";
+  const chunkSize = 0x8000;
+
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+  }
+
+  return btoa(binary);
+}
+
+function encodeMimeHeader(value: string) {
+  const sanitized = sanitizeHeaderValue(value);
+  if (/^[\x20-\x7E]*$/.test(sanitized)) {
+    return sanitized;
+  }
+
+  return `=?UTF-8?B?${base64EncodeUtf8(sanitized)}?=`;
+}
+
+function formatAddressHeader(email: string, displayName?: string) {
+  const safeEmail = sanitizeHeaderValue(email);
+  const safeName = sanitizeHeaderValue(displayName || "");
+  if (!safeName) {
+    return safeEmail;
+  }
+
+  if (/^[\x20-\x7E]*$/.test(safeName)) {
+    return `"${safeName.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}" <${safeEmail}>`;
+  }
+
+  return `${encodeMimeHeader(safeName)} <${safeEmail}>`;
+}
+
+function base64UrlEncodeUtf8(str: string): string {
+  return base64EncodeUtf8(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
 function withTimeout(ms: number) {
@@ -333,7 +370,7 @@ export async function sendGmailEmail(options: {
   threadId?: string;
 }): Promise<SendEmailResult> {
   const rawMessage = buildRfc2822Message(options);
-  const encoded = base64UrlEncode(rawMessage);
+  const encoded = base64UrlEncodeUtf8(rawMessage);
   const payload: Record<string, string> = { raw: encoded };
   const timeout = withTimeout(GMAIL_REQUEST_TIMEOUT_MS);
   if (options.threadId) {

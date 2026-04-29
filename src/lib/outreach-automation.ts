@@ -207,6 +207,32 @@ type AutomationBlockerReason =
   | "domain_cooldown_active"
   | "global_daily_cap_reached";
 
+const AUTOMATION_BLOCKER_REASONS = [
+  "reply_detected",
+  "suppressed",
+  "manual_pause",
+  "global_pause",
+  "emergency_stop",
+  "mailbox_disconnected",
+  "mailbox_disabled",
+  "missing_valid_email",
+  "missing_enrichment",
+  "policy_ineligible",
+  "outside_send_window",
+  "mailbox_cooldown",
+  "hourly_cap_reached",
+  "daily_cap_reached",
+  "awaiting_follow_up_window",
+  "generation_failed_retryable",
+  "send_failed_retryable",
+  "below_send_min_score",
+  "blocked_segment",
+  "blocked_email_domain",
+  "hard_disqualified",
+  "domain_cooldown_active",
+  "global_daily_cap_reached",
+] as const satisfies readonly AutomationBlockerReason[];
+
 const ACTIVE_SEQUENCE_STATUSES = ["QUEUED", "ACTIVE", "PAUSED", "SENDING"] as const;
 const MAILBOX_SENDABLE_STATUSES = ["ACTIVE", "WARMING"] as const;
 const READY_COMPATIBLE_LEAD_STATUSES = [READY_FOR_FIRST_TOUCH_STATUS, "ENRICHED"] as const;
@@ -313,25 +339,7 @@ function coerceDate(value: Date | string | null | undefined) {
 function normalizeBlockerReason(value: string | null | undefined): AutomationBlockerReason | null {
   if (!value) return null;
   const normalized = value.trim().toLowerCase().replaceAll(" ", "_");
-  const known: AutomationBlockerReason[] = [
-    "reply_detected",
-    "suppressed",
-    "manual_pause",
-    "global_pause",
-    "mailbox_disconnected",
-    "mailbox_disabled",
-    "missing_valid_email",
-    "missing_enrichment",
-    "policy_ineligible",
-    "outside_send_window",
-    "mailbox_cooldown",
-    "hourly_cap_reached",
-    "daily_cap_reached",
-    "awaiting_follow_up_window",
-    "generation_failed_retryable",
-    "send_failed_retryable",
-  ];
-  return known.includes(normalized as AutomationBlockerReason)
+  return AUTOMATION_BLOCKER_REASONS.includes(normalized as AutomationBlockerReason)
     ? (normalized as AutomationBlockerReason)
     : null;
 }
@@ -423,17 +431,47 @@ function getBlockerMeta(reason: AutomationBlockerReason) {
         label: "Send failed, retry queued",
         detail: "A transient send failure occurred and the step was rescheduled.",
       };
+    case "below_send_min_score":
+      return {
+        label: "Below send score",
+        detail: "This lead is queued but will not email until its score clears the send threshold.",
+      };
+    case "blocked_segment":
+      return {
+        label: "Blocked segment",
+        detail: "This business is in a segment that automation is not allowed to email.",
+      };
+    case "blocked_email_domain":
+      return {
+        label: "Blocked email domain",
+        detail: "This contact uses an email domain that automation is not allowed to email.",
+      };
+    case "hard_disqualified":
+      return {
+        label: "Hard disqualified",
+        detail: "This lead matched a hard disqualification rule.",
+      };
+    case "domain_cooldown_active":
+      return {
+        label: "Domain cooldown",
+        detail: "Another contact at this domain was recently emailed.",
+      };
+    case "global_daily_cap_reached":
+      return {
+        label: "Daily send cap reached",
+        detail: "The global daily automation send cap has been reached.",
+      };
   }
 }
 
 const BLOCKER_PRECEDENCE: AutomationBlockerReason[] = [
-    "reply_detected",
-    "suppressed",
-    "manual_pause",
-    "global_pause",
-    "emergency_stop",
-    "mailbox_disconnected",
-    "mailbox_disabled",
+  "reply_detected",
+  "suppressed",
+  "manual_pause",
+  "global_pause",
+  "emergency_stop",
+  "mailbox_disconnected",
+  "mailbox_disabled",
   "missing_valid_email",
   "missing_enrichment",
   "policy_ineligible",
@@ -444,13 +482,63 @@ const BLOCKER_PRECEDENCE: AutomationBlockerReason[] = [
   "awaiting_follow_up_window",
   "generation_failed_retryable",
   "send_failed_retryable",
+  "below_send_min_score",
+  "blocked_segment",
+  "blocked_email_domain",
+  "hard_disqualified",
+  "domain_cooldown_active",
+  "global_daily_cap_reached",
 ];
 
 function getPrimaryBlocker(blockers: AutomationBlockerReason[]) {
   if (blockers.length === 0) return null;
   const deduped = Array.from(new Set(blockers));
-  deduped.sort((a, b) => BLOCKER_PRECEDENCE.indexOf(a) - BLOCKER_PRECEDENCE.indexOf(b));
+  deduped.sort((a, b) => {
+    const aIndex = BLOCKER_PRECEDENCE.indexOf(a);
+    const bIndex = BLOCKER_PRECEDENCE.indexOf(b);
+    return (aIndex === -1 ? Number.MAX_SAFE_INTEGER : aIndex) - (bIndex === -1 ? Number.MAX_SAFE_INTEGER : bIndex);
+  });
   return deduped[0] || null;
+}
+
+function isTerminalSendBlocker(reason: AutomationBlockerReason) {
+  return (
+    reason === "missing_valid_email" ||
+    reason === "policy_ineligible" ||
+    reason === "blocked_segment" ||
+    reason === "blocked_email_domain" ||
+    reason === "hard_disqualified" ||
+    reason === "suppressed"
+  );
+}
+
+function getBlockedRecheckDelayMinutes(reason: AutomationBlockerReason, mailbox?: OutreachMailboxRecord | null) {
+  switch (reason) {
+    case "mailbox_cooldown":
+      return Math.max(1, Math.ceil((mailbox?.minDelaySeconds || MAILBOX_MIN_DELAY_SECONDS) / 60));
+    case "hourly_cap_reached":
+      return 60;
+    case "daily_cap_reached":
+    case "domain_cooldown_active":
+    case "global_daily_cap_reached":
+    case "below_send_min_score":
+      return 24 * 60;
+    case "mailbox_disconnected":
+    case "mailbox_disabled":
+    case "missing_enrichment":
+      return 60;
+    case "generation_failed_retryable":
+    case "send_failed_retryable":
+      return 6 * 60;
+    case "outside_send_window":
+      return 15;
+    case "global_pause":
+    case "emergency_stop":
+    case "manual_pause":
+      return 5;
+    default:
+      return 24 * 60;
+  }
 }
 
 function isWithinSendWindow(date: Date, config: OutreachSequenceConfig) {
@@ -959,9 +1047,9 @@ async function getSequenceRuntimeBlockers(
     blockers.push("awaiting_follow_up_window");
   }
 
-  const terminalRetry = normalizeBlockerReason((sequence as OutreachSequenceSummary & { blockerReason?: string | null }).blockerReason);
-  if (terminalRetry === "generation_failed_retryable" || terminalRetry === "send_failed_retryable") {
-    blockers.push(terminalRetry);
+  const persistedReason = normalizeBlockerReason(sequence.stopReason || sequence.nextStep?.errorMessage);
+  if (persistedReason) {
+    blockers.push(persistedReason);
   }
 
   return Array.from(new Set(blockers));
@@ -1341,6 +1429,9 @@ async function stopSequenceInternal(
     },
     data: {
       status: stopReason === "REPLIED" ? "BLOCKED" : "SKIPPED",
+      claimedAt: null,
+      claimedByRunId: null,
+      errorMessage: stopReason,
     },
   });
 
@@ -1829,8 +1920,8 @@ async function sendScheduledStep(
   });
   if (hardDq.disqualified) {
     const reason = (hardDq.reason || "hard_disqualified") as AutomationBlockerReason;
-    await stopSequenceInternal(prisma, claim.sequence, "DISQUALIFIED");
-    throw new AutomationSkipError(reason);
+    await stopSequenceInternal(prisma, claim.sequence, reason);
+    throw new AutomationStoppedError(reason);
   }
 
   const recipientEmail = context.lead.email;
@@ -1997,7 +2088,7 @@ async function sendScheduledStep(
         errorMessage: "generation_failed_retryable",
       },
     });
-    throw new AutomationSkipError("generation_failed_retryable");
+    throw new AutomationRetryableSendError("generation_failed_retryable");
   }
 
   let sendResult: Awaited<ReturnType<typeof sendGmailEmail>>;
@@ -2112,8 +2203,11 @@ async function recoverStaleClaims(prisma: PrismaLike) {
   const staleThreshold = addMinutes(new Date(), -2);
   const staleClaims = await prisma.outreachSequenceStep.findMany({
     where: {
-      status: "CLAIMED",
-      claimedAt: { lte: staleThreshold },
+      status: { in: ["CLAIMED", "SENDING"] },
+      OR: [
+        { claimedAt: { lte: staleThreshold } },
+        { claimedAt: null },
+      ],
     },
     take: 100,
   }) as OutreachSequenceStepRecord[];
@@ -2295,6 +2389,31 @@ async function setSequenceBlocked(
   claim: SchedulerClaim,
   reason: AutomationBlockerReason,
 ) {
+  if (isTerminalSendBlocker(reason)) {
+    await prisma.outreachSequenceStep.update({
+      where: { id: claim.step.id },
+      data: {
+        status: "SKIPPED",
+        claimedAt: null,
+        claimedByRunId: null,
+        errorMessage: reason,
+      },
+    }).catch(() => null);
+
+    await stopSequenceInternal(prisma, claim.sequence, reason.toUpperCase()).catch(() => null);
+    return;
+  }
+
+  const now = new Date();
+  const latestStep = await prisma.outreachSequenceStep.findUnique({
+    where: { id: claim.step.id },
+  }) as OutreachSequenceStepRecord | null;
+  const latestScheduledFor = coerceDate(latestStep?.scheduledFor);
+  const recheckAt =
+    latestScheduledFor && latestScheduledFor.getTime() > now.getTime()
+      ? latestScheduledFor
+      : addMinutes(now, getBlockedRecheckDelayMinutes(reason, claim.mailbox));
+
   await prisma.outreachSequenceStep.update({
     where: { id: claim.step.id },
     data: {
@@ -2302,6 +2421,7 @@ async function setSequenceBlocked(
       claimedAt: null,
       claimedByRunId: null,
       errorMessage: reason,
+      scheduledFor: recheckAt,
     },
   }).catch(() => null);
 
@@ -2309,6 +2429,7 @@ async function setSequenceBlocked(
     where: { id: claim.sequence.id },
     data: {
       status: claim.sequence.lastSentAt ? "ACTIVE" : "QUEUED",
+      nextScheduledAt: recheckAt,
       stopReason: reason,
     },
   }).catch(() => null);
@@ -2520,12 +2641,25 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
     const { recordSendDecision } = await import("@/lib/send-decisions");
 
     for (const claim of claims) {
+      const decisionLead = await prisma.lead.findUnique({
+        where: { id: claim.sequence.leadId },
+        select: {
+          email: true,
+          axiomScore: true,
+          axiomTier: true,
+          emailType: true,
+        },
+      }) as Pick<LeadRecord, "email" | "axiomScore" | "axiomTier" | "emailType"> | null;
       const baseDecision = {
         leadId: claim.sequence.leadId,
         sequenceId: claim.sequence.id,
         stepId: claim.step.id,
         mailboxId: claim.mailbox.id,
         senderEmail: claim.mailbox.gmailAddress,
+        recipientEmail: normalizeEmail(decisionLead?.email),
+        axiomScore: decisionLead?.axiomScore ?? null,
+        axiomTier: decisionLead?.axiomTier ?? null,
+        emailType: decisionLead?.emailType ?? null,
       };
       try {
         await sendScheduledStep(prisma, claim, run.id);

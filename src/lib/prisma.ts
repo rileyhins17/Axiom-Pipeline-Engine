@@ -536,6 +536,7 @@ const leadTable: TableSpec<LeadRecord> = {
     "source",
   ]),
   tableName: "Lead",
+  updatedAtField: "lastUpdated",
 };
 
 const auditEventTable: TableSpec<AuditEventRecord> = {
