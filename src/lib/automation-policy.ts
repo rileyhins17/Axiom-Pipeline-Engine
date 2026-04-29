@@ -18,14 +18,11 @@ export const MAILBOX_HOURLY_SEND_TARGET = 6;
 export const MAILBOX_MIN_DELAY_SECONDS = 120;
 export const MAILBOX_MAX_DELAY_SECONDS = 420;
 
-/** Tiered score thresholds. Three gates with rising bars:
- *  intake (45) lets a lead INTO the database;
- *  queue  (55) lets it enter the outreach sequence;
- *  send   (65) lets it actually receive an email.
- *  This keeps the database full but protects sender reputation. */
+/** Adequate-lead threshold. Intake, queueing, and send-time checks must stay
+ *  aligned so every adequate lead can actually receive an email. */
 export const AUTONOMOUS_INTAKE_MIN_SCORE = 45;
-export const AUTONOMOUS_QUEUE_MIN_SCORE = 55;
-export const AUTONOMOUS_SEND_MIN_SCORE = 65;
+export const AUTONOMOUS_QUEUE_MIN_SCORE = AUTONOMOUS_INTAKE_MIN_SCORE;
+export const AUTONOMOUS_SEND_MIN_SCORE = AUTONOMOUS_INTAKE_MIN_SCORE;
 /** Max leads to queue per scheduler tick. With cron every 1 min this is
  *  3000/hour peak which is more than enough headroom. */
 export const AUTONOMOUS_QUEUE_BATCH_SIZE = 50;
@@ -150,26 +147,12 @@ export function shouldAutonomouslyQueueLead(lead: LeadRecord) {
     return false;
   }
 
-  if (typeof lead.axiomScore !== "number" || !Number.isFinite(lead.axiomScore)) {
+  if (!isAdequateAutonomousLead(lead)) {
     return false;
   }
-
-  if (lead.axiomScore < AUTONOMOUS_QUEUE_MIN_SCORE) {
-    return false;
-  }
-
-  if (lead.axiomTier === "D") return false;
-
-  // Skip role/department inboxes for auto-queue. info@, contact@, hello@,
-  // sales@ etc. are classified as emailType='generic' and have near-zero
-  // reply rates + high spam-flag risk. Owner/staff emails only.
-  const emailType = (lead.emailType || "").toLowerCase();
-  if (emailType === "generic") return false;
 
   // Already-contacted leads should never re-enter the queue autonomously.
   if (lead.firstContactedAt) return false;
-
-  if (isHardDisqualified(lead).disqualified) return false;
 
   return true;
 }

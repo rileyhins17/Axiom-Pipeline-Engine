@@ -9,13 +9,17 @@
  */
 
 import { enrichLead } from "@/lib/outreach-enrichment";
-import { isLeadOutreachEligible, hasValidPipelineEmail } from "@/lib/lead-qualification";
+import { hasValidPipelineEmail } from "@/lib/lead-qualification";
 import { READY_FOR_FIRST_TOUCH_STATUS } from "@/lib/outreach";
 import {
   AUTONOMOUS_QUEUE_BATCH_SIZE,
   shouldAutonomouslyQueueLead,
 } from "@/lib/automation-policy";
-import { getAutomationSettings, queueLeadsForAutomation } from "@/lib/outreach-automation";
+import {
+  getAutomationSettings,
+  getBlockingAutomationLeadIdsForLeads,
+  queueLeadsForAutomation,
+} from "@/lib/outreach-automation";
 import { getPrisma } from "@/lib/prisma";
 import type { LeadRecord } from "@/lib/prisma";
 
@@ -42,19 +46,17 @@ async function findLeadsNeedingEnrichment(prisma: ReturnType<typeof getPrisma>, 
       enrichmentData: null,
       email: { not: null },
       axiomScore: { not: null },
+      firstContactedAt: null,
       isArchived: false,
-      OR: [
-        { outreachStatus: "NOT_CONTACTED" },
-        { outreachStatus: "ENRICHING" },
-        { outreachStatus: null },
-      ],
     },
     orderBy: { axiomScore: "desc" },
     take: overfetch,
   })) as LeadRecord[];
 
   // Final qualification + cap at the requested batch size.
-  return leads.filter((lead) => hasValidPipelineEmail(lead)).slice(0, limit);
+  return leads
+    .filter((lead) => hasValidPipelineEmail(lead) && shouldAutonomouslyQueueLead(lead))
+    .slice(0, limit);
 }
 
 /**
@@ -63,19 +65,16 @@ async function findLeadsNeedingEnrichment(prisma: ReturnType<typeof getPrisma>, 
 async function findLeadsNeedingQualification(prisma: ReturnType<typeof getPrisma>): Promise<LeadRecord[]> {
   const leads = (await prisma.lead.findMany({
     where: {
+      enrichedAt: { not: null },
+      enrichmentData: { not: null },
+      firstContactedAt: null,
       isArchived: false,
-      OR: [
-        { outreachStatus: "NOT_CONTACTED" },
-        { outreachStatus: "ENRICHING" },
-        { outreachStatus: "ENRICHED" },
-        { outreachStatus: null },
-      ],
     },
     orderBy: { axiomScore: "desc" },
     take: 20,
   })) as LeadRecord[];
 
-  return leads.filter((lead) => isLeadOutreachEligible(lead));
+  return leads.filter((lead) => lead.enrichmentData && shouldAutonomouslyQueueLead(lead));
 }
 
 /**
@@ -195,10 +194,13 @@ async function autoQualify(prisma: ReturnType<typeof getPrisma>): Promise<number
 async function autoQueue(systemUserId: string): Promise<{ queued: number; skipped: number }> {
   const prisma = getPrisma();
 
-  // Find leads that are READY_FOR_FIRST_TOUCH but not yet in a sequence
+  // Find adequate enriched leads that are ready or were stranded in a stale
+  // status before the queue/send thresholds were unified.
   const readyLeads = (await prisma.lead.findMany({
     where: {
-      outreachStatus: READY_FOR_FIRST_TOUCH_STATUS,
+      enrichedAt: { not: null },
+      enrichmentData: { not: null },
+      firstContactedAt: null,
       isArchived: false,
     },
     orderBy: { axiomScore: "desc" },
@@ -207,14 +209,7 @@ async function autoQueue(systemUserId: string): Promise<{ queued: number; skippe
 
   if (readyLeads.length === 0) return { queued: 0, skipped: 0 };
 
-  const existing = await prisma.outreachSequence.findMany({
-    where: {
-      leadId: { in: readyLeads.map((l) => l.id) },
-      status: { notIn: ["STOPPED", "FAILED"] },
-    },
-    select: { leadId: true },
-  });
-  const activeLeadIds = new Set(existing.map((s) => s.leadId));
+  const activeLeadIds = new Set(await getBlockingAutomationLeadIdsForLeads(readyLeads.map((lead) => lead.id)));
 
   const eligibleIds = readyLeads
     .filter((lead) => !activeLeadIds.has(lead.id) && shouldAutonomouslyQueueLead(lead))

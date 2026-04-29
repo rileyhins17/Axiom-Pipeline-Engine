@@ -5,6 +5,9 @@ import {
 import { getValidAccessToken, getGmailThreadMetadata, normalizeGmailAddress, sendGmailEmail } from "@/lib/gmail";
 import {
   AUTOMATION_SETTINGS_DEFAULTS,
+  AUTONOMOUS_SEND_MIN_SCORE,
+  isAdequateAutonomousLead,
+  isHardDisqualified,
   MAILBOX_DAILY_SEND_TARGET,
   MAILBOX_HOURLY_SEND_TARGET,
   MAILBOX_MAX_DELAY_SECONDS,
@@ -235,7 +238,18 @@ const AUTOMATION_BLOCKER_REASONS = [
 
 const ACTIVE_SEQUENCE_STATUSES = ["QUEUED", "ACTIVE", "PAUSED", "SENDING"] as const;
 const MAILBOX_SENDABLE_STATUSES = ["ACTIVE", "WARMING"] as const;
-const READY_COMPATIBLE_LEAD_STATUSES = [READY_FOR_FIRST_TOUCH_STATUS, "ENRICHED"] as const;
+const REQUEUEABLE_STALE_STOP_REASONS = new Set([
+  "below_send_min_score",
+  "generation_failed_retryable",
+  "send_failed_retryable",
+  "stale_sender_claim_recovered",
+  "stale_claim_recovered",
+  "mailbox_cooldown",
+  "hourly_cap_reached",
+  "daily_cap_reached",
+  "global_daily_cap_reached",
+  "domain_cooldown_active",
+]);
 
 function normalizeEmail(email: string | null | undefined) {
   return (email || "").trim().toLowerCase();
@@ -433,8 +447,8 @@ function getBlockerMeta(reason: AutomationBlockerReason) {
       };
     case "below_send_min_score":
       return {
-        label: "Below send score",
-        detail: "This lead is queued but will not email until its score clears the send threshold.",
+        label: "Below adequate score",
+        detail: "This lead is below the adequate-lead threshold for automated email.",
       };
     case "blocked_segment":
       return {
@@ -855,12 +869,36 @@ async function allocateMailbox(
 
 async function getActiveSequencesForLeads(prisma: PrismaLike, leadIds: number[]) {
   if (leadIds.length === 0) return [];
-  return prisma.outreachSequence.findMany({
+  const sequences = await prisma.outreachSequence.findMany({
     where: {
       leadId: { in: leadIds },
       status: { in: [...ACTIVE_SEQUENCE_STATUSES] },
     },
-  }) as Promise<OutreachSequenceRecord[]>;
+  }) as OutreachSequenceRecord[];
+
+  const blocking: OutreachSequenceRecord[] = [];
+  for (const sequence of sequences) {
+    if (!isRecoverableSequenceBlocker(sequence)) {
+      blocking.push(sequence);
+      continue;
+    }
+
+    const nextPendingStep = await getNextPendingStep(prisma, sequence.id);
+    if (nextPendingStep) {
+      blocking.push(sequence);
+      continue;
+    }
+
+    await stopSequenceInternal(prisma, sequence, "stale_empty_sequence_recovered").catch(() => null);
+  }
+
+  return blocking;
+}
+
+export async function getBlockingAutomationLeadIdsForLeads(leadIds: number[]) {
+  const prisma = getPrisma();
+  const sequences = await getActiveSequencesForLeads(prisma, leadIds);
+  return Array.from(new Set(sequences.map((sequence) => sequence.leadId)));
 }
 
 function getDomainFromEmail(email: string | null | undefined) {
@@ -868,13 +906,52 @@ function getDomainFromEmail(email: string | null | undefined) {
   return normalized.includes("@") ? normalized.split("@")[1] || "" : "";
 }
 
+function hasAlreadyReceivedAutomationEmail(lead: LeadRecord) {
+  return Boolean(lead.firstContactedAt);
+}
+
+function isLeadRecoverableForAutomation(lead: LeadRecord) {
+  if (lead.isArchived) return false;
+  if (hasAlreadyReceivedAutomationEmail(lead)) return false;
+  if (lead.outreachStatus === "REPLIED" || lead.outreachStatus === "SUPPRESSED") return false;
+  if (!hasValidPipelineEmail(lead)) return false;
+  if (!isLeadOutreachEligible(lead)) return false;
+  return isAdequateAutonomousLead(lead);
+}
+
+function isLeadQueueReady(lead: LeadRecord) {
+  if (!lead.enrichmentData) return false;
+  return isLeadRecoverableForAutomation(lead);
+}
+
+function isRecoverableSequenceBlocker(sequence: OutreachSequenceRecord) {
+  const reason = normalizeBlockerReason(sequence.stopReason);
+  return !reason || REQUEUEABLE_STALE_STOP_REASONS.has(reason);
+}
+
 export async function getActiveAutomationLeadIds() {
   const prisma = getPrisma();
   const sequences = await prisma.outreachSequence.findMany({
     where: { status: { in: [...ACTIVE_SEQUENCE_STATUSES] } },
-    select: { leadId: true },
-  });
-  return Array.from(new Set(sequences.map((sequence) => sequence.leadId)));
+  }) as OutreachSequenceRecord[];
+
+  const blockingLeadIds: number[] = [];
+  for (const sequence of sequences) {
+    if (!isRecoverableSequenceBlocker(sequence)) {
+      blockingLeadIds.push(sequence.leadId);
+      continue;
+    }
+
+    const nextPendingStep = await getNextPendingStep(prisma, sequence.id);
+    if (nextPendingStep) {
+      blockingLeadIds.push(sequence.leadId);
+      continue;
+    }
+
+    await stopSequenceInternal(prisma, sequence, "stale_empty_sequence_recovered").catch(() => null);
+  }
+
+  return Array.from(new Set(blockingLeadIds));
 }
 
 async function listAutomationReadyLeads(prisma: PrismaLike) {
@@ -890,10 +967,7 @@ async function listAutomationReadyLeads(prisma: PrismaLike) {
   return leads
     .filter((lead) => {
       if (activeLeadIds.has(lead.id)) return false;
-      if (!READY_COMPATIBLE_LEAD_STATUSES.includes(lead.outreachStatus as (typeof READY_COMPATIBLE_LEAD_STATUSES)[number])) return false;
-      if (!isLeadOutreachEligible(lead)) return false;
-      if (!lead.enrichmentData) return false;
-      return true;
+      return isLeadQueueReady(lead);
     })
     .sort((a, b) => {
       const scoreDiff = (b.axiomScore || 0) - (a.axiomScore || 0);
@@ -1134,25 +1208,15 @@ export async function queueLeadsForAutomation(input: {
       continue;
     }
 
+    if (!isLeadRecoverableForAutomation(lead)) {
+      result.skipped.push({ leadId, reason: "Lead is not an adequate, uncontacted automation candidate" });
+      continue;
+    }
+
     if (!lead.enrichmentData) {
-      result.skipped.push({ leadId, reason: "Lead must be enriched before automation can queue it" });
-      continue;
-    }
-
-    if (!hasValidPipelineEmail(lead)) {
-      result.skipped.push({ leadId, reason: "Lead needs a vetted pipeline-usable email" });
-      continue;
-    }
-
-    if (!isLeadOutreachEligible(lead)) {
-      result.skipped.push({ leadId, reason: "Lead is not automation-ready yet" });
-      continue;
-    }
-
-    if (!READY_COMPATIBLE_LEAD_STATUSES.includes(lead.outreachStatus as (typeof READY_COMPATIBLE_LEAD_STATUSES)[number])) {
       result.skipped.push({
         leadId,
-        reason: "Lead must be enriched before queueing",
+        reason: "Lead must be enriched before automation can queue it",
       });
       continue;
     }
@@ -1890,11 +1954,8 @@ async function sendScheduledStep(
     throw new AutomationSkipError("policy_ineligible");
   }
 
-  // Send-time gate: lead must clear AUTONOMOUS_SEND_MIN_SCORE (65) — a
-  // higher bar than the queue threshold (55). Mid-tier leads stay queued
-  // but never actually email until their score crosses the send line OR a
-  // human manually approves.
-  const { AUTONOMOUS_SEND_MIN_SCORE, isHardDisqualified } = await import("@/lib/automation-policy");
+  // Send-time gate matches the adequate-lead threshold, so anything the
+  // autonomous intake counts as adequate can move all the way to delivery.
   if (
     typeof context.lead.axiomScore !== "number" ||
     !Number.isFinite(context.lead.axiomScore) ||
