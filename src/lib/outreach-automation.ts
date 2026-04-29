@@ -25,6 +25,7 @@ import type {
   OutreachRunRecord,
   OutreachSequenceRecord,
   OutreachSequenceStepRecord,
+  OutreachSuppressionRecord,
 } from "@/lib/prisma";
 
 type PrismaLike = ReturnType<typeof getPrisma>;
@@ -237,6 +238,8 @@ const AUTOMATION_BLOCKER_REASONS = [
 ] as const satisfies readonly AutomationBlockerReason[];
 
 const ACTIVE_SEQUENCE_STATUSES = ["QUEUED", "ACTIVE", "PAUSED", "SENDING"] as const;
+const CLAIMABLE_SEQUENCE_STATUSES = ["QUEUED", "ACTIVE", "SENDING"] as const;
+const TERMINAL_SEQUENCE_STATUSES = ["STOPPED", "FAILED", "COMPLETED"] as const;
 const MAILBOX_SENDABLE_STATUSES = ["ACTIVE", "WARMING"] as const;
 const REQUEUEABLE_STALE_STOP_REASONS = new Set([
   "below_send_min_score",
@@ -1027,6 +1030,7 @@ async function getSequenceRuntimeBlockers(
   sequence: OutreachSequenceSummary,
   settings: OutreachAutomationSettingRecord,
   now: Date,
+  context?: SequenceRuntimeContext,
 ) {
   const blockers: AutomationBlockerReason[] = [];
   const normalizedStatus = sequence.status.toUpperCase();
@@ -1068,12 +1072,21 @@ async function getSequenceRuntimeBlockers(
   }
 
   if (lead?.email) {
-    const suppression = await prisma.outreachSuppression.findFirst({
-      where: {
-        OR: [{ email: normalizeEmail(lead.email) }, { domain: getDomainFromEmail(lead.email) }],
-      },
-    });
-    if (suppression) {
+    const email = normalizeEmail(lead.email);
+    const domain = getDomainFromEmail(lead.email);
+    const isSuppressed = context
+      ? Boolean(
+          (email && context.suppressedEmails?.has(email)) ||
+          (domain && context.suppressedDomains?.has(domain)),
+        )
+      : Boolean(
+          await prisma.outreachSuppression.findFirst({
+            where: {
+              OR: [{ email }, { domain }],
+            },
+          }),
+        );
+    if (isSuppressed) {
       blockers.push("suppressed");
     }
   }
@@ -1083,7 +1096,8 @@ async function getSequenceRuntimeBlockers(
   } else if (!MAILBOX_SENDABLE_STATUSES.includes(mailbox.status as (typeof MAILBOX_SENDABLE_STATUSES)[number])) {
     blockers.push("mailbox_disabled");
   } else {
-    const { sentToday, sentThisHour } = await getMailboxLoad(prisma, mailbox.id, now);
+    const mailboxLoad = context?.mailboxLoadById?.get(mailbox.id) ?? (await getMailboxLoad(prisma, mailbox.id, now));
+    const { sentToday, sentThisHour } = mailboxLoad;
     if (sentToday >= mailbox.dailyLimit) blockers.push("daily_cap_reached");
     if (sentThisHour >= mailbox.hourlyLimit) blockers.push("hourly_cap_reached");
 
@@ -1134,8 +1148,9 @@ async function enrichSequenceSummary(
   sequence: OutreachSequenceSummary,
   settings: OutreachAutomationSettingRecord,
   now: Date,
+  context?: SequenceRuntimeContext,
 ) {
-  const blockers = await getSequenceRuntimeBlockers(prisma, sequence, settings, now);
+  const blockers = await getSequenceRuntimeBlockers(prisma, sequence, settings, now, context);
   const primaryBlocker = getPrimaryBlocker(blockers);
   const nextSendAt = coerceDate(sequence.nextScheduledAt || sequence.nextStep?.scheduledFor || null);
   const hasSentAnyStep = Boolean(sequence.lastSentAt);
@@ -1321,6 +1336,83 @@ async function getNextPendingStep(prisma: PrismaLike, sequenceId: string) {
   }) as Promise<OutreachSequenceStepRecord | null>;
 }
 
+async function getNextPendingStepMap(prisma: PrismaLike, sequenceIds: string[]) {
+  const nextBySequenceId = new Map<string, OutreachSequenceStepRecord>();
+  if (sequenceIds.length === 0) {
+    return nextBySequenceId;
+  }
+
+  const pendingSteps = (await prisma.outreachSequenceStep.findMany({
+    where: {
+      sequenceId: { in: sequenceIds },
+      status: { in: ["SCHEDULED", "CLAIMED", "SENDING"] },
+    },
+  })) as OutreachSequenceStepRecord[];
+
+  pendingSteps.sort((a, b) => {
+    if (a.sequenceId !== b.sequenceId) {
+      return a.sequenceId.localeCompare(b.sequenceId);
+    }
+    if (a.stepNumber !== b.stepNumber) {
+      return a.stepNumber - b.stepNumber;
+    }
+    return (coerceDate(a.scheduledFor)?.getTime() || 0) - (coerceDate(b.scheduledFor)?.getTime() || 0);
+  });
+
+  for (const step of pendingSteps) {
+    if (!nextBySequenceId.has(step.sequenceId)) {
+      nextBySequenceId.set(step.sequenceId, step);
+    }
+  }
+
+  return nextBySequenceId;
+}
+
+async function getSuppressionContextForLeads(prisma: PrismaLike, leads: Array<LeadRecord | null>) {
+  const emails = new Set<string>();
+  const domains = new Set<string>();
+
+  for (const lead of leads) {
+    if (!lead?.email) {
+      continue;
+    }
+    const email = normalizeEmail(lead.email);
+    const domain = getDomainFromEmail(lead.email);
+    if (email) emails.add(email);
+    if (domain) domains.add(domain);
+  }
+
+  const suppressedEmails = new Set<string>();
+  const suppressedDomains = new Set<string>();
+  if (emails.size === 0 && domains.size === 0) {
+    return { suppressedEmails, suppressedDomains };
+  }
+
+  const suppressions = (await prisma.outreachSuppression.findMany({
+    where: {
+      OR: [
+        ...(emails.size > 0 ? [{ email: { in: Array.from(emails) } }] : []),
+        ...(domains.size > 0 ? [{ domain: { in: Array.from(domains) } }] : []),
+      ],
+    },
+  })) as OutreachSuppressionRecord[];
+
+  for (const suppression of suppressions) {
+    const email = normalizeEmail(suppression.email);
+    const domain = normalizeEmail(suppression.domain);
+    if (email) suppressedEmails.add(email);
+    if (domain) suppressedDomains.add(domain);
+  }
+
+  return { suppressedEmails, suppressedDomains };
+}
+
+type SequenceRuntimeContext = {
+  mailboxLoadById?: Map<string, { sentToday: number; sentThisHour: number }>;
+  suppressedEmails?: Set<string>;
+  suppressedDomains?: Set<string>;
+};
+
 export async function listAutomationOverview() {
   const prisma = getPrisma();
   const now = new Date();
@@ -1340,17 +1432,19 @@ export async function listAutomationOverview() {
     }),
   ]);
 
-  const leadMap = await getLeadMap(prisma, Array.from(new Set(sequences.map((sequence) => sequence.leadId))));
-  const mailboxMap = await getMailboxMap(prisma, Array.from(new Set(sequences.map((sequence) => sequence.assignedMailboxId).filter(Boolean) as string[])));
+  const sequenceIds = sequences.map((sequence) => sequence.id);
+  const [leadMap, mailboxMap, nextStepMap] = await Promise.all([
+    getLeadMap(prisma, Array.from(new Set(sequences.map((sequence) => sequence.leadId)))),
+    getMailboxMap(prisma, Array.from(new Set(sequences.map((sequence) => sequence.assignedMailboxId).filter(Boolean) as string[]))),
+    getNextPendingStepMap(prisma, sequenceIds),
+  ]);
 
-  const rawSummaries = await Promise.all(
-    sequences.map(async (sequence) => ({
-      ...sequence,
-      lead: leadMap.get(sequence.leadId) ?? null,
-      mailbox: sequence.assignedMailboxId ? mailboxMap.get(sequence.assignedMailboxId) ?? null : null,
-      nextStep: await getNextPendingStep(prisma, sequence.id),
-    })),
-  );
+  const rawSummaries = sequences.map((sequence) => ({
+    ...sequence,
+    lead: leadMap.get(sequence.leadId) ?? null,
+    mailbox: sequence.assignedMailboxId ? mailboxMap.get(sequence.assignedMailboxId) ?? null : null,
+    nextStep: nextStepMap.get(sequence.id) ?? null,
+  }));
 
   const mailboxStats = await Promise.all(
     mailboxes.map(async (mailbox) => ({
@@ -1360,8 +1454,19 @@ export async function listAutomationOverview() {
     })),
   );
 
+  const mailboxLoadById = new Map(
+    mailboxStats.map((mailbox) => [mailbox.id, { sentToday: mailbox.sentToday, sentThisHour: mailbox.sentThisHour }]),
+  );
+  const suppressionContext = await getSuppressionContextForLeads(
+    prisma,
+    rawSummaries.map((sequence) => sequence.lead),
+  );
+  const runtimeContext: SequenceRuntimeContext = {
+    mailboxLoadById,
+    ...suppressionContext,
+  };
   const summaries = await Promise.all(
-    rawSummaries.map((sequence) => enrichSequenceSummary(prisma, sequence, settings, now)),
+    rawSummaries.map((sequence) => enrichSequenceSummary(prisma, sequence, settings, now, runtimeContext)),
   );
 
   const recentSentLeadMap = await getLeadMap(
@@ -2288,6 +2393,46 @@ async function recoverStaleClaims(prisma: PrismaLike) {
   return staleClaims.length;
 }
 
+async function cleanupTerminalSequenceSteps(prisma: PrismaLike) {
+  const terminalSequences = (await prisma.outreachSequence.findMany({
+    where: {
+      status: { in: [...TERMINAL_SEQUENCE_STATUSES] },
+    },
+    select: { id: true },
+    take: 1000,
+  })) as Array<{ id: string }>;
+
+  if (terminalSequences.length === 0) {
+    return 0;
+  }
+
+  const terminalSequenceIds = terminalSequences.map((sequence) => sequence.id);
+  const cleaned = await prisma.outreachSequenceStep.updateMany({
+    where: {
+      sequenceId: { in: terminalSequenceIds },
+      status: { in: ["SCHEDULED", "CLAIMED", "SENDING"] },
+    },
+    data: {
+      status: "SKIPPED",
+      claimedAt: null,
+      claimedByRunId: null,
+      errorMessage: "terminal_sequence_cleaned",
+    },
+  });
+
+  await prisma.outreachSequence.updateMany({
+    where: {
+      id: { in: terminalSequenceIds },
+      nextScheduledAt: { not: null },
+    },
+    data: {
+      nextScheduledAt: null,
+    },
+  }).catch(() => null);
+
+  return cleaned.count;
+}
+
 async function fastForwardInitialTouches(prisma: PrismaLike, now: Date) {
   const sequences = (await prisma.outreachSequence.findMany({
     where: {
@@ -2324,6 +2469,11 @@ async function fastForwardInitialTouches(prisma: PrismaLike, now: Date) {
 }
 
 async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: number) {
+  const cleanedTerminalSteps = await cleanupTerminalSequenceSteps(prisma);
+  if (cleanedTerminalSteps > 0) {
+    console.log(`[scheduler] Cleaned ${cleanedTerminalSteps} terminal sequence steps`);
+  }
+
   // First recover any stale claims from crashed runs
   const recovered = await recoverStaleClaims(prisma);
   if (recovered > 0) {
@@ -2337,7 +2487,7 @@ async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: numbe
       scheduledFor: { lte: now },
     },
     orderBy: { scheduledFor: "asc" },
-    take: batchSize * 4,
+    take: Math.max(batchSize * 50, 500),
   }) as OutreachSequenceStepRecord[];
 
   const claims: SchedulerClaim[] = [];
@@ -2351,7 +2501,19 @@ async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: numbe
     if (!sequence || !sequence.assignedMailboxId) {
       continue;
     }
-    if (sequence.status === "PAUSED" || sequence.status === "STOPPED" || sequence.status === "COMPLETED" || sequence.status === "FAILED") {
+    if (TERMINAL_SEQUENCE_STATUSES.includes(sequence.status as (typeof TERMINAL_SEQUENCE_STATUSES)[number])) {
+      await prisma.outreachSequenceStep.update({
+        where: { id: step.id },
+        data: {
+          status: "SKIPPED",
+          claimedAt: null,
+          claimedByRunId: null,
+          errorMessage: "terminal_sequence_cleaned",
+        },
+      }).catch(() => null);
+      continue;
+    }
+    if (!CLAIMABLE_SEQUENCE_STATUSES.includes(sequence.status as (typeof CLAIMABLE_SEQUENCE_STATUSES)[number])) {
       continue;
     }
 
