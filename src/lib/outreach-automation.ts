@@ -259,6 +259,13 @@ const REQUEUEABLE_STALE_STOP_REASONS = new Set([
   "global_daily_cap_reached",
   "domain_cooldown_active",
 ]);
+const FIRST_TOUCH_RECHECK_BLOCKERS = [
+  "mailbox_cooldown",
+  "hourly_cap_reached",
+  "daily_cap_reached",
+  "global_daily_cap_reached",
+  "domain_cooldown_active",
+] as const satisfies readonly AutomationBlockerReason[];
 
 function normalizeEmail(email: string | null | undefined) {
   return (email || "").trim().toLowerCase();
@@ -2997,6 +3004,10 @@ async function fastForwardInitialTouches(prisma: PrismaLike, now: Date) {
       stepNumber: 1,
       status: "SCHEDULED",
       scheduledFor: { gt: now },
+      OR: [
+        { errorMessage: null },
+        { errorMessage: { notIn: [...FIRST_TOUCH_RECHECK_BLOCKERS] } },
+      ],
     },
     select: { id: true, sequenceId: true },
     take: 500,
@@ -3036,6 +3047,10 @@ async function fastForwardInitialTouches(prisma: PrismaLike, now: Date) {
         stepNumber: 1,
         status: "SCHEDULED",
         scheduledFor: { gt: now },
+        OR: [
+          { errorMessage: null },
+          { errorMessage: { notIn: [...FIRST_TOUCH_RECHECK_BLOCKERS] } },
+        ],
       },
       data: {
         scheduledFor: now,
