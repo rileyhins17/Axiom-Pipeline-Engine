@@ -2929,23 +2929,47 @@ async function cleanupTerminalSequenceSteps(prisma: PrismaLike) {
 }
 
 async function fastForwardInitialTouches(prisma: PrismaLike, now: Date) {
-  const sequences = (await prisma.outreachSequence.findMany({
+  const initialSteps = (await prisma.outreachSequenceStep.findMany({
     where: {
-      status: { in: [...ACTIVE_SEQUENCE_STATUSES] },
-      nextScheduledAt: { gt: now },
+      stepNumber: 1,
+      status: "SCHEDULED",
+      scheduledFor: { gt: now },
     },
-    select: { id: true },
+    select: { id: true, sequenceId: true },
     take: 500,
-  })) as Array<{ id: string }>;
+  })) as Array<Pick<OutreachSequenceStepRecord, "id" | "sequenceId">>;
 
-  if (sequences.length === 0) return 0;
+  if (initialSteps.length === 0) return 0;
 
-  const sequenceIds = sequences.map((sequence) => sequence.id);
+  const candidateSequenceIds = Array.from(new Set(initialSteps.map((step) => step.sequenceId)));
+  const activeSequences: Array<{ id: string }> = [];
+  for (const chunk of chunkArray(candidateSequenceIds)) {
+    const rows = (await prisma.outreachSequence.findMany({
+      where: {
+        id: { in: chunk },
+        status: { in: [...ACTIVE_SEQUENCE_STATUSES] },
+        nextScheduledAt: { gt: now },
+      },
+      select: { id: true },
+    })) as Array<{ id: string }>;
+    activeSequences.push(...rows);
+  }
+
+  const activeSequenceIds = new Set(activeSequences.map((sequence) => sequence.id));
+  const stepIds = initialSteps
+    .filter((step) => activeSequenceIds.has(step.sequenceId))
+    .map((step) => step.id);
+  const sequenceIds = Array.from(new Set(initialSteps
+    .filter((step) => activeSequenceIds.has(step.sequenceId))
+    .map((step) => step.sequenceId)));
+
+  if (stepIds.length === 0 || sequenceIds.length === 0) return 0;
+
   let updatedCount = 0;
-  for (const chunk of chunkArray(sequenceIds)) {
+  for (const chunk of chunkArray(stepIds)) {
     const updated = await prisma.outreachSequenceStep.updateMany({
       where: {
-        sequenceId: { in: chunk },
+        id: { in: chunk },
         stepNumber: 1,
         status: "SCHEDULED",
         scheduledFor: { gt: now },
@@ -2955,10 +2979,16 @@ async function fastForwardInitialTouches(prisma: PrismaLike, now: Date) {
       },
     });
     updatedCount += updated.count;
+  }
 
-    if (updated.count > 0) {
+  if (updatedCount > 0) {
+    for (const chunk of chunkArray(sequenceIds)) {
       await prisma.outreachSequence.updateMany({
-        where: { id: { in: chunk }, nextScheduledAt: { gt: now } },
+        where: {
+          id: { in: chunk },
+          status: { in: [...ACTIVE_SEQUENCE_STATUSES] },
+          nextScheduledAt: { gt: now },
+        },
         data: { nextScheduledAt: now },
       });
     }
