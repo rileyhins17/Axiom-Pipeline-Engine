@@ -263,6 +263,86 @@ function normalizeEmail(email: string | null | undefined) {
   return (email || "").trim().toLowerCase();
 }
 
+const SHARED_EMAIL_PROVIDER_EXACT_DOMAINS = new Set([
+  "aol.com",
+  "fastmail.com",
+  "gmail.com",
+  "googlemail.com",
+  "hey.com",
+  "icloud.com",
+  "live.com",
+  "mail.com",
+  "me.com",
+  "msn.com",
+  "outlook.com",
+  "pm.me",
+  "proton.me",
+  "protonmail.com",
+  "tutanota.com",
+  "yahoo.com",
+  "ymail.com",
+  "zoho.com",
+]);
+
+const SHARED_EMAIL_PROVIDER_PREFIXES = [
+  "aol.",
+  "hotmail.",
+  "live.",
+  "outlook.",
+  "rocketmail.",
+  "yahoo.",
+];
+
+const NON_BUSINESS_DOMAIN_EXACTS = new Set([
+  "facebook.com",
+  "google.com",
+  "instagram.com",
+  "linktr.ee",
+  "linkedin.com",
+  "maps.google.com",
+  "tiktok.com",
+  "x.com",
+]);
+
+function normalizeDomain(domain: string | null | undefined) {
+  const raw = (domain || "").trim().toLowerCase();
+  if (!raw) return "";
+  try {
+    const parsed = new URL(raw.includes("://") ? raw : `https://${raw}`);
+    return parsed.hostname.replace(/^www\./, "");
+  } catch {
+    return raw
+      .replace(/^https?:\/\//, "")
+      .replace(/^www\./, "")
+      .split("/")[0]
+      .split("?")[0]
+      .trim();
+  }
+}
+
+function isSharedEmailProviderDomain(domain: string | null | undefined) {
+  const normalized = normalizeDomain(domain);
+  return (
+    SHARED_EMAIL_PROVIDER_EXACT_DOMAINS.has(normalized) ||
+    SHARED_EMAIL_PROVIDER_PREFIXES.some((prefix) => normalized.startsWith(prefix))
+  );
+}
+
+function isNonBusinessDomain(domain: string | null | undefined) {
+  const normalized = normalizeDomain(domain);
+  return !normalized || NON_BUSINESS_DOMAIN_EXACTS.has(normalized) || isSharedEmailProviderDomain(normalized);
+}
+
+function getAutomationBusinessDomain(lead: Pick<LeadRecord, "websiteDomain" | "email"> | null | undefined) {
+  const websiteDomain = normalizeDomain(lead?.websiteDomain);
+  if (websiteDomain && !isNonBusinessDomain(websiteDomain)) {
+    return websiteDomain;
+  }
+
+  const emailDomain = normalizeDomain(getDomainFromEmail(lead?.email));
+  return emailDomain && !isSharedEmailProviderDomain(emailDomain) ? emailDomain : "";
+}
+
 function chunkArray<T>(values: T[], size = D1_IN_CLAUSE_CHUNK_SIZE) {
   const chunks: T[][] = [];
   for (let index = 0; index < values.length; index += size) {
@@ -1398,7 +1478,7 @@ async function getSequenceRuntimeBlockers(
 
   if (lead?.email) {
     const email = normalizeEmail(lead.email);
-    const domain = getDomainFromEmail(lead.email);
+    const domain = getAutomationBusinessDomain(lead);
     const isSuppressed = context
       ? Boolean(
           (email && context.suppressedEmails?.has(email)) ||
@@ -1591,7 +1671,7 @@ export async function queueLeadsForAutomation(input: {
       where: {
         OR: [
           { email: normalizedLeadEmail },
-          { domain: getDomainFromEmail(lead.email) },
+          { domain: getAutomationBusinessDomain(lead) },
         ],
       },
     });
@@ -1737,7 +1817,7 @@ async function getSuppressionContextForLeads(prisma: PrismaLike, leads: Array<Le
       continue;
     }
     const email = normalizeEmail(lead.email);
-    const domain = getDomainFromEmail(lead.email);
+    const domain = getAutomationBusinessDomain(lead);
     if (email) emails.add(email);
     if (domain) domains.add(domain);
   }
@@ -2061,7 +2141,7 @@ async function markReplyStop(
       data: {
         id: crypto.randomUUID(),
         email: normalizeEmail(lead.email),
-        domain: getDomainFromEmail(lead.email),
+        domain: getAutomationBusinessDomain(lead),
         reason: `Reply detected from ${reply.inboundFrom || lead.email}`,
         source: "REPLY",
         leadId: lead.id,
@@ -2499,7 +2579,7 @@ async function sendScheduledStep(
     }
   }
 
-  const recipientDomain = getDomainFromEmail(recipientEmail);
+  const recipientDomain = getAutomationBusinessDomain(context.lead);
   if (recipientDomain) {
     const { getServerEnv: _getEnv } = await import("@/lib/env");
     const { getDatabase } = await import("@/lib/cloudflare");
@@ -2509,13 +2589,17 @@ async function sendScheduledStep(
       const row = await getDatabase()
         .prepare(
           `SELECT 1 AS hit FROM "OutreachEmail"
-           WHERE "status" = 'sent'
-             AND "sentAt" >= ?
-             AND LOWER("recipientEmail") LIKE ?
-             AND "leadId" != ?
+           LEFT JOIN "Lead" sentLead ON sentLead."id" = "OutreachEmail"."leadId"
+           WHERE "OutreachEmail"."status" = 'sent'
+             AND "OutreachEmail"."sentAt" >= ?
+             AND "OutreachEmail"."leadId" != ?
+             AND (
+               LOWER(COALESCE(sentLead."websiteDomain", '')) = ?
+               OR LOWER(SUBSTR("OutreachEmail"."recipientEmail", INSTR("OutreachEmail"."recipientEmail", '@') + 1)) = ?
+             )
            LIMIT 1`,
         )
-        .bind(since.toISOString(), `%@${recipientDomain.toLowerCase()}`, context.lead.id)
+        .bind(since.toISOString(), context.lead.id, recipientDomain, recipientDomain)
         .first<{ hit: number }>();
       if (row) {
         await prisma.outreachSequenceStep.update({
@@ -2562,7 +2646,7 @@ async function sendScheduledStep(
     where: {
       OR: [
         { email: normalizeEmail(context.lead.email) },
-        { domain: getDomainFromEmail(context.lead.email) },
+        { domain: getAutomationBusinessDomain(context.lead) },
       ],
     },
   });
