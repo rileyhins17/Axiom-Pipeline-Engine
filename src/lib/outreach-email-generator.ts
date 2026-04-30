@@ -233,28 +233,24 @@ Return JSON only:
   "confidence_score": 0
 }`;
 
-const FOLLOW_UP_SYSTEM_PROMPT = `You are writing a concise follow-up email on behalf of Axiom Infrastructure, a web design and development agency in Ontario, Canada.
+const FOLLOW_UP_SYSTEM_PROMPT = `You are writing a short plain-text follow-up email on behalf of Axiom Infrastructure.
 
 STRICT RULES:
-1. This is a follow-up to a previous cold email. Acknowledge the prior note briefly without sounding robotic.
-2. Keep the email under 90 words.
-3. Maintain the same personalized context from the original outreach and add one fresh, relevant angle.
-4. FOLLOW_UP_1 should feel like a soft nudge with a new angle.
-5. FOLLOW_UP_2 should feel like a concise final check-in and can politely close the loop.
-6. The tone should be helpful, confident, and low-pressure.
-7. Keep the CTA simple and easy to reply to.
-8. Do NOT repeat the original email verbatim.
-9. Prefer a natural reply-style subject. "Re:" is allowed when it fits.
-10. Do NOT use placeholders.
-11. The plain text version should be a clean version without any HTML.
-12. The HTML version should use simple inline styles and remain lightweight.
-13. Use one fresh detail from the lead context, website assessment, or pain signals instead of recycling the same hook.
+1. Follow-up only. Acknowledge the prior note in one natural phrase.
+2. Keep FOLLOW_UP_1 under 65 words and FOLLOW_UP_2 under 55 words.
+3. Plain text only. No HTML, markdown, bullets, footer, title, or company name in the body.
+4. End with exactly "Best,\\n{sender first name}". Nothing after it.
+5. Add one fresh useful angle, but do not repeat the same critique verbatim.
+6. Keep the CTA low-friction and easy to answer.
+7. Do NOT use placeholders.
+8. Do NOT use "broken", "costing you leads", "one last time", "last note", "circle back", or "touch base".
+9. No exclamation marks. No em dashes.
+10. Prefer a natural reply-style subject. "Re:" is allowed when it fits.
 
 Respond with a JSON object:
 {
-  "subject": "Follow-up email subject line",
-  "bodyHtml": "Full HTML email body (complete, ready to send)",
-  "bodyPlain": "Plain text version of the same email"
+  "subject": "short lowercase subject line",
+  "bodyPlain": "plain text follow-up"
 }`;
 
 function sanitizeSubject(subject: string, businessName: string) {
@@ -266,16 +262,25 @@ function sanitizeSubject(subject: string, businessName: string) {
 
   if (trimmed.length > 0) {
     const shortSubject = trimmed.split(/\s+/).filter(Boolean).slice(0, 5).join(" ");
-    return shortSubject.slice(0, 78);
+    const normalizedSubject = shortSubject.toLowerCase().startsWith("re:")
+      ? `Re: ${shortSubject.replace(/^re:\s*/i, "").toLowerCase()}`
+      : shortSubject.toLowerCase();
+    return normalizedSubject.slice(0, 78);
   }
 
-  return `Quick thought on ${businessName}`;
+  return `quick thought on ${businessName}`.slice(0, 78);
 }
 
 function stripHtmlTags(value: string) {
   return value
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n\n")
+    .replace(/<\/div>/gi, "\n\n")
     .replace(/<[^>]*>/g, " ")
-    .replace(/\s+/g, " ")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n[ \t]+/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
 
@@ -357,8 +362,8 @@ function finalizeGeneratedEmail(
   senderName: string,
   businessName: string,
 ): GeneratedEmail {
-  const bodySource = draft.bodyPlain || draft.bodyHtml || "";
-  const bodyPlain = buildPlainTextEmail(stripHtmlTags(bodySource), firstName(senderName));
+  const bodySource = draft.bodyPlain || stripHtmlTags(draft.bodyHtml || "");
+  const bodyPlain = buildPlainTextEmail(bodySource, firstName(senderName));
 
   return {
     subject: sanitizeSubject(draft.subject || "", businessName),
@@ -415,8 +420,8 @@ function buildFallbackFollowUpEmail(
   const senderFirst = firstName(senderName);
   const recipientName = getRecipientName(lead);
   const followUpLine = stepType === "FOLLOW_UP_2"
-    ? "Just wanted to close the loop in case this got buried."
-    : "Wanted to circle back with one more quick thought.";
+    ? "Wanted to send one final practical thought in case this is useful."
+    : "Wanted to send one practical thought that may be useful.";
   const bodyPlain = buildPlainTextEmail(
     [
       `Hi ${recipientName},`,
@@ -432,7 +437,7 @@ function buildFallbackFollowUpEmail(
   );
 
   return {
-    subject: sanitizeSubject(stepType === "FOLLOW_UP_2" ? "Quick follow up" : "Circling back", lead.businessName),
+    subject: sanitizeSubject(stepType === "FOLLOW_UP_2" ? "quick site thought" : "one site thought", lead.businessName),
     bodyPlain,
     bodyHtml: buildHtmlEmail(bodyPlain),
     personalization_reason: enrichment.personalizedHook,

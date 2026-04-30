@@ -483,9 +483,9 @@ export function validateColdEmailDraft(draft: ColdEmailDraft, lead: LeadRecord, 
   const combinedLower = combined.toLowerCase();
   const errors: string[] = [];
 
-  const lengthScore = wordCount >= 70 && wordCount <= 130 ? 100 : wordCount < 70 ? 45 : 35;
+  const lengthScore = wordCount >= 45 && wordCount <= 85 ? 100 : wordCount < 45 ? 45 : 35;
   if (lengthScore < 100) {
-    errors.push(`Email length must stay between 70 and 130 words. Current count: ${wordCount}.`);
+    errors.push(`Email length must stay between 45 and 85 words. Current count: ${wordCount}.`);
   }
 
   const bannedHits = BANNED_EMAIL_PHRASES.filter((phrase) => combinedLower.includes(phrase));
@@ -623,35 +623,49 @@ export function buildRetryInstructions(validation: ColdEmailValidation, plan: Co
     "The first draft did not pass validation. Rewrite it once and fix every issue below.",
     ...validation.errors.map((error) => `- ${error}`),
     `- Keep the CTA type as ${plan.CTA_type}.`,
-    `- Keep the email between 70 and 130 words.`,
+    `- Keep the email between 45 and 85 words.`,
     "- Use plain English and make it sound like a real person who actually looked at the business.",
   ].join("\n");
 }
 
 export function buildPlainTextEmail(body: string, senderFirstName: string) {
+  const escapedSender = senderFirstName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const signaturePattern = new RegExp(
+    `(?:\\n\\s*)?(?:best|thanks|thank you|regards),?\\s*\\n?\\s*${escapedSender}(?:\\s+hinsperger)?(?:\\s+axiom\\s+infrastructure)?\\s*$`,
+    "i",
+  );
+  const inlineSignaturePattern = new RegExp(
+    `\\s+${escapedSender}(?:\\s+hinsperger)?\\s+axiom\\s+infrastructure\\s*$`,
+    "i",
+  );
+
   const sanitized = body
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/[â€”â€“]/g, ",")
     .replace(/[—–]/g, ",")
+    .replace(/\bone last time\b/gi, "again")
+    .replace(/\blast note\b/gi, "quick note")
+    .replace(/\bstill broken\b/gi, "still hard to use")
+    .replace(/\bbroken\b/gi, "hard to use")
+    .replace(/\bcosting you leads\b/gi, "making it harder for visitors to reach out")
     .replace(/!/g, ".")
     .replace(/\r/g, "")
-    .trim();
+    .replace(/[ \t]+([,.?])/g, "$1")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\n[ \t]+/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+    .replace(/\n?---\s*\nFrom Axiom Infrastructure\s*\ngetaxiom\.ca\s*$/i, "")
+    .replace(/\s*From Axiom Infrastructure\s+getaxiom\.ca\s*$/i, "")
+    .replace(signaturePattern, "")
+    .replace(inlineSignaturePattern, "")
+    .trim()
+    .replace(/\n{3,}/g, "\n\n");
 
-  // Check if signature is already in the body
-  const hasSignature = sanitized.toLowerCase().includes(senderFirstName.toLowerCase());
-
-  const withSignature = hasSignature
-    ? sanitized
-    : `${sanitized}\n\nBest,\n${senderFirstName}`;
-
-  // Normalize multiple newlines to just two, and add footer
-  const normalized = withSignature.replace(/\n{3,}/g, "\n\n");
-
-  return [
-    normalized,
-    "",
-    "---",
-    "From Axiom Infrastructure",
-    "getaxiom.ca"
-  ].join("\n");
+  return `${sanitized}\n\nBest,\n${senderFirstName}`.trim();
 }
 
 function escapeHtml(value: string) {
@@ -670,7 +684,7 @@ export function buildHtmlEmail(bodyPlain: string) {
     .filter(Boolean)
     .map(
       (paragraph) =>
-        `<p style="margin:0 0 16px;font-size:15px;line-height:1.75;color:#1f2937;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',sans-serif;">${escapeHtml(paragraph).replace(/\n/g, "<br />")}</p>`,
+        `<p style="margin:0 0 14px;font-size:15px;line-height:1.55;color:#111827;font-family:Arial,Helvetica,sans-serif;">${escapeHtml(paragraph).replace(/\n/g, "<br />")}</p>`,
     )
     .join("");
 
@@ -681,14 +695,9 @@ export function buildHtmlEmail(bodyPlain: string) {
     `<meta charset="utf-8">`,
     `<meta name="viewport" content="width=device-width, initial-scale=1.0">`,
     `</head>`,
-    `<body style="margin:0;padding:0;background-color:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',sans-serif;font-size:15px;line-height:1.75;color:#1f2937;">`,
+    `<body style="margin:0;padding:0;background-color:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.55;color:#111827;">`,
     `<div style="padding:0;">`,
     paragraphs,
-    `<p style="margin:24px 0 0 0;font-size:14px;line-height:1.6;color:#4b5563;border-top:1px solid #e5e7eb;padding-top:16px;">Best,<br /></p>`,
-    `<div style="margin-top:32px;padding-top:24px;border-top:1px solid #e5e7eb;font-size:12px;color:#6b7280;">`,
-    `<p style="margin:0;"><strong>From Axiom Infrastructure</strong></p>`,
-    `<p style="margin:4px 0 0 0;"><a href="https://getaxiom.ca" style="color:#10b981;text-decoration:none;">getaxiom.ca</a></p>`,
-    `</div>`,
     `</div>`,
     `</body>`,
     `</html>`,

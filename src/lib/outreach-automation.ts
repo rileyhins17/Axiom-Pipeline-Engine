@@ -189,6 +189,8 @@ type AutomationCanonicalState = "QUEUED" | "SENDING" | "WAITING" | "BLOCKED" | "
 type AutomationBlockerReason =
   | "reply_detected"
   | "suppressed"
+  | "already_contacted"
+  | "duplicate_active_sequence"
   | "manual_pause"
   | "global_pause"
   | "emergency_stop"
@@ -214,6 +216,8 @@ type AutomationBlockerReason =
 const AUTOMATION_BLOCKER_REASONS = [
   "reply_detected",
   "suppressed",
+  "already_contacted",
+  "duplicate_active_sequence",
   "manual_pause",
   "global_pause",
   "emergency_stop",
@@ -382,6 +386,16 @@ function getBlockerMeta(reason: AutomationBlockerReason) {
         label: "Suppressed",
         detail: "This contact is suppressed from future automated sends.",
       };
+    case "already_contacted":
+      return {
+        label: "Already contacted",
+        detail: "This lead already has another sent email, so automation will not send another sequence.",
+      };
+    case "duplicate_active_sequence":
+      return {
+        label: "Duplicate sequence",
+        detail: "Another active automation sequence already owns this lead.",
+      };
     case "manual_pause":
       return {
         label: "Paused manually",
@@ -493,6 +507,8 @@ function getBlockerMeta(reason: AutomationBlockerReason) {
 const BLOCKER_PRECEDENCE: AutomationBlockerReason[] = [
   "reply_detected",
   "suppressed",
+  "already_contacted",
+  "duplicate_active_sequence",
   "manual_pause",
   "global_pause",
   "emergency_stop",
@@ -534,7 +550,9 @@ function isTerminalSendBlocker(reason: AutomationBlockerReason) {
     reason === "blocked_segment" ||
     reason === "blocked_email_domain" ||
     reason === "hard_disqualified" ||
-    reason === "suppressed"
+    reason === "suppressed" ||
+    reason === "already_contacted" ||
+    reason === "duplicate_active_sequence"
   );
 }
 
@@ -818,6 +836,38 @@ function buildScheduledTimeline(now: Date, config: OutreachSequenceConfig) {
   return [initial, followUp1, followUp2];
 }
 
+function applyLiveSendWindowSettings(
+  config: OutreachSequenceConfig,
+  settings: OutreachAutomationSettingRecord,
+): OutreachSequenceConfig {
+  return {
+    ...config,
+    weekdaysOnly: settings.weekdaysOnly,
+    sendWindowStartHour: settings.sendWindowStartHour,
+    sendWindowStartMinute: settings.sendWindowStartMinute,
+    sendWindowEndHour: settings.sendWindowEndHour,
+    sendWindowEndMinute: settings.sendWindowEndMinute,
+  };
+}
+
+function getFollowUpDelayBusinessDays(stepNumber: number, config: OutreachSequenceConfig) {
+  if (stepNumber === 2) return config.followUp1BusinessDays;
+  if (stepNumber === 3) return config.followUp2BusinessDays;
+  return 0;
+}
+
+function getEarliestFollowUpSendAt(
+  previousSentAt: Date,
+  stepNumber: number,
+  config: OutreachSequenceConfig,
+) {
+  const delayDays = getFollowUpDelayBusinessDays(stepNumber, config);
+  return adjustToAllowedSendWindow(
+    addDaysRespectingWeekdays(previousSentAt, delayDays, config.timezone, config.weekdaysOnly),
+    config,
+  );
+}
+
 async function listSendableMailboxes(prisma: PrismaLike) {
   return prisma.outreachMailbox.findMany({
     where: {
@@ -945,6 +995,235 @@ function isRecoverableSequenceBlocker(sequence: OutreachSequenceRecord) {
   return !reason || REQUEUEABLE_STALE_STOP_REASONS.has(reason);
 }
 
+function getSequenceProgressTime(sequence: OutreachSequenceRecord) {
+  return coerceDate(sequence.lastSentAt || sequence.createdAt)?.getTime() || 0;
+}
+
+function sortBySequenceOwnership(a: OutreachSequenceRecord, b: OutreachSequenceRecord) {
+  const progressDiff = getSequenceProgressTime(b) - getSequenceProgressTime(a);
+  if (progressDiff !== 0) return progressDiff;
+  return a.id.localeCompare(b.id);
+}
+
+async function stopDuplicateSiblingSequences(prisma: PrismaLike, sequence: OutreachSequenceRecord) {
+  const siblings = (await prisma.outreachSequence.findMany({
+    where: {
+      leadId: sequence.leadId,
+      status: { in: [...CLAIMABLE_SEQUENCE_STATUSES] },
+    },
+  })) as OutreachSequenceRecord[];
+
+  if (siblings.length <= 1) {
+    return false;
+  }
+
+  siblings.sort(sortBySequenceOwnership);
+  const keeper = siblings[0];
+  const duplicates = siblings.slice(1);
+  for (const duplicate of duplicates) {
+    await stopSequenceInternal(prisma, duplicate, "duplicate_active_sequence").catch(() => null);
+  }
+
+  return keeper.id !== sequence.id;
+}
+
+async function hasExternalSentEmailForSequence(prisma: PrismaLike, sequence: OutreachSequenceRecord) {
+  const externalEmail = await prisma.outreachEmail.findFirst({
+    where: {
+      leadId: sequence.leadId,
+      status: "sent",
+      OR: [
+        { sequenceId: null },
+        { sequenceId: { not: sequence.id } },
+      ],
+    },
+  });
+
+  return Boolean(externalEmail);
+}
+
+async function stopAlreadyContactedSequence(prisma: PrismaLike, sequence: OutreachSequenceRecord) {
+  if (!(await hasExternalSentEmailForSequence(prisma, sequence))) {
+    return false;
+  }
+
+  await stopSequenceInternal(prisma, sequence, "already_contacted").catch(() => null);
+  return true;
+}
+
+async function hasAnySentEmailForRecipient(recipientEmail: string | null | undefined) {
+  if (!recipientEmail) {
+    return false;
+  }
+
+  return Boolean(await findConflictingSentEmailForRecipient(recipientEmail, ""));
+}
+
+async function getSentRecipientEmails() {
+  const { getDatabase } = await import("@/lib/cloudflare");
+  const rows = await getDatabase()
+    .prepare(
+      `SELECT DISTINCT LOWER("recipientEmail") AS email
+       FROM "OutreachEmail"
+       WHERE "status" = 'sent'
+         AND COALESCE("recipientEmail", '') != ''`,
+    )
+    .all<{ email: string }>();
+
+  return new Set((rows.results ?? []).map((row) => normalizeEmail(row.email)).filter(Boolean));
+}
+
+type SentRecipientMatch = {
+  id: string;
+  leadId: number | null;
+  sequenceId: string | null;
+  sequenceStepId: string | null;
+  sentAt: string | null;
+};
+
+async function findConflictingSentEmailForRecipient(
+  recipientEmail: string,
+  sequenceId: string,
+  allowedSequenceStepIds: string[] = [],
+) {
+  const normalizedRecipient = normalizeEmail(recipientEmail);
+  if (!normalizedRecipient) {
+    return null;
+  }
+
+  const { getDatabase } = await import("@/lib/cloudflare");
+  const params: unknown[] = [normalizedRecipient];
+  const exclusions =
+    allowedSequenceStepIds.length > 0
+      ? `AND (
+          "sequenceId" IS NULL
+          OR "sequenceId" != ?
+          OR "sequenceStepId" IS NULL
+          OR "sequenceStepId" NOT IN (${allowedSequenceStepIds.map(() => "?").join(", ")})
+        )`
+      : "";
+
+  if (allowedSequenceStepIds.length > 0) {
+    params.push(sequenceId, ...allowedSequenceStepIds);
+  }
+
+  return getDatabase()
+    .prepare(
+      `SELECT "id", "leadId", "sequenceId", "sequenceStepId", "sentAt"
+       FROM "OutreachEmail"
+       WHERE "status" = 'sent'
+         AND LOWER("recipientEmail") = ?
+         ${exclusions}
+       ORDER BY datetime("sentAt") DESC
+       LIMIT 1`,
+    )
+    .bind(...params)
+    .first<SentRecipientMatch>();
+}
+
+async function getSentSequenceStepIds(prisma: PrismaLike, sequenceId: string) {
+  const sentSteps = (await prisma.outreachSequenceStep.findMany({
+    where: {
+      sequenceId,
+      status: "SENT",
+    },
+    select: { id: true },
+  })) as Array<Pick<OutreachSequenceStepRecord, "id">>;
+
+  return sentSteps.map((step) => step.id);
+}
+
+async function rescheduleFollowUpForEarliestWindow(
+  prisma: PrismaLike,
+  sequence: OutreachSequenceRecord,
+  step: OutreachSequenceStepRecord,
+  earliestSendAt: Date,
+) {
+  await prisma.outreachSequenceStep.update({
+    where: { id: step.id },
+    data: {
+      status: "SCHEDULED",
+      claimedAt: null,
+      claimedByRunId: null,
+      scheduledFor: earliestSendAt,
+      errorMessage: null,
+    },
+  });
+
+  await prisma.outreachSequence.update({
+    where: { id: sequence.id },
+    data: {
+      status: "ACTIVE",
+      currentStep: step.stepType,
+      nextScheduledAt: earliestSendAt,
+      stopReason: null,
+    },
+  });
+
+  await prisma.lead.update({
+    where: { id: sequence.leadId },
+    data: { nextFollowUpDue: earliestSendAt },
+  }).catch(() => null);
+}
+
+async function rescheduleFollowUpIfTooEarly(
+  prisma: PrismaLike,
+  sequence: OutreachSequenceRecord,
+  step: OutreachSequenceStepRecord,
+  config: OutreachSequenceConfig,
+  now: Date,
+) {
+  if (step.stepNumber <= 1) {
+    return false;
+  }
+
+  const previousStep = (await prisma.outreachSequenceStep.findFirst({
+    where: {
+      sequenceId: sequence.id,
+      stepNumber: step.stepNumber - 1,
+      status: "SENT",
+    },
+  })) as OutreachSequenceStepRecord | null;
+  const previousSentAt = coerceDate(previousStep?.sentAt);
+
+  if (!previousSentAt) {
+    const recheckAt = addMinutes(now, 60);
+    await prisma.outreachSequenceStep.update({
+      where: { id: step.id },
+      data: {
+        status: "SCHEDULED",
+        claimedAt: null,
+        claimedByRunId: null,
+        scheduledFor: recheckAt,
+        errorMessage: "send_failed_retryable",
+      },
+    });
+    await prisma.outreachSequence.update({
+      where: { id: sequence.id },
+      data: {
+        status: "ACTIVE",
+        currentStep: step.stepType,
+        nextScheduledAt: recheckAt,
+        stopReason: "send_failed_retryable",
+      },
+    }).catch(() => null);
+    return true;
+  }
+
+  const earliestSendAt = getEarliestFollowUpSendAt(previousSentAt, step.stepNumber, config);
+  const scheduledFor = coerceDate(step.scheduledFor);
+  if (
+    earliestSendAt.getTime() <= now.getTime() &&
+    scheduledFor &&
+    scheduledFor.getTime() >= earliestSendAt.getTime()
+  ) {
+    return false;
+  }
+
+  await rescheduleFollowUpForEarliestWindow(prisma, sequence, step, earliestSendAt);
+  return true;
+}
+
 export async function getActiveAutomationLeadIds() {
   const prisma = getPrisma();
   const sequences = await prisma.outreachSequence.findMany({
@@ -970,8 +1249,30 @@ export async function getActiveAutomationLeadIds() {
   return Array.from(new Set(blockingLeadIds));
 }
 
+async function getActiveAutomationRecipientEmails(prisma: PrismaLike) {
+  const sequences = (await prisma.outreachSequence.findMany({
+    where: { status: { in: [...ACTIVE_SEQUENCE_STATUSES] } },
+    select: { leadId: true },
+  })) as Array<Pick<OutreachSequenceRecord, "leadId">>;
+  const leadMap = await getLeadMap(prisma, Array.from(new Set(sequences.map((sequence) => sequence.leadId))));
+  const emails = new Set<string>();
+
+  for (const sequence of sequences) {
+    const email = normalizeEmail(leadMap.get(sequence.leadId)?.email);
+    if (email) {
+      emails.add(email);
+    }
+  }
+
+  return emails;
+}
+
 async function listAutomationReadyLeads(prisma: PrismaLike) {
   const activeLeadIds = new Set(await getActiveAutomationLeadIds());
+  const [activeRecipientEmails, sentRecipientEmails] = await Promise.all([
+    getActiveAutomationRecipientEmails(prisma),
+    getSentRecipientEmails(),
+  ]);
   const leads = (await prisma.lead.findMany({
     where: {
       enrichedAt: { not: null },
@@ -980,10 +1281,18 @@ async function listAutomationReadyLeads(prisma: PrismaLike) {
     orderBy: { enrichedAt: "desc" },
   })) as LeadRecord[];
 
+  const seenRecipientEmails = new Set<string>();
   return leads
     .filter((lead) => {
       if (activeLeadIds.has(lead.id)) return false;
-      return isLeadQueueReady(lead);
+      const normalizedEmail = normalizeEmail(lead.email);
+      if (!normalizedEmail) return false;
+      if (seenRecipientEmails.has(normalizedEmail)) return false;
+      if (activeRecipientEmails.has(normalizedEmail)) return false;
+      if (sentRecipientEmails.has(normalizedEmail)) return false;
+      if (!isLeadQueueReady(lead)) return false;
+      seenRecipientEmails.add(normalizedEmail);
+      return true;
     })
     .sort((a, b) => {
       const scoreDiff = (b.axiomScore || 0) - (a.axiomScore || 0);
@@ -1176,7 +1485,7 @@ async function enrichSequenceSummary(
     state = "COMPLETED";
   } else if (normalizedStatus === "SENDING") {
     state = "SENDING";
-  } else if (primaryBlocker) {
+  } else if (primaryBlocker && !(primaryBlocker === "awaiting_follow_up_window" && hasSentAnyStep)) {
     state = "BLOCKED";
   } else if (hasSentAnyStep) {
     state = "WAITING";
@@ -1225,6 +1534,9 @@ export async function queueLeadsForAutomation(input: {
   const leadMap = await getLeadMap(prisma, input.leadIds);
   const activeSequences = await getActiveSequencesForLeads(prisma, input.leadIds);
   const activeLeadIds = new Set(activeSequences.map((sequence) => sequence.leadId));
+  const activeRecipientEmails = await getActiveAutomationRecipientEmails(prisma);
+  const sentRecipientEmails = await getSentRecipientEmails();
+  const pendingRecipientEmails = new Set<string>();
 
   for (const leadId of input.leadIds) {
     const lead = leadMap.get(leadId);
@@ -1246,15 +1558,36 @@ export async function queueLeadsForAutomation(input: {
       continue;
     }
 
+    const normalizedLeadEmail = normalizeEmail(lead.email);
+    if (!normalizedLeadEmail) {
+      result.skipped.push({ leadId, reason: "Lead is missing a normalized email" });
+      continue;
+    }
+
+    if (pendingRecipientEmails.has(normalizedLeadEmail)) {
+      result.skipped.push({ leadId, reason: "Another lead with this email is already being queued" });
+      continue;
+    }
+
     if (activeLeadIds.has(leadId)) {
       result.skipped.push({ leadId, reason: "Lead already has an active automation sequence" });
+      continue;
+    }
+
+    if (activeRecipientEmails.has(normalizedLeadEmail)) {
+      result.skipped.push({ leadId, reason: "Recipient already has an active automation sequence" });
+      continue;
+    }
+
+    if (sentRecipientEmails.has(normalizedLeadEmail) || await hasAnySentEmailForRecipient(normalizedLeadEmail)) {
+      result.skipped.push({ leadId, reason: "Recipient has already received an email" });
       continue;
     }
 
     const suppression = await prisma.outreachSuppression.findFirst({
       where: {
         OR: [
-          { email: normalizeEmail(lead.email) },
+          { email: normalizedLeadEmail },
           { domain: getDomainFromEmail(lead.email) },
         ],
       },
@@ -1305,6 +1638,8 @@ export async function queueLeadsForAutomation(input: {
       sequenceId: sequence.id,
       mailboxId: allocation.mailbox.id,
     });
+    pendingRecipientEmails.add(normalizedLeadEmail);
+    activeRecipientEmails.add(normalizedLeadEmail);
     if (lead.outreachStatus !== READY_FOR_FIRST_TOUCH_STATUS) {
       await prisma.lead.update({
         where: { id: lead.id },
@@ -1685,14 +2020,7 @@ async function canMailboxSend(prisma: PrismaLike, mailbox: OutreachMailboxRecord
   }
 
   // Use live settings for send window check if available, so window changes take effect immediately
-  const windowConfig: OutreachSequenceConfig = liveSettings ? {
-    ..._config,
-    weekdaysOnly: liveSettings.weekdaysOnly,
-    sendWindowStartHour: liveSettings.sendWindowStartHour,
-    sendWindowStartMinute: liveSettings.sendWindowStartMinute,
-    sendWindowEndHour: liveSettings.sendWindowEndHour,
-    sendWindowEndMinute: liveSettings.sendWindowEndMinute,
-  } : _config;
+  const windowConfig = liveSettings ? applyLiveSendWindowSettings(_config, liveSettings) : _config;
   if (!isWithinSendWindow(now, windowConfig)) {
     return { allowed: false, reason: "outside_send_window" as AutomationBlockerReason };
   }
@@ -2002,6 +2330,10 @@ async function sendScheduledStep(
     throw new Error("Sequence context could not be loaded");
   }
 
+  if (await stopAlreadyContactedSequence(prisma, claim.sequence)) {
+    throw new AutomationStoppedError("already_contacted");
+  }
+
   const settings = await getSettings(prisma);
   if (settings.emergencyPaused) {
     await prisma.outreachSequenceStep.update({
@@ -2017,6 +2349,7 @@ async function sendScheduledStep(
   }
 
   const config = JSON.parse(claim.sequence.sequenceConfigSnapshot) as OutreachSequenceConfig;
+  const liveConfig = applyLiveSendWindowSettings(config, settings);
   const connection = claim.mailbox.gmailConnectionId
     ? (await prisma.gmailConnection.findUnique({ where: { id: claim.mailbox.gmailConnectionId } }) as GmailConnectionRecord | null)
     : null;
@@ -2125,6 +2458,44 @@ async function sendScheduledStep(
   // Same-domain cooldown — never email two contacts at the same business
   // (= same recipient email domain) within AUTONOMOUS_DOMAIN_COOLDOWN_DAYS.
   // Reputation guard against scrape duplicates pointing at the same shop.
+  const allowedSentStepIds =
+    claim.step.stepNumber > 1
+      ? await getSentSequenceStepIds(prisma, claim.sequence.id)
+      : [];
+  const conflictingRecipientSend = await findConflictingSentEmailForRecipient(
+    recipientEmail,
+    claim.sequence.id,
+    allowedSentStepIds,
+  );
+  if (conflictingRecipientSend) {
+    await stopSequenceInternal(prisma, claim.sequence, "already_contacted");
+    throw new AutomationStoppedError("already_contacted");
+  }
+
+  if (claim.step.stepNumber > 1) {
+    const previousSentAt = coerceDate(context.previousStep?.sentAt);
+    if (!previousSentAt) {
+      await rescheduleFollowUpForEarliestWindow(
+        prisma,
+        claim.sequence,
+        claim.step,
+        adjustToAllowedSendWindow(addMinutes(new Date(), 60), liveConfig),
+      );
+      throw new AutomationSkipError("awaiting_follow_up_window");
+    }
+
+    const earliestFollowUpAt = getEarliestFollowUpSendAt(previousSentAt, claim.step.stepNumber, liveConfig);
+    const scheduledFor = coerceDate(claim.step.scheduledFor);
+    if (
+      earliestFollowUpAt.getTime() > Date.now() ||
+      !scheduledFor ||
+      scheduledFor.getTime() < earliestFollowUpAt.getTime()
+    ) {
+      await rescheduleFollowUpForEarliestWindow(prisma, claim.sequence, claim.step, earliestFollowUpAt);
+      throw new AutomationSkipError("awaiting_follow_up_window");
+    }
+  }
+
   const recipientDomain = getDomainFromEmail(recipientEmail);
   if (recipientDomain) {
     const { getServerEnv: _getEnv } = await import("@/lib/env");
@@ -2197,8 +2568,7 @@ async function sendScheduledStep(
     throw new AutomationStoppedError("suppressed");
   }
 
-  const liveSettings = await getSettings(prisma);
-  const mailboxGate = await canMailboxSend(prisma, claim.mailbox, new Date(), config, liveSettings);
+  const mailboxGate = await canMailboxSend(prisma, claim.mailbox, new Date(), config, settings);
   if (!mailboxGate.allowed) {
     const now = new Date();
     const baseRescheduleAt =
@@ -2209,22 +2579,13 @@ async function sendScheduledStep(
           : mailboxGate.reason === "mailbox_cooldown"
             ? addSeconds(now, claim.mailbox.minDelaySeconds)
             : now;
-    // Use live settings for rescheduling so we don't get stuck in old windows
-    const windowConfig: OutreachSequenceConfig = {
-      ...config,
-      weekdaysOnly: liveSettings.weekdaysOnly,
-      sendWindowStartHour: liveSettings.sendWindowStartHour,
-      sendWindowStartMinute: liveSettings.sendWindowStartMinute,
-      sendWindowEndHour: liveSettings.sendWindowEndHour,
-      sendWindowEndMinute: liveSettings.sendWindowEndMinute,
-    };
     await prisma.outreachSequenceStep.update({
       where: { id: claim.step.id },
       data: {
         status: "SCHEDULED",
         claimedAt: null,
         claimedByRunId: null,
-        scheduledFor: adjustToAllowedSendWindow(baseRescheduleAt, windowConfig),
+        scheduledFor: adjustToAllowedSendWindow(baseRescheduleAt, liveConfig),
       },
     });
     throw new AutomationSkipError(mailboxGate.reason);
@@ -2350,6 +2711,22 @@ async function sendScheduledStep(
       stepNumber: claim.step.stepNumber + 1,
     },
   }) as OutreachSequenceStepRecord | null;
+  const nextStepScheduledFor = nextStep
+    ? getEarliestFollowUpSendAt(sentAt, nextStep.stepNumber, liveConfig)
+    : null;
+
+  if (nextStep && nextStepScheduledFor) {
+    await prisma.outreachSequenceStep.update({
+      where: { id: nextStep.id },
+      data: {
+        status: "SCHEDULED",
+        scheduledFor: nextStepScheduledFor,
+        claimedAt: null,
+        claimedByRunId: null,
+        errorMessage: null,
+      },
+    });
+  }
 
   await prisma.outreachMailbox.update({
     where: { id: claim.mailbox.id },
@@ -2363,7 +2740,7 @@ async function sendScheduledStep(
       outreachChannel: "EMAIL",
       firstContactedAt: context.lead.firstContactedAt || sentAt,
       lastContactedAt: sentAt,
-      nextFollowUpDue: nextStep?.scheduledFor ?? null,
+      nextFollowUpDue: nextStepScheduledFor,
     },
   });
 
@@ -2385,7 +2762,7 @@ async function sendScheduledStep(
         status: "ACTIVE",
         currentStep: nextStep.stepType,
         lastSentAt: sentAt,
-        nextScheduledAt: nextStep.scheduledFor,
+        nextScheduledAt: nextStepScheduledFor,
         stopReason: null,
       },
     });
@@ -2516,14 +2893,29 @@ async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: numbe
   }
 
   const now = new Date();
-  const dueSteps = await prisma.outreachSequenceStep.findMany({
-    where: {
-      status: "SCHEDULED",
-      scheduledFor: { lte: now },
-    },
-    orderBy: { scheduledFor: "asc" },
-    take: Math.max(batchSize * 50, 500),
-  }) as OutreachSequenceStepRecord[];
+  const settings = await getSettings(prisma);
+  const dueStepScanLimit = Math.max(batchSize * 50, 500);
+  const [initialDueSteps, followUpDueSteps] = await Promise.all([
+    prisma.outreachSequenceStep.findMany({
+      where: {
+        status: "SCHEDULED",
+        stepNumber: 1,
+        scheduledFor: { lte: now },
+      },
+      orderBy: { scheduledFor: "asc" },
+      take: dueStepScanLimit,
+    }) as Promise<OutreachSequenceStepRecord[]>,
+    prisma.outreachSequenceStep.findMany({
+      where: {
+        status: "SCHEDULED",
+        stepNumber: { not: 1 },
+        scheduledFor: { lte: now },
+      },
+      orderBy: { scheduledFor: "asc" },
+      take: dueStepScanLimit,
+    }) as Promise<OutreachSequenceStepRecord[]>,
+  ]);
+  const dueSteps = [...initialDueSteps, ...followUpDueSteps];
 
   const claims: SchedulerClaim[] = [];
   // Track per-mailbox claims to ensure equal distribution
@@ -2551,6 +2943,12 @@ async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: numbe
     if (!CLAIMABLE_SEQUENCE_STATUSES.includes(sequence.status as (typeof CLAIMABLE_SEQUENCE_STATUSES)[number])) {
       continue;
     }
+    if (await stopAlreadyContactedSequence(prisma, sequence)) {
+      continue;
+    }
+    if (await stopDuplicateSiblingSequences(prisma, sequence)) {
+      continue;
+    }
 
     const mailbox = await prisma.outreachMailbox.findUnique({
       where: { id: sequence.assignedMailboxId },
@@ -2564,6 +2962,12 @@ async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: numbe
 
     const nextPendingStep = await getNextPendingStep(prisma, sequence.id);
     if (!nextPendingStep || nextPendingStep.id !== step.id) {
+      continue;
+    }
+
+    const sequenceConfig = JSON.parse(sequence.sequenceConfigSnapshot) as OutreachSequenceConfig;
+    const liveSequenceConfig = applyLiveSendWindowSettings(sequenceConfig, settings);
+    if (await rescheduleFollowUpIfTooEarly(prisma, sequence, step, liveSequenceConfig, now)) {
       continue;
     }
 
@@ -2933,6 +3337,14 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
           skippedCount += 1;
           if (error.reason === "mailbox_disconnected") {
             await markMailboxDisconnected(prisma, claim.mailbox.id);
+          }
+          if (error.reason === "awaiting_follow_up_window") {
+            await recordSendDecision({
+              ...baseDecision,
+              decision: "SKIPPED",
+              reason: error.reason,
+            });
+            continue;
           }
           await recordSendDecision({
             ...baseDecision,
