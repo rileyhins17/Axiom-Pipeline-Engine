@@ -1028,16 +1028,19 @@ async function stopDuplicateSiblingSequences(prisma: PrismaLike, sequence: Outre
 }
 
 async function hasExternalSentEmailForSequence(prisma: PrismaLike, sequence: OutreachSequenceRecord) {
-  const externalEmail = await prisma.outreachEmail.findFirst({
-    where: {
-      leadId: sequence.leadId,
-      status: "sent",
-      OR: [
-        { sequenceId: null },
-        { sequenceId: { not: sequence.id } },
-      ],
-    },
-  });
+  void prisma;
+  const { getDatabase } = await import("@/lib/cloudflare");
+  const externalEmail = await getDatabase()
+    .prepare(
+      `SELECT "id"
+       FROM "OutreachEmail"
+       WHERE "leadId" = ?
+         AND "status" = 'sent'
+         AND ("sequenceId" IS NULL OR "sequenceId" != ?)
+       LIMIT 1`,
+    )
+    .bind(sequence.leadId, sequence.id)
+    .first<{ id: string }>();
 
   return Boolean(externalEmail);
 }
@@ -2455,9 +2458,9 @@ async function sendScheduledStep(
     throw new AutomationSkipError("missing_valid_email");
   }
 
-  // Same-domain cooldown — never email two contacts at the same business
-  // (= same recipient email domain) within AUTONOMOUS_DOMAIN_COOLDOWN_DAYS.
-  // Reputation guard against scrape duplicates pointing at the same shop.
+  // Exact-recipient safety: never start a second automated thread for an
+  // address that already has a sent email. Follow-ups are allowed only when
+  // they belong to already-sent steps in this same sequence.
   const allowedSentStepIds =
     claim.step.stepNumber > 1
       ? await getSentSequenceStepIds(prisma, claim.sequence.id)
@@ -3355,7 +3358,7 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
           await recordSendDecision({
             ...baseDecision,
             decision: "SKIPPED",
-            reason: "sequence_stopped",
+            reason: error.reason,
           });
           continue;
         }

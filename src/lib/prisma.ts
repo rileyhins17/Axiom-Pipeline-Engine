@@ -1002,7 +1002,7 @@ function buildWhereClause(where: WhereInput | undefined, params: unknown[]): str
         .map((entry) => `(${entry})`);
 
       if (nested.length > 0) {
-        parts.push(nested.join(` ${key} `));
+        parts.push(`(${nested.join(` ${key} `)})`);
       }
 
       continue;
