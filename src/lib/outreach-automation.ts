@@ -21,6 +21,7 @@ import type {
   GmailConnectionRecord,
   LeadRecord,
   OutreachAutomationSettingRecord,
+  OutreachEmailRecord,
   OutreachMailboxRecord,
   OutreachRunRecord,
   OutreachSequenceRecord,
@@ -403,6 +404,16 @@ function addSeconds(date: Date, seconds: number) {
   return new Date(date.getTime() + seconds * 1000);
 }
 
+function addHours(date: Date, hours: number) {
+  return new Date(date.getTime() + hours * 60 * 60 * 1000);
+}
+
+function startOfNextUtcDay(date: Date) {
+  const next = new Date(date);
+  next.setUTCHours(24, 0, 0, 0);
+  return next;
+}
+
 /**
  * Add N days to a date. When weekdaysOnly is true, skip Saturday/Sunday in
  * the given timezone so follow-ups don't land on a weekend. When false, this
@@ -663,6 +674,47 @@ function getBlockedRecheckDelayMinutes(reason: AutomationBlockerReason, mailbox?
     default:
       return 24 * 60;
   }
+}
+
+async function getMailboxHourlyCapResetAt(prisma: PrismaLike, mailboxId: string, now: Date) {
+  const windowStart = addHours(now, -1);
+  const oldestRecentSend = await prisma.outreachEmail.findFirst({
+    where: {
+      mailboxId,
+      status: "sent",
+      sentAt: { gte: windowStart },
+    },
+    orderBy: { sentAt: "asc" },
+  }) as OutreachEmailRecord | null;
+
+  const resetAt = oldestRecentSend?.sentAt
+    ? addHours(coerceDate(oldestRecentSend.sentAt) || now, 1)
+    : addMinutes(now, 60);
+  return addSeconds(resetAt.getTime() > now.getTime() ? resetAt : now, 5);
+}
+
+async function getRateLimitRecheckAt(
+  prisma: PrismaLike,
+  claim: SchedulerClaim,
+  reason: AutomationBlockerReason,
+  config: OutreachSequenceConfig,
+  now: Date,
+) {
+  let baseRecheckAt: Date;
+
+  if (reason === "global_daily_cap_reached" || reason === "daily_cap_reached") {
+    baseRecheckAt = addSeconds(startOfNextUtcDay(now), 5);
+  } else if (reason === "hourly_cap_reached") {
+    baseRecheckAt = await getMailboxHourlyCapResetAt(prisma, claim.mailbox.id, now);
+  } else if (reason === "mailbox_cooldown") {
+    const lastSentAt = coerceDate(claim.mailbox.lastSentAt);
+    const cooldownReadyAt = lastSentAt ? addSeconds(lastSentAt, claim.mailbox.minDelaySeconds) : now;
+    baseRecheckAt = addSeconds(cooldownReadyAt.getTime() > now.getTime() ? cooldownReadyAt : now, 5);
+  } else {
+    baseRecheckAt = addMinutes(now, getBlockedRecheckDelayMinutes(reason, claim.mailbox));
+  }
+
+  return adjustToAllowedSendWindow(baseRecheckAt, config);
 }
 
 function isWithinSendWindow(date: Date, config: OutreachSequenceConfig) {
@@ -2628,6 +2680,14 @@ async function sendScheduledStep(
       where: { status: "sent", sentAt: { gte: startOfDay } },
     });
     if (sentToday >= globalCap) {
+      const now = new Date();
+      const nextAttempt = await getRateLimitRecheckAt(
+        prisma,
+        claim,
+        "global_daily_cap_reached",
+        liveConfig,
+        now,
+      );
       await prisma.outreachSequenceStep.update({
         where: { id: claim.step.id },
         data: {
@@ -2635,7 +2695,7 @@ async function sendScheduledStep(
           claimedAt: null,
           claimedByRunId: null,
           errorMessage: "global_daily_cap_reached",
-          scheduledFor: addMinutes(new Date(), 60 * 24),
+          scheduledFor: nextAttempt,
         },
       });
       throw new AutomationSkipError("global_daily_cap_reached");
@@ -2658,21 +2718,14 @@ async function sendScheduledStep(
   const mailboxGate = await canMailboxSend(prisma, claim.mailbox, new Date(), config, settings);
   if (!mailboxGate.allowed) {
     const now = new Date();
-    const baseRescheduleAt =
-      mailboxGate.reason === "daily_cap_reached"
-        ? addMinutes(now, 24 * 60)
-        : mailboxGate.reason === "hourly_cap_reached"
-          ? addMinutes(now, 60)
-          : mailboxGate.reason === "mailbox_cooldown"
-            ? addSeconds(now, claim.mailbox.minDelaySeconds)
-            : now;
+    const nextAttempt = await getRateLimitRecheckAt(prisma, claim, mailboxGate.reason, liveConfig, now);
     await prisma.outreachSequenceStep.update({
       where: { id: claim.step.id },
       data: {
         status: "SCHEDULED",
         claimedAt: null,
         claimedByRunId: null,
-        scheduledFor: adjustToAllowedSendWindow(baseRescheduleAt, liveConfig),
+        scheduledFor: nextAttempt,
       },
     });
     throw new AutomationSkipError(mailboxGate.reason);
@@ -3032,7 +3085,7 @@ async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: numbe
       take: dueStepScanLimit,
     }) as Promise<OutreachSequenceStepRecord[]>,
   ]);
-  const dueSteps = [...initialDueSteps, ...followUpDueSteps];
+  const dueSteps = initialDueSteps.length > 0 ? initialDueSteps : followUpDueSteps;
 
   const claims: SchedulerClaim[] = [];
   // Track per-mailbox claims to ensure equal distribution
