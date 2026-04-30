@@ -1402,12 +1402,19 @@ async function getActiveAutomationRecipientEmails(prisma: PrismaLike) {
   return emails;
 }
 
-async function listAutomationReadyLeads(prisma: PrismaLike) {
+export async function listAutomationReadyLeads(prisma: PrismaLike = getPrisma()) {
   const activeLeadIds = new Set(await getActiveAutomationLeadIds());
-  const [activeRecipientEmails, sentRecipientEmails] = await Promise.all([
+  const [activeRecipientEmails, sentRecipientEmails, suppressions] = await Promise.all([
     getActiveAutomationRecipientEmails(prisma),
     getSentRecipientEmails(),
+    prisma.outreachSuppression.findMany({
+      select: { email: true, domain: true },
+    }) as Promise<Array<Pick<OutreachSuppressionRecord, "email" | "domain">>>,
   ]);
+  const suppressedEmails = new Set(suppressions.map((suppression) => normalizeEmail(suppression.email)).filter(Boolean));
+  const suppressedDomains = new Set(
+    suppressions.map((suppression) => normalizeDomain(suppression.domain)).filter(Boolean),
+  );
   const leads = (await prisma.lead.findMany({
     where: {
       enrichedAt: { not: null },
@@ -1425,6 +1432,9 @@ async function listAutomationReadyLeads(prisma: PrismaLike) {
       if (seenRecipientEmails.has(normalizedEmail)) return false;
       if (activeRecipientEmails.has(normalizedEmail)) return false;
       if (sentRecipientEmails.has(normalizedEmail)) return false;
+      if (suppressedEmails.has(normalizedEmail)) return false;
+      const businessDomain = getAutomationBusinessDomain(lead);
+      if (businessDomain && suppressedDomains.has(businessDomain)) return false;
       if (!isLeadQueueReady(lead)) return false;
       seenRecipientEmails.add(normalizedEmail);
       return true;

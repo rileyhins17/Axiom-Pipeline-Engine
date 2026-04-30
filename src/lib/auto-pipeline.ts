@@ -17,7 +17,7 @@ import {
 } from "@/lib/automation-policy";
 import {
   getAutomationSettings,
-  getBlockingAutomationLeadIdsForLeads,
+  listAutomationReadyLeads,
   queueLeadsForAutomation,
 } from "@/lib/outreach-automation";
 import { getPrisma } from "@/lib/prisma";
@@ -194,35 +194,42 @@ async function autoQualify(prisma: ReturnType<typeof getPrisma>): Promise<number
 async function autoQueue(systemUserId: string): Promise<{ queued: number; skipped: number }> {
   const prisma = getPrisma();
 
-  // Find adequate enriched leads that are ready or were stranded in a stale
-  // status before the queue/send thresholds were unified.
-  const readyLeads = (await prisma.lead.findMany({
-    where: {
-      enrichedAt: { not: null },
-      enrichmentData: { not: null },
-      firstContactedAt: null,
-      isArchived: false,
-    },
-    orderBy: { axiomScore: "desc" },
-    take: AUTONOMOUS_QUEUE_BATCH_SIZE,
-  })) as LeadRecord[];
+  // Build from the fully filtered ready set. Taking the top N raw enriched rows
+  // first lets generic/already-sent leads repeatedly block lower-scored viable
+  // first touches from ever entering the queue.
+  const readyLeads = await listAutomationReadyLeads(prisma);
 
   if (readyLeads.length === 0) return { queued: 0, skipped: 0 };
 
-  const activeLeadIds = new Set(await getBlockingAutomationLeadIdsForLeads(readyLeads.map((lead) => lead.id)));
+  let queued = 0;
+  let skipped = 0;
+  let cursor = 0;
 
-  const eligibleIds = readyLeads
-    .filter((lead) => !activeLeadIds.has(lead.id) && shouldAutonomouslyQueueLead(lead))
-    .map((lead) => lead.id);
+  while (queued < AUTONOMOUS_QUEUE_BATCH_SIZE && cursor < readyLeads.length) {
+    const leadIds = readyLeads
+      .slice(cursor, cursor + (AUTONOMOUS_QUEUE_BATCH_SIZE - queued))
+      .map((lead) => lead.id);
+    cursor += leadIds.length;
 
-  if (eligibleIds.length === 0) return { queued: 0, skipped: 0 };
+    if (leadIds.length === 0) break;
 
-  const result = await queueLeadsForAutomation({
-    leadIds: eligibleIds,
-    queuedByUserId: systemUserId,
-  });
+    const result = await queueLeadsForAutomation({
+      leadIds,
+      queuedByUserId: systemUserId,
+    });
 
-  return { queued: result.queued.length, skipped: result.skipped.length };
+    queued += result.queued.length;
+    skipped += result.skipped.length;
+
+    if (
+      result.queued.length === 0 &&
+      result.skipped.some((entry) => entry.reason === "No active mailbox is available right now")
+    ) {
+      break;
+    }
+  }
+
+  return { queued, skipped };
 }
 
 /**
