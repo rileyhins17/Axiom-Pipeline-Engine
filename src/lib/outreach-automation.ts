@@ -3293,9 +3293,7 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
       };
     }
 
-    if (options.immediate) {
-      fastForwardedCount = await fastForwardInitialTouches(prisma, now);
-    }
+    fastForwardedCount = await fastForwardInitialTouches(prisma, now);
     const claims = await claimDueSteps(prisma, run.id, settings.schedulerClaimBatch);
 
     console.log(`[scheduler] Pipeline: ${JSON.stringify(pipeline)} | Replies: checked=${replySync.checked} stopped=${replySync.stopped} | Fast-forwarded: ${fastForwardedCount} | Claims: ${claims.length}`);
