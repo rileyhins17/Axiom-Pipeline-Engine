@@ -2943,9 +2943,6 @@ async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: numbe
     if (!CLAIMABLE_SEQUENCE_STATUSES.includes(sequence.status as (typeof CLAIMABLE_SEQUENCE_STATUSES)[number])) {
       continue;
     }
-    if (await stopAlreadyContactedSequence(prisma, sequence)) {
-      continue;
-    }
     if (await stopDuplicateSiblingSequences(prisma, sequence)) {
       continue;
     }
