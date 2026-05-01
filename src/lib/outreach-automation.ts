@@ -1577,7 +1577,10 @@ export function selectAutomationReadyLeads(
       continue;
     }
 
-    if (String(lead.emailType || "").trim().toLowerCase() === "generic") {
+    const isGenericEmailType = String(lead.emailType || "").trim().toLowerCase() === "generic";
+    const isGenericPrefix = /^(info|sales|hello|contact|admin|support|hello|office|marketing|service|enquiries|enquiry|booking|team|webmaster)@/i.test(lead.email || "");
+    
+    if (isGenericEmailType || isGenericPrefix) {
       diagnostics.skippedGenericEmailCount += 1;
       continue;
     }

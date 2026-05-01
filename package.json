@@ -38,7 +38,7 @@
     "zustand": "^5.0.11"
   },
   "devDependencies": {
-    "@opennextjs/cloudflare": "^1.18.1",
+    "@opennextjs/cloudflare": "^1.19.5",
     "@tailwindcss/postcss": "^4",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20",
