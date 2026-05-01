@@ -32,7 +32,7 @@ export const AUTONOMOUS_QUEUE_BATCH_SIZE = 50;
  *  dispatching new ScrapeJobs until midnight UTC. Combined with two
  *  mailboxes at 40/day each (= 80 sends/day), this keeps a healthy
  *  intake-to-send ratio without manual gating. */
-export const AUTONOMOUS_DAILY_LEAD_INTAKE_CAP = 100;
+export const AUTONOMOUS_DAILY_LEAD_INTAKE_CAP = 50;
 
 export function isAdequateAutonomousLead(lead: {
   axiomScore?: number | null;
@@ -59,7 +59,13 @@ export function isAdequateAutonomousLead(lead: {
     return false;
   }
 
-  if (String(lead.emailType || "").trim().toLowerCase() === "generic") {
+  const emailType = String(lead.emailType || "").trim().toLowerCase();
+  if (emailType !== "owner" && emailType !== "staff") {
+    return false;
+  }
+
+  const isGenericPrefix = /^(info|sales|hello|contact|admin|support|office|marketing|service|enquiries|enquiry|booking|team|webmaster)@/i.test(lead.email || "");
+  if (isGenericPrefix) {
     return false;
   }
 

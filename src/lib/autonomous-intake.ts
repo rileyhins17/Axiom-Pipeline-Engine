@@ -46,8 +46,22 @@ export async function countAdequateLeadsToday(): Promise<number> {
        WHERE datetime("createdAt") >= datetime(?)
          AND "axiomScore" >= ?
          AND COALESCE("axiomTier",'') != 'D'
-         AND LOWER(COALESCE("emailType",'')) != 'generic'
+         AND LOWER(COALESCE("emailType",'')) IN ('owner', 'staff')
          AND COALESCE("email",'') != ''
+         AND LOWER("email") NOT LIKE 'info@%'
+         AND LOWER("email") NOT LIKE 'sales@%'
+         AND LOWER("email") NOT LIKE 'hello@%'
+         AND LOWER("email") NOT LIKE 'contact@%'
+         AND LOWER("email") NOT LIKE 'admin@%'
+         AND LOWER("email") NOT LIKE 'support@%'
+         AND LOWER("email") NOT LIKE 'office@%'
+         AND LOWER("email") NOT LIKE 'marketing@%'
+         AND LOWER("email") NOT LIKE 'service@%'
+         AND LOWER("email") NOT LIKE 'enquiries@%'
+         AND LOWER("email") NOT LIKE 'enquiry@%'
+         AND LOWER("email") NOT LIKE 'booking@%'
+         AND LOWER("email") NOT LIKE 'team@%'
+         AND LOWER("email") NOT LIKE 'webmaster@%'
          AND COALESCE("isArchived", 0) = 0`,
     )
     .bind(since, AUTONOMOUS_INTAKE_MIN_SCORE)
