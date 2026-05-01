@@ -391,6 +391,29 @@ function getRecipientName(lead: LeadRecord) {
   return lead.contactName?.trim().split(/\s+/)[0] || lead.businessName || "there";
 }
 
+function stableHashFromLeadId(value: string | number | null | undefined) {
+  const source = String(value ?? "");
+  let hash = 0;
+  for (let i = 0; i < source.length; i++) {
+    hash = (hash * 31 + source.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash);
+}
+
+function rotateFallbackSubject(lead: LeadRecord): string {
+  const domainOrName = lead.websiteDomain || lead.businessName;
+  const pool: string[] = [
+    `Quick thought on ${domainOrName}`,
+    "Quick site thought",
+    "Small site note",
+    "Question about the site",
+    "Noticed one thing",
+    `Quick note on ${domainOrName}`,
+  ];
+  const index = stableHashFromLeadId(lead.id) % pool.length;
+  return pool[index];
+}
+
 function buildFallbackInitialEmail(
   lead: LeadRecord,
   enrichment: EnrichmentResult,
@@ -413,7 +436,7 @@ function buildFallbackInitialEmail(
   );
 
   return {
-    subject: sanitizeSubject(`Quick note on ${lead.businessName}`, lead.businessName),
+    subject: sanitizeSubject(rotateFallbackSubject(lead), lead.businessName),
     bodyPlain,
     bodyHtml: buildHtmlEmail(bodyPlain),
     personalization_reason: enrichment.personalizedHook,
@@ -464,7 +487,7 @@ function buildPlanBasedInitialEmail(
   );
 
   return {
-    subject: sanitizeSubject(`Quick thought on ${lead.websiteDomain || lead.businessName}`, lead.businessName),
+    subject: sanitizeSubject(rotateFallbackSubject(lead), lead.businessName),
     bodyPlain,
     bodyHtml: buildHtmlEmail(bodyPlain),
     personalization_reason: plan.personalization_reason,
