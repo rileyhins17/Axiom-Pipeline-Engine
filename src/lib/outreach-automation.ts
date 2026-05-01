@@ -811,6 +811,10 @@ function normalizeAutomationSettings(settings: OutreachAutomationSettingRecord) 
   // DB is the source of truth; only fill in missing/invalid values from defaults.
   const pickNumber = (value: unknown, fallback: number) =>
     typeof value === "number" && Number.isFinite(value) ? value : fallback;
+  const pickPositiveNumber = (value: unknown, fallback: number) => {
+    const picked = pickNumber(value, fallback);
+    return picked > 0 ? picked : fallback;
+  };
   const pickBool = (value: unknown, fallback: boolean) =>
     typeof value === "boolean" ? value : fallback;
   const pickText = (value: unknown, fallback: string | null) =>
@@ -828,8 +832,14 @@ function normalizeAutomationSettings(settings: OutreachAutomationSettingRecord) 
     sendWindowEndMinute: pickNumber(settings.sendWindowEndMinute, AUTOMATION_SETTINGS_DEFAULTS.sendWindowEndMinute),
     initialDelayMinMinutes: pickNumber(settings.initialDelayMinMinutes, AUTOMATION_SETTINGS_DEFAULTS.initialDelayMinMinutes),
     initialDelayMaxMinutes: pickNumber(settings.initialDelayMaxMinutes, AUTOMATION_SETTINGS_DEFAULTS.initialDelayMaxMinutes),
-    followUp1BusinessDays: pickNumber(settings.followUp1BusinessDays, AUTOMATION_SETTINGS_DEFAULTS.followUp1BusinessDays),
-    followUp2BusinessDays: pickNumber(settings.followUp2BusinessDays, AUTOMATION_SETTINGS_DEFAULTS.followUp2BusinessDays),
+    followUp1BusinessDays: pickPositiveNumber(
+      settings.followUp1BusinessDays,
+      AUTOMATION_SETTINGS_DEFAULTS.followUp1BusinessDays,
+    ),
+    followUp2BusinessDays: pickPositiveNumber(
+      settings.followUp2BusinessDays,
+      AUTOMATION_SETTINGS_DEFAULTS.followUp2BusinessDays,
+    ),
     schedulerClaimBatch: pickNumber(settings.schedulerClaimBatch, AUTOMATION_SETTINGS_DEFAULTS.schedulerClaimBatch),
     replySyncStaleMinutes: pickNumber(settings.replySyncStaleMinutes, AUTOMATION_SETTINGS_DEFAULTS.replySyncStaleMinutes),
   };
@@ -1003,24 +1013,40 @@ async function getSequenceSnapshotConfig(
 }
 
 export function buildScheduledTimeline(now: Date, config: OutreachSequenceConfig) {
-  const initialDelay = getRandomInt(config.initialDelayMinMinutes, config.initialDelayMaxMinutes);
-  const initial = adjustToAllowedSendWindow(addMinutes(now, initialDelay), config);
+  const runtimeConfig = normalizeSequenceConfigForRuntime(config);
+  const initialDelay = getRandomInt(runtimeConfig.initialDelayMinMinutes, runtimeConfig.initialDelayMaxMinutes);
+  const initial = adjustToAllowedSendWindow(addMinutes(now, initialDelay), runtimeConfig);
 
   // Follow-up 1: N days after the initial send (weekend-aware when weekdaysOnly=true).
   const followUp1 = adjustToAllowedSendWindow(
-    addDaysRespectingWeekdays(initial, config.followUp1BusinessDays, config.timezone, config.weekdaysOnly),
-    config,
+    addDaysRespectingWeekdays(
+      initial,
+      runtimeConfig.followUp1BusinessDays,
+      runtimeConfig.timezone,
+      runtimeConfig.weekdaysOnly,
+    ),
+    runtimeConfig,
   );
   // Follow-up 2: N days after follow-up 1.
   const followUp2 = adjustToAllowedSendWindow(
-    addDaysRespectingWeekdays(followUp1, config.followUp2BusinessDays, config.timezone, config.weekdaysOnly),
-    config,
+    addDaysRespectingWeekdays(
+      followUp1,
+      runtimeConfig.followUp2BusinessDays,
+      runtimeConfig.timezone,
+      runtimeConfig.weekdaysOnly,
+    ),
+    runtimeConfig,
   );
   // Follow-up 3: final periodic touch after follow-up 2. After this sends,
   // the sequence completes as EXHAUSTED and leaves the active queue.
   const followUp3 = adjustToAllowedSendWindow(
-    addDaysRespectingWeekdays(followUp2, config.followUp3BusinessDays ?? FOLLOW_UP_3_DELAY_DAYS, config.timezone, config.weekdaysOnly),
-    config,
+    addDaysRespectingWeekdays(
+      followUp2,
+      runtimeConfig.followUp3BusinessDays,
+      runtimeConfig.timezone,
+      runtimeConfig.weekdaysOnly,
+    ),
+    runtimeConfig,
   );
 
   return [initial, followUp1, followUp2, followUp3];
@@ -1041,9 +1067,10 @@ function applyLiveSendWindowSettings(
 }
 
 function getFollowUpDelayBusinessDays(stepNumber: number, config: OutreachSequenceConfig) {
-  if (stepNumber === 2) return config.followUp1BusinessDays;
-  if (stepNumber === 3) return config.followUp2BusinessDays;
-  if (stepNumber === 4) return config.followUp3BusinessDays ?? FOLLOW_UP_3_DELAY_DAYS;
+  const runtimeConfig = normalizeSequenceConfigForRuntime(config);
+  if (stepNumber === 2) return runtimeConfig.followUp1BusinessDays;
+  if (stepNumber === 3) return runtimeConfig.followUp2BusinessDays;
+  if (stepNumber === 4) return runtimeConfig.followUp3BusinessDays;
   return 0;
 }
 
@@ -3313,9 +3340,20 @@ async function fastForwardInitialTouches(prisma: PrismaLike, now: Date) {
 }
 
 function normalizeSequenceConfigForRuntime(config: OutreachSequenceConfig): OutreachSequenceConfig {
+  const positiveOrDefault = (value: unknown, fallback: number) =>
+    typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
+
   return {
     ...config,
-    followUp3BusinessDays: config.followUp3BusinessDays ?? FOLLOW_UP_3_DELAY_DAYS,
+    followUp1BusinessDays: positiveOrDefault(
+      config.followUp1BusinessDays,
+      AUTOMATION_SETTINGS_DEFAULTS.followUp1BusinessDays,
+    ),
+    followUp2BusinessDays: positiveOrDefault(
+      config.followUp2BusinessDays,
+      AUTOMATION_SETTINGS_DEFAULTS.followUp2BusinessDays,
+    ),
+    followUp3BusinessDays: positiveOrDefault(config.followUp3BusinessDays, FOLLOW_UP_3_DELAY_DAYS),
   };
 }
 

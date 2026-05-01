@@ -13,10 +13,10 @@ import {
     truncateString
 } from "./csv";
 
-function parseJsonSafe(jsonStr: string | null, fallback: any = null) {
+function parseJsonSafe<T>(jsonStr: string | null, fallback: T): T {
     if (!jsonStr) return fallback;
     try {
-        return JSON.parse(jsonStr);
+        return JSON.parse(jsonStr) as T;
     } catch {
         return fallback;
     }
@@ -46,7 +46,7 @@ export interface XlsxColumnDef {
     header: string;
     width: number;
     wrap: boolean;
-    resolve: (lead: Lead) => any;
+    resolve: (lead: Lead) => unknown;
     hyperlink?: (lead: Lead) => string | undefined;
 }
 
@@ -102,9 +102,9 @@ export const callSheetXlsxCols: XlsxColumnDef[] = [
     { header: "Call Opener (Short)", width: 55, wrap: true, resolve: l => truncateString(l.callOpener, 180) },
     { header: "Follow-Up (Short)", width: 40, wrap: true, resolve: l => truncateString(l.followUpQuestion, 120) },
     { header: "Website Grade", width: 12, wrap: false, resolve: l => l.websiteGrade || "" },
-    { header: "Top Fix 1", width: 32, wrap: true, resolve: l => parseJsonSafe(l.axiomWebsiteAssessment, {})?.topFixes?.[0] || "" },
-    { header: "Top Fix 2", width: 32, wrap: true, resolve: l => parseJsonSafe(l.axiomWebsiteAssessment, {})?.topFixes?.[1] || "" },
-    { header: "Top Fix 3", width: 32, wrap: true, resolve: l => parseJsonSafe(l.axiomWebsiteAssessment, {})?.topFixes?.[2] || "" },
+    { header: "Top Fix 1", width: 32, wrap: true, resolve: l => parseJsonSafe<{ topFixes?: unknown[] }>(l.axiomWebsiteAssessment, {}).topFixes?.[0] || "" },
+    { header: "Top Fix 2", width: 32, wrap: true, resolve: l => parseJsonSafe<{ topFixes?: unknown[] }>(l.axiomWebsiteAssessment, {}).topFixes?.[1] || "" },
+    { header: "Top Fix 3", width: 32, wrap: true, resolve: l => parseJsonSafe<{ topFixes?: unknown[] }>(l.axiomWebsiteAssessment, {}).topFixes?.[2] || "" },
     { header: "Call Opener (Full)", width: 75, wrap: true, resolve: l => l.callOpener || "" },
     { header: "Follow-Up (Full)", width: 55, wrap: true, resolve: l => l.followUpQuestion || "" },
     { header: "Source", width: 20, wrap: false, resolve: l => l.source || "" },
@@ -112,7 +112,11 @@ export const callSheetXlsxCols: XlsxColumnDef[] = [
     { header: "Lead ID", width: 18, wrap: false, resolve: l => String(l.id || "") }
 ];
 
-export async function generateXlsx(leads: Lead[], preset: string, filters: any): Promise<Buffer> {
+export async function generateXlsx(
+    leads: Lead[],
+    preset: string,
+    filters: { city?: string | null; niche?: string | null; tier?: string[] | null } | null,
+): Promise<Buffer> {
     const workbook = new ExcelJS.Workbook();
     workbook.creator = "Omniscient v4";
     workbook.lastModifiedBy = "Omniscient v4";
@@ -211,7 +215,7 @@ export async function generateXlsx(leads: Lead[], preset: string, filters: any):
     readme.getRow(1).getCell(2).font = { color: { argb: "FFFFFFFF" }, bold: true };
 
     const filterObj = filters || {};
-    const safeJoin = (arr: any) => Array.isArray(arr) ? arr.join(", ") : String(arr || "None");
+    const safeJoin = (arr: unknown) => Array.isArray(arr) ? arr.join(", ") : String(arr || "None");
 
     const metaData = [
         ["Export Timestamp", new Date().toISOString()],

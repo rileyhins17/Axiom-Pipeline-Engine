@@ -4,7 +4,7 @@ import { extractDomain } from "../dedupe";
 export interface CsvColumnDef {
     key: string;
     header: string;
-    resolve: (lead: Lead) => any;
+    resolve: (lead: Lead) => unknown;
 }
 
 export interface CsvPreset {
@@ -41,7 +41,7 @@ export function sortLeadsDeterministic(leads: Lead[]) {
 /**
  * Escapes a CSV value correctly based on dialect options.
  */
-export function escapeCsv(val: any, options?: CsvDialectOptions): string {
+export function escapeCsv(val: unknown, options?: CsvDialectOptions): string {
     const nulls = options?.nulls || "blank";
     if (val === null || val === undefined || val === "") {
         return nulls === "na" ? "N/A" : "";
@@ -195,7 +195,7 @@ export function generateCsv(
             try {
                 const val = col.resolve(lead);
                 return escapeCsv(val, options);
-            } catch (err) {
+            } catch {
                 return escapeCsv("", options); // Fallback on error to ensure no broken columns
             }
         }).join(delimiter);
@@ -213,17 +213,19 @@ export function truncateString(str: string | null | undefined, maxLen: number): 
     return cleanStr.slice(0, maxLen - 1) + "…";
 }
 
-function parseJsonSafe(jsonStr: string | null, fallback: any = null) {
+type JsonRecord = Record<string, unknown>;
+
+function parseJsonSafe<T>(jsonStr: string | null, fallback: T): T {
     if (!jsonStr) return fallback;
     try {
-        return JSON.parse(jsonStr);
+        return JSON.parse(jsonStr) as T;
     } catch {
         return fallback;
     }
 }
 
 export function buildPainSummary(lead: Lead): string {
-    const pains = parseJsonSafe(lead.painSignals, []);
+    const pains = parseJsonSafe<JsonRecord[]>(lead.painSignals, []);
     const isMissingWebsite = lead.websiteStatus === "MISSING";
     const reviews = lead.reviewCount || 0;
 
@@ -247,7 +249,7 @@ export function buildPainSummary(lead: Lead): string {
     let bestPriority = 999;
 
     for (const p of pains) {
-        const pType = (p.type || "").toUpperCase();
+        const pType = String(p.type || "").toUpperCase();
         let currentPriority = 999;
 
         for (const [key, val] of Object.entries(typePriority)) {
@@ -290,7 +292,7 @@ export function buildPainSummary(lead: Lead): string {
 }
 
 export function formatPainReadable(painSignalsString: string | null): string[] {
-    const pains = parseJsonSafe(painSignalsString, []);
+    const pains = parseJsonSafe<JsonRecord[]>(painSignalsString, []);
     if (!Array.isArray(pains) || pains.length === 0) return [];
 
     const typePriority: Record<string, number> = {
@@ -322,13 +324,13 @@ export function formatPainReadable(painSignalsString: string | null): string[] {
 
         if (sevA !== sevB) return sevB - sevA; // desc
 
-        const pTypeA = (a.type || "").toUpperCase();
+        const pTypeA = String(a.type || "").toUpperCase();
         let prioA = 999;
         for (const [key, val] of Object.entries(typePriority)) {
             if (pTypeA.includes(key)) prioA = val;
         }
 
-        const pTypeB = (b.type || "").toUpperCase();
+        const pTypeB = String(b.type || "").toUpperCase();
         let prioB = 999;
         for (const [key, val] of Object.entries(typePriority)) {
             if (pTypeB.includes(key)) prioB = val;
@@ -347,7 +349,7 @@ export function formatPainReadable(painSignalsString: string | null): string[] {
     return sortedPains.slice(0, 3).map(p => {
         const t = p.type || "UNKNOWN";
         const s = p.severity || "0";
-        const ev = p.evidence || "";
+        const ev = String(p.evidence || "");
         const cleanEv = ev.trim().replace(/[\r\n\t]+/g, " | ").replace(/ {2,}/g, " ");
 
         return truncateString(`${t} s${s}: ${cleanEv}`, 120);

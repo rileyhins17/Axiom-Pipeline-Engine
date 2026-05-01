@@ -28,7 +28,10 @@ export function DonutChart({ segments, size = 160, thickness = 14, centerLabel, 
         return () => cancelAnimationFrame(frame)
     }, [])
 
-    let accumulated = 0
+    const segmentLayout = segments.map((seg, i) => {
+        const previousValue = segments.slice(0, i).reduce((sum, item) => sum + item.value, 0)
+        return { ...seg, rotation: total > 0 ? (previousValue / total) * 360 : 0 }
+    })
 
     return (
         <div className="relative inline-flex flex-col items-center">
@@ -40,12 +43,10 @@ export function DonutChart({ segments, size = 160, thickness = 14, centerLabel, 
                     strokeWidth={thickness}
                 />
                 {/* Segments */}
-                {segments.map((seg, i) => {
+                {segmentLayout.map((seg, i) => {
                     const pct = total > 0 ? seg.value / total : 0
                     const segLength = pct * circumference
                     const segOffset = circumference - segLength * progress
-                    const rotation = (accumulated / total) * 360
-                    accumulated += seg.value
 
                     return (
                         <circle
@@ -59,7 +60,7 @@ export function DonutChart({ segments, size = 160, thickness = 14, centerLabel, 
                             className="transition-[stroke-dashoffset] duration-1000 ease-out"
                             style={{
                                 transformOrigin: 'center',
-                                transform: `rotate(${rotation}deg)`,
+                                transform: `rotate(${seg.rotation}deg)`,
                                 filter: `drop-shadow(0 0 4px ${seg.color}40)`,
                                 transitionDelay: `${i * 150}ms`
                             }}

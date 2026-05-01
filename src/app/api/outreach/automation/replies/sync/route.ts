@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { getErrorMessage } from "@/lib/errors";
 import { syncAutomationReplies } from "@/lib/outreach-automation";
 import { requireAdminApiSession } from "@/lib/session";
 
@@ -12,10 +13,10 @@ export async function POST(request: Request) {
   try {
     const result = await syncAutomationReplies();
     return NextResponse.json(result);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Reply sync error:", error);
     return NextResponse.json(
-      { error: error.message || "Failed to sync replies" },
+      { error: getErrorMessage(error, "Failed to sync replies") },
       { status: 500 },
     );
   }

@@ -13,13 +13,25 @@ import {
     truncateString
 } from "./csv";
 
-function parseJsonSafe(jsonStr: string | null, fallback: any = null) {
+type JsonRecord = Record<string, unknown>;
+
+function parseJsonSafe<T>(jsonStr: string | null, fallback: T): T {
     if (!jsonStr) return fallback;
     try {
-        return JSON.parse(jsonStr);
+        return JSON.parse(jsonStr) as T;
     } catch {
         return fallback;
     }
+}
+
+function getTopFix(assessmentString: string | null, index: number) {
+    const assessment = parseJsonSafe<{ topFixes?: unknown[] }>(assessmentString, {});
+    return String(assessment.topFixes?.[index] || "");
+}
+
+function getPainField(painSignalsString: string | null, index: number, field: string) {
+    const pains = parseJsonSafe<JsonRecord[]>(painSignalsString, []);
+    return String(pains[index]?.[field] || "");
 }
 
 function extractProvince(cityStr: string | null): string {
@@ -69,30 +81,21 @@ const callSheetColumns: CsvColumnDef[] = [
     { key: "followup_short", header: "Follow-Up (Short)", resolve: (l: Lead) => truncateString(l.followUpQuestion, 120) },
     { key: "website_grade", header: "Website Grade", resolve: (l: Lead) => l.websiteGrade || "" },
     { key: "disqualify_reason", header: "Disqualify Reason", resolve: (l: Lead) => l.disqualifyReason || "" },
-    { key: "disqualifiers", header: "Disqualifiers", resolve: (l: Lead) => (parseJsonSafe(l.disqualifiers, []) || []).join("; ") },
+    { key: "disqualifiers", header: "Disqualifiers", resolve: (l: Lead) => parseJsonSafe<unknown[]>(l.disqualifiers, []).join("; ") },
     {
         key: "top_fix_1",
         header: "Top Fix 1",
-        resolve: (l: Lead) => {
-            const assessment = parseJsonSafe(l.axiomWebsiteAssessment, {});
-            return assessment?.topFixes?.[0] || "";
-        }
+        resolve: (l: Lead) => getTopFix(l.axiomWebsiteAssessment, 0)
     },
     {
         key: "top_fix_2",
         header: "Top Fix 2",
-        resolve: (l: Lead) => {
-            const assessment = parseJsonSafe(l.axiomWebsiteAssessment, {});
-            return assessment?.topFixes?.[1] || "";
-        }
+        resolve: (l: Lead) => getTopFix(l.axiomWebsiteAssessment, 1)
     },
     {
         key: "top_fix_3",
         header: "Top Fix 3",
-        resolve: (l: Lead) => {
-            const assessment = parseJsonSafe(l.axiomWebsiteAssessment, {});
-            return assessment?.topFixes?.[2] || "";
-        }
+        resolve: (l: Lead) => getTopFix(l.axiomWebsiteAssessment, 2)
     },
     { key: "opener_full", header: "Call Opener (Full)", resolve: (l: Lead) => l.callOpener || "" },
     { key: "followup_full", header: "Follow-Up (Full)", resolve: (l: Lead) => l.followUpQuestion || "" },
@@ -133,29 +136,29 @@ const fullColumns: CsvColumnDef[] = [
     {
         key: "pain1_type",
         header: "Pain 1 Type",
-        resolve: (l: Lead) => parseJsonSafe(l.painSignals, [])[0]?.type || ""
+        resolve: (l: Lead) => getPainField(l.painSignals, 0, "type")
     },
     {
         key: "pain1_evi",
         header: "Pain 1 Evidence",
-        resolve: (l: Lead) => parseJsonSafe(l.painSignals, [])[0]?.evidence || ""
+        resolve: (l: Lead) => getPainField(l.painSignals, 0, "evidence")
     },
     {
         key: "pain2_type",
         header: "Pain 2 Type",
-        resolve: (l: Lead) => parseJsonSafe(l.painSignals, [])[1]?.type || ""
+        resolve: (l: Lead) => getPainField(l.painSignals, 1, "type")
     },
     {
         key: "pain2_evi",
         header: "Pain 2 Evidence",
-        resolve: (l: Lead) => parseJsonSafe(l.painSignals, [])[1]?.evidence || ""
+        resolve: (l: Lead) => getPainField(l.painSignals, 1, "evidence")
     },
-    { key: "score_bv", header: "Score Business Value", resolve: (l: Lead) => parseJsonSafe(l.scoreBreakdown, {})?.businessValue ?? "" },
-    { key: "score_pain", header: "Score Pain Opportunity", resolve: (l: Lead) => parseJsonSafe(l.scoreBreakdown, {})?.painOpportunity ?? "" },
-    { key: "score_reach", header: "Score Reachability", resolve: (l: Lead) => parseJsonSafe(l.scoreBreakdown, {})?.reachability ?? "" },
-    { key: "score_local", header: "Score Local Fit", resolve: (l: Lead) => parseJsonSafe(l.scoreBreakdown, {})?.localFit ?? "" },
-    { key: "top_fixes", header: "Top Fixes", resolve: (l: Lead) => (parseJsonSafe(l.axiomWebsiteAssessment, {})?.topFixes || []).join("; ") },
-    { key: "disqualifiers", header: "Disqualifiers", resolve: (l: Lead) => (parseJsonSafe(l.disqualifiers, []) || []).join("; ") },
+    { key: "score_bv", header: "Score Business Value", resolve: (l: Lead) => parseJsonSafe<JsonRecord>(l.scoreBreakdown, {}).businessValue ?? "" },
+    { key: "score_pain", header: "Score Pain Opportunity", resolve: (l: Lead) => parseJsonSafe<JsonRecord>(l.scoreBreakdown, {}).painOpportunity ?? "" },
+    { key: "score_reach", header: "Score Reachability", resolve: (l: Lead) => parseJsonSafe<JsonRecord>(l.scoreBreakdown, {}).reachability ?? "" },
+    { key: "score_local", header: "Score Local Fit", resolve: (l: Lead) => parseJsonSafe<JsonRecord>(l.scoreBreakdown, {}).localFit ?? "" },
+    { key: "top_fixes", header: "Top Fixes", resolve: (l: Lead) => parseJsonSafe<{ topFixes?: unknown[] }>(l.axiomWebsiteAssessment, {}).topFixes?.join("; ") || "" },
+    { key: "disqualifiers", header: "Disqualifiers", resolve: (l: Lead) => parseJsonSafe<unknown[]>(l.disqualifiers, []).join("; ") },
     { key: "disqualify_reason", header: "Disqualify Reason", resolve: (l: Lead) => l.disqualifyReason || "" },
     { key: "archived", header: "Archived", resolve: (l: Lead) => l.isArchived ? "Yes" : "No" }
 ];

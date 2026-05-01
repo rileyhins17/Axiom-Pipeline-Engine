@@ -149,3 +149,38 @@ test("automation sequence timeline includes initial plus three periodic follow-u
   assert(timeline[2].getTime() > timeline[1].getTime());
   assert(timeline[3].getTime() > timeline[2].getTime());
 });
+
+test("automation sequence timeline refuses zero-day follow-up delays", () => {
+  const timeline = buildScheduledTimeline(new Date("2026-01-01T12:00:00.000Z"), {
+    timezone: "America/Toronto",
+    weekdaysOnly: false,
+    sendWindowStartHour: 0,
+    sendWindowStartMinute: 0,
+    sendWindowEndHour: 23,
+    sendWindowEndMinute: 59,
+    initialDelayMinMinutes: 1,
+    initialDelayMaxMinutes: 1,
+    followUp1BusinessDays: 0,
+    followUp2BusinessDays: 0,
+    followUp3BusinessDays: 0,
+    schedulerClaimBatch: 60,
+    replySyncStaleMinutes: 15,
+    leadSnapshot: {
+      id: 1,
+      businessName: "Lead 1 Roofing",
+      city: "Kitchener",
+      niche: "Roofers",
+      email: "owner@lead1.ca",
+      contactName: null,
+      websiteStatus: "ACTIVE",
+      axiomScore: 65,
+      axiomTier: "B",
+    },
+    enrichmentSnapshot: {},
+  });
+
+  const day = 24 * 60 * 60 * 1000;
+  assert(timeline[1].getTime() - timeline[0].getTime() >= 2 * day);
+  assert(timeline[2].getTime() - timeline[1].getTime() >= 3 * day);
+  assert(timeline[3].getTime() - timeline[2].getTime() >= 4 * day);
+});

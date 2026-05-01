@@ -1,6 +1,10 @@
 export type { ExecuteScrapeJobInput, ExecuteScrapeJobResult } from "./scrape-engine";
 
-export async function executeScrapeJob(...args: any[]) {
-  const engine = (await import("./scrape-engine")) as any;
+type ScrapeEngineModule = typeof import("./scrape-engine");
+
+export async function executeScrapeJob(
+  ...args: Parameters<ScrapeEngineModule["executeScrapeJob"]>
+): Promise<Awaited<ReturnType<ScrapeEngineModule["executeScrapeJob"]>>> {
+  const engine: ScrapeEngineModule = await import("./scrape-engine");
   return engine.executeScrapeJob(...args);
 }

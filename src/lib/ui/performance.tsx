@@ -17,18 +17,15 @@ const PerformanceContext = createContext<PerformanceCtx>({
 const STORAGE_KEY = "omniscient-perf-mode";
 
 export function PerformanceProvider({ children }: { children: ReactNode }) {
-    const [reducedMotion, setReducedMotion] = useState(false);
+    const [reducedMotion, setReducedMotion] = useState(() => {
+        if (typeof window === "undefined") return false;
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (stored !== null) return stored === "true";
+        return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    });
 
     useEffect(() => {
-        // Honour OS preference
         const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-        const stored = localStorage.getItem(STORAGE_KEY);
-
-        if (stored !== null) {
-            setReducedMotion(stored === "true");
-        } else if (mq.matches) {
-            setReducedMotion(true);
-        }
 
         const handler = (e: MediaQueryListEvent) => {
             if (localStorage.getItem(STORAGE_KEY) === null) {

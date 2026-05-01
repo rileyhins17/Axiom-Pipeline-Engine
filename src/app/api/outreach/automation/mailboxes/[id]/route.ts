@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { getErrorMessage } from "@/lib/errors";
 import { updateMailbox } from "@/lib/outreach-automation";
 import { requireAdminApiSession } from "@/lib/session";
 
@@ -17,10 +18,10 @@ export async function PATCH(
     const { id } = await params;
     const mailbox = await updateMailbox(id, body);
     return NextResponse.json({ mailbox });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Mailbox update error:", error);
     return NextResponse.json(
-      { error: error.message || "Failed to update mailbox" },
+      { error: getErrorMessage(error, "Failed to update mailbox") },
       { status: 500 },
     );
   }

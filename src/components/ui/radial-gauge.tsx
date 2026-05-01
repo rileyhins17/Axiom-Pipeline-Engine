@@ -12,12 +12,13 @@ interface RadialGaugeProps {
 
 export function RadialGauge({ value, label, size = 120, color = "emerald", thickness = 8, animate = true }: RadialGaugeProps) {
     const [displayValue, setDisplayValue] = useState(0)
+    const renderedValue = animate ? displayValue : value
     const radius = (size - thickness) / 2
     const circumference = 2 * Math.PI * radius
-    const offset = circumference - (displayValue / 100) * circumference
+    const offset = circumference - (renderedValue / 100) * circumference
 
     useEffect(() => {
-        if (!animate) { setDisplayValue(value); return }
+        if (!animate) return
         let frame: number
         const duration = 1200
         const start = performance.now()
@@ -73,7 +74,7 @@ export function RadialGauge({ value, label, size = 120, color = "emerald", thick
                 />
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className={`text-2xl font-bold font-mono ${c.text}`}>{displayValue}</span>
+                <span className={`text-2xl font-bold font-mono ${c.text}`}>{renderedValue}</span>
                 <span className="text-[9px] uppercase tracking-widest text-muted-foreground mt-0.5">{label}</span>
             </div>
         </div>

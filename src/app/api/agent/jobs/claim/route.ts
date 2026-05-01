@@ -4,6 +4,7 @@ import { writeAuditEvent } from "@/lib/audit";
 import { getClientIp } from "@/lib/cloudflare";
 import { normalizeAgentName } from "@/lib/agent-protocol";
 import { generateDedupeKey } from "@/lib/dedupe";
+import { getErrorMessage } from "@/lib/errors";
 import { getServerEnv } from "@/lib/env";
 import { getPrisma } from "@/lib/prisma";
 import {
@@ -81,8 +82,8 @@ export async function POST(request: Request) {
       existingDedupeKeys,
       job,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Claim job error:", error);
-    return NextResponse.json({ error: error.message || "Failed to claim job" }, { status: 500 });
+    return NextResponse.json({ error: getErrorMessage(error, "Failed to claim job") }, { status: 500 });
   }
 }

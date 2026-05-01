@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { getErrorMessage } from "@/lib/errors";
 import { listAutomationOverview } from "@/lib/outreach-automation";
 import { requireAdminApiSession } from "@/lib/session";
 
@@ -12,10 +13,10 @@ export async function GET(request: Request) {
   try {
     const overview = await listAutomationOverview();
     return NextResponse.json(overview);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Automation overview error:", error);
     return NextResponse.json(
-      { error: error.message || "Failed to fetch automation overview" },
+      { error: getErrorMessage(error, "Failed to fetch automation overview") },
       { status: 500 },
     );
   }

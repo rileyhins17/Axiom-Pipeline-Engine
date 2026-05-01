@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { getErrorMessage } from "@/lib/errors";
 import { getPrisma } from "@/lib/prisma";
 import { requireApiSession } from "@/lib/session";
 
@@ -34,10 +35,10 @@ export async function GET(request: Request) {
         businessName: leadNames.get(email.leadId) || `Lead #${email.leadId}`,
       })),
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Email log error:", error);
     return NextResponse.json(
-      { error: error.message || "Failed to fetch email log" },
+      { error: getErrorMessage(error, "Failed to fetch email log") },
       { status: 500 },
     );
   }

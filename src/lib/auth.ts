@@ -16,6 +16,8 @@ function isAllowedEmail(email: string) {
 }
 
 const globalForAuth = globalThis as typeof globalThis & {
+  // better-auth's plugin-augmented return type is not stable through ReturnType<typeof betterAuth>.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   axiomAuth?: any;
 };
 

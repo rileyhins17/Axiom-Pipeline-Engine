@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { getErrorMessage } from "@/lib/errors";
 import { queueLeadsForAutomation } from "@/lib/outreach-automation";
 import { getPrisma } from "@/lib/prisma";
 import { requireAdminApiSession } from "@/lib/session";
@@ -54,10 +55,10 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({ ...result, immediate: Boolean(body.immediate) });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Automation queue error:", error);
     return NextResponse.json(
-      { error: error.message || "Failed to queue leads for automation" },
+      { error: getErrorMessage(error, "Failed to queue leads for automation") },
       { status: 500 },
     );
   }

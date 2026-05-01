@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { writeAuditEvent } from "@/lib/audit";
 import { getClientIp } from "@/lib/cloudflare";
+import { getErrorMessage } from "@/lib/errors";
 import { getServerEnv } from "@/lib/env";
 import { CsvColumnDef, CsvDialectOptions, generateCsv, sortLeadsDeterministic } from "@/lib/export/csv";
 import { exportPresets } from "@/lib/export/export-presets";
@@ -13,7 +14,14 @@ function sanitizeFilenamePart(value: string): string {
   return value.replace(/[^a-zA-Z0-9]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
 }
 
-function getFilename(presetName: string, filters: any, format = "csv"): string {
+type ExportFilters = {
+  city?: string | null;
+  delimiter?: string | null;
+  niche?: string | null;
+  tier?: string[] | null;
+};
+
+function getFilename(presetName: string, filters: ExportFilters, format = "csv"): string {
   const parts = ["omniscient_export_v4", presetName];
   if (filters.tier && filters.tier.length > 0) {
     parts.push(`tier-${sanitizeFilenamePart(filters.tier.join("-"))}`);
@@ -105,7 +113,7 @@ export async function GET(request: Request) {
 
   try {
     const prisma = getPrisma();
-    const where: any = {};
+    const where: Record<string, unknown> = {};
 
     if (!includeArchived) {
       where.isArchived = false;
@@ -117,7 +125,7 @@ export async function GET(request: Request) {
     if (cityFilter) where.city = cityFilter;
     if (websiteStatus) where.websiteStatus = websiteStatus;
 
-    const andConditions: any[] = [];
+    const andConditions: Record<string, unknown>[] = [];
     if (hasEmail === "1") {
       andConditions.push({ email: { not: null, gt: "" } });
     } else if (hasEmail === "0") {
@@ -222,7 +230,7 @@ export async function GET(request: Request) {
         },
       });
 
-      return new Response(xlsxBuffer as any, {
+      return new Response(new Uint8Array(xlsxBuffer), {
         status: 200,
         headers: {
           "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
@@ -294,8 +302,8 @@ export async function GET(request: Request) {
     }
 
     return new NextResponse(csvContent, { headers });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Export error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: getErrorMessage(error, "Failed to export leads") }, { status: 500 });
   }
 }
