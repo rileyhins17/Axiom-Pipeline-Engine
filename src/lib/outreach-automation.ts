@@ -494,7 +494,7 @@ function startOfHour(date: Date) {
 
 function startOfDay(date: Date) {
   const copy = new Date(date);
-  copy.setHours(0, 0, 0, 0);
+  copy.setUTCHours(0, 0, 0, 0);
   return copy;
 }
 
@@ -3335,12 +3335,32 @@ async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: numbe
   const claims: SchedulerClaim[] = [];
   // Track per-mailbox claims to ensure equal distribution
   const mailboxClaimCounts = new Map<string, number>();
+  // Track mailboxes that are known to be rate-limited this tick so we
+  // can skip remaining steps for them without redundant DB queries.
+  const blockedMailboxIds = new Set<string>();
+  // Collect all sendable mailbox IDs so we can early-exit when every
+  // mailbox is blocked (prevents O(N) rescheduling from burning CPU).
+  const sendableMailboxIds = new Set(
+    (await listSendableMailboxes(prisma)).map((m) => m.id),
+  );
 
   for (const step of dueSteps) {
+    // Early-exit: if every sendable mailbox is rate-limited, further
+    // iteration would only reschedule steps — stop here to save CPU.
+    if (sendableMailboxIds.size > 0 && blockedMailboxIds.size >= sendableMailboxIds.size) {
+      console.log(`[scheduler] All ${sendableMailboxIds.size} sendable mailbox(es) are rate-limited — stopping claim loop early`);
+      break;
+    }
+
     const sequence = await prisma.outreachSequence.findUnique({
       where: { id: step.sequenceId },
     }) as OutreachSequenceRecord | null;
     if (!sequence || !sequence.assignedMailboxId) {
+      continue;
+    }
+
+    // Skip steps whose mailbox is already known to be blocked this tick.
+    if (blockedMailboxIds.has(sequence.assignedMailboxId)) {
       continue;
     }
     if (TERMINAL_SEQUENCE_STATUSES.includes(sequence.status as (typeof TERMINAL_SEQUENCE_STATUSES)[number])) {
@@ -3385,6 +3405,8 @@ async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: numbe
 
     const mailboxGate = await canMailboxSend(prisma, mailbox, now, liveSequenceConfig, settings);
     if (!mailboxGate.allowed) {
+      // Mark this mailbox as blocked so remaining steps skip it instantly.
+      blockedMailboxIds.add(mailbox.id);
       const nextAttempt = await getRateLimitRecheckAt(
         prisma,
         { sequence, step, mailbox },
@@ -3402,13 +3424,21 @@ async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: numbe
           errorMessage: mailboxGate.reason,
         },
       }).catch(() => null);
+      // For transient rate-limit blockers, do NOT pollute stopReason —
+      // the sequence is not "stopped", it is just waiting for capacity.
+      const isTransientRateLimit =
+        mailboxGate.reason === "mailbox_cooldown" ||
+        mailboxGate.reason === "hourly_cap_reached" ||
+        mailboxGate.reason === "daily_cap_reached" ||
+        mailboxGate.reason === "global_daily_cap_reached" ||
+        mailboxGate.reason === "outside_send_window";
       await prisma.outreachSequence.update({
         where: { id: sequence.id },
         data: {
           status: sequence.lastSentAt ? "ACTIVE" : "QUEUED",
           currentStep: step.stepType,
           nextScheduledAt: nextAttempt,
-          stopReason: mailboxGate.reason,
+          ...(isTransientRateLimit ? {} : { stopReason: mailboxGate.reason }),
         },
       }).catch(() => null);
       if (mailboxGate.reason === "mailbox_cooldown") {
@@ -3417,12 +3447,13 @@ async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: numbe
       continue;
     }
 
-    // Fair distribution: one claim per mailbox per cron tick. The scheduler
-    // runs every minute and send-time gates enforce cooldown/hour/day caps.
-    // Claiming more than one per mailbox creates stuck CLAIMED rows when any
-    // external provider call hangs.
+    // Allow up to 2 claims per mailbox per cron tick. The send-time
+    // canMailboxSend gate re-checks cooldown/hour/day caps before each
+    // actual send, so claiming 2 lets the second proceed once the first's
+    // cooldown expires (the send loop processes them sequentially). Stale
+    // claim recovery handles any that remain stuck.
     const currentMailboxClaims = mailboxClaimCounts.get(mailbox.id) || 0;
-    const maxPerMailbox = 1;
+    const maxPerMailbox = 2;
     if (currentMailboxClaims >= maxPerMailbox) {
       continue;
     }
