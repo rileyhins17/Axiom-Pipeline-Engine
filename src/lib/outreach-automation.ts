@@ -2379,7 +2379,7 @@ export async function mutateSequence(
   return prisma.outreachSequence.findUnique({ where: { id: sequence.id } });
 }
 
-async function canMailboxSend(prisma: PrismaLike, mailbox: OutreachMailboxRecord, now: Date, _config: OutreachSequenceConfig, liveSettings?: OutreachAutomationSettingRecord) {
+async function canMailboxSend(prisma: PrismaLike, mailbox: OutreachMailboxRecord, now: Date, _config: OutreachSequenceConfig, liveSettings?: OutreachAutomationSettingRecord, stepNumber?: number) {
   if (!MAILBOX_SENDABLE_STATUSES.includes(mailbox.status as (typeof MAILBOX_SENDABLE_STATUSES)[number])) {
     return { allowed: false, reason: "mailbox_disabled" as AutomationBlockerReason };
   }
@@ -2391,6 +2391,20 @@ async function canMailboxSend(prisma: PrismaLike, mailbox: OutreachMailboxRecord
   }
 
   const { sentToday, sentThisHour } = await getMailboxLoad(prisma, mailbox.id, now);
+  if (stepNumber && stepNumber > 1) {
+    const followupSentToday = await prisma.outreachSequenceStep.count({
+      where: {
+        sequence: { assignedMailboxId: mailbox.id },
+        stepNumber: { not: 1 },
+        status: "SENT",
+        sentAt: { gte: startOfDay(now) },
+      },
+    }).catch(() => 0);
+    const maxFollowups = Math.max(1, Math.floor(mailbox.dailyLimit * 0.25));
+    if (followupSentToday >= maxFollowups) {
+      return { allowed: false, reason: "daily_cap_reached" as AutomationBlockerReason };
+    }
+  }
   if (sentToday >= mailbox.dailyLimit) {
     return { allowed: false, reason: "daily_cap_reached" as AutomationBlockerReason };
   }
@@ -3333,7 +3347,7 @@ async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: numbe
       take: dueStepScanLimit,
     }) as Promise<OutreachSequenceStepRecord[]>,
   ]);
-  const dueSteps = initialDueSteps.length > 0 ? initialDueSteps : followUpDueSteps;
+  const dueSteps = [...initialDueSteps, ...followUpDueSteps];
 
   const claims: SchedulerClaim[] = [];
   // Track per-mailbox claims to ensure equal distribution
@@ -3406,7 +3420,7 @@ async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: numbe
       continue;
     }
 
-    const mailboxGate = await canMailboxSend(prisma, mailbox, now, liveSequenceConfig, settings);
+    const mailboxGate = await canMailboxSend(prisma, mailbox, now, liveSequenceConfig, settings, step.stepNumber);
     if (!mailboxGate.allowed) {
       // Mark this mailbox as blocked so remaining steps skip it instantly.
       blockedMailboxIds.add(mailbox.id);
@@ -3951,3 +3965,4 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
     throw error;
   }
 }
+
