@@ -34,6 +34,7 @@ export interface WebsiteAssessment {
 }
 
 export interface ContactQuality {
+  email?: string | null;
   emailType: "owner" | "staff" | "generic" | "unknown";
   emailConfidence: number;
   phoneConfidence: number;
@@ -292,7 +293,7 @@ function scoreReachability(input: {
   let score = 0;
 
   const email = {
-    email: "present",
+    email: input.contact.email,
     emailConfidence: input.contact.emailConfidence,
     emailType: input.contact.emailType,
     emailFlags: input.contact.emailFlags || [],
@@ -425,7 +426,7 @@ export function computeAxiomScore(input: {
   const rawScore = clamp(businessValue + painOpportunity + reachability + localFit, 0, 100);
 
   const hasValidEmail = hasValidPipelineEmail({
-    email: "present",
+    email: input.contact.email,
     emailConfidence: input.contact.emailConfidence,
     emailType: input.contact.emailType,
     emailFlags: input.contact.emailFlags || [],
@@ -561,6 +562,7 @@ function validateContactBasic(email: string | null, phone: string | null): Conta
   }
 
   return {
+    email: emailValue,
     emailType,
     emailConfidence,
     phoneConfidence,

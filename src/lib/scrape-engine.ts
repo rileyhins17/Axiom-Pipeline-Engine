@@ -1531,10 +1531,13 @@ export async function executeScrapeJob(input: ExecuteScrapeJobInput): Promise<Ex
         }
       }
 
-      const contactValidation = validateContact(email, target.phone, {
-        businessWebsite: target.website,
-        ownerName,
-      });
+      const contactValidation = {
+        ...validateContact(email, target.phone, {
+          businessWebsite: target.website,
+          ownerName,
+        }),
+        email,
+      };
       await input.sendEvent({
         message: `[EMAIL] Final ${email || "none"} | type=${contactValidation.emailType} | confidence=${contactValidation.emailConfidence.toFixed(2)}`,
       });
