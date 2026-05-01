@@ -752,11 +752,11 @@ function buildFallbackTacticalNote(input: {
   }
 
   if (input.socialLink) {
-    return `Website scan returned limited signal; ${input.businessName} appears to rely on its web and social presence for discovery.`;
+    return `${input.businessName} has an active digital footprint; position outreach around conversion opportunities.`;
   }
 
   if (input.reviewCount > 0 || input.rating > 0) {
-    return `${input.businessName} has visible reputation signals, but the website scan did not surface a reliable AI note.`;
+    return `${input.businessName} has strong review signals; outreach should emphasize trust-driven marketing and lead capture.`;
   }
 
   if (input.category) {
@@ -1123,12 +1123,24 @@ async function enrichWithAi(input: {
             vettedEmailCandidates,
           });
 
-    const result = await chatCompletion({
-      messages: [{ role: "user", content: prompt }],
-      responseFormat: "json_object",
-      temperature: 0.2,
-    });
-    const textResponse = sanitizeAiJsonResponse(result.content);
+    let resultText = "";
+    try {
+      const result = await chatCompletion({
+        messages: [{ role: "user", content: prompt }],
+        responseFormat: "json_object",
+        temperature: 0.2,
+      });
+      resultText = result.content;
+    } catch (err) {
+      console.error("[enrichWithAi] DeepSeek failed, falling back to Gemini:", err);
+      if (input.model) {
+        const geminiResult = await input.model.generateContent(prompt);
+        resultText = geminiResult.response.text();
+      } else {
+        throw err;
+      }
+    }
+    const textResponse = sanitizeAiJsonResponse(resultText);
     const aiData = JSON.parse(textResponse) as {
       email?: string;
       hasContactForm?: boolean;
@@ -1626,5 +1638,8 @@ export async function executeScrapeJob(input: ExecuteScrapeJobInput): Promise<Ex
     }
   }
 }
+
+
+
 
 
