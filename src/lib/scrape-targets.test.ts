@@ -67,3 +67,28 @@ test("scrape target selection ranks proven adequate groups above stale zero-emai
   assert.equal(getScrapeTargetPriorityBand(provenInitialSource), 0);
   assert.equal(ordered[0].id, provenInitialSource.id);
 });
+
+test("scrape target selection cools down recently failed proven targets", () => {
+  const recentlyFailed = makeCandidate({
+    id: "recently-failed",
+    niche: "Custom Cabinetry",
+    city: "Guelph",
+    adequateLeadCount: 11,
+    lastJobStatus: "failed",
+    lastRunAt: new Date(),
+  });
+  const nextProvenTarget = makeCandidate({
+    id: "next-proven-target",
+    niche: "Roofers",
+    city: "Waterloo",
+    adequateLeadCount: 10,
+    lastJobStatus: "completed",
+    lastRunAt: null,
+    totalRuns: 0,
+  });
+
+  const ordered = [recentlyFailed, nextProvenTarget].sort(compareScrapeTargetCandidates);
+
+  assert.equal(getScrapeTargetPriorityBand(recentlyFailed), 7);
+  assert.equal(ordered[0].id, nextProvenTarget.id);
+});
