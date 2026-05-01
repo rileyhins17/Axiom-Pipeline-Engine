@@ -43,6 +43,7 @@ type Lead = {
     phone: string | null;
     email: string | null;
     socialLink: string | null;
+    websiteUrl?: string | null;
     rating: number | null;
     reviewCount: number | null;
     websiteStatus: string | null;
@@ -185,6 +186,19 @@ function LeadDetails({ lead }: { lead: Lead }) {
                         <ExternalLink className="h-3 w-3 flex-none" />
                         <span className="truncate">{lead.socialLink.replace(/https?:\/\//, "")}</span>
                     </a>
+                ) : null}
+                {lead.websiteUrl ? (
+                    <div className="pt-1">
+                        <a
+                            href={lead.websiteUrl.startsWith("http") ? lead.websiteUrl : `https://${lead.websiteUrl}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex max-w-full items-center gap-1.5 text-xs text-emerald-300 hover:text-emerald-200"
+                        >
+                            <Globe className="h-3.5 w-3.5 flex-none" />
+                            <span className="truncate">{lead.websiteUrl.replace(/https?:\/\//, "")}</span>
+                        </a>
+                    </div>
                 ) : null}
             </div>
 
