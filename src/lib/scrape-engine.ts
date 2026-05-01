@@ -5,6 +5,7 @@ import {
   type PainSignal,
   type WebsiteAssessment,
 } from "@/lib/axiom-scoring";
+import { chatCompletion } from "@/lib/deepseek";
 import { validateContact } from "@/lib/contact-validation";
 import { extractDomain, generateDedupeKey } from "@/lib/dedupe";
 import { checkDisqualifiers } from "@/lib/disqualifiers";
@@ -1122,8 +1123,12 @@ async function enrichWithAi(input: {
             vettedEmailCandidates,
           });
 
-    const result = await input.model!.generateContent(prompt);
-    const textResponse = sanitizeAiJsonResponse(result.response.text());
+    const result = await chatCompletion({
+      messages: [{ role: "user", content: prompt }],
+      responseFormat: "json_object",
+      temperature: 0.2,
+    });
+    const textResponse = sanitizeAiJsonResponse(result.content);
     const aiData = JSON.parse(textResponse) as {
       email?: string;
       hasContactForm?: boolean;
@@ -1371,7 +1376,7 @@ export async function executeScrapeJob(input: ExecuteScrapeJobInput): Promise<Ex
       let hasContactForm = false;
       let hasSocialMessaging = /facebook|instagram|messenger/i.test(socialLink);
 
-      if (model) {
+      if (model || true) {
         const aiResult = await enrichWithAi({
           businessName: target.businessName,
           category: scoringCategory,
@@ -1621,4 +1626,5 @@ export async function executeScrapeJob(input: ExecuteScrapeJobInput): Promise<Ex
     }
   }
 }
+
 
