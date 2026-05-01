@@ -125,24 +125,22 @@ export async function persistScrapeJobLead(input: {
   }
 
   if (currentJob.actorUserId === "system") {
-    if (!isAdequateAutonomousLead(validation.lead)) {
-      await appendScrapeJobEvent(input.jobId, "log", {
-        jobId: input.jobId,
-        jobStatus: currentJob.status,
-        message: `[LEAD] Skipped non-adequate autonomous lead: ${validation.lead.businessName} (${validation.lead.axiomScore ?? "n/a"}/100).`,
-      });
-      return null;
-    }
-
+    const isAdequate = isAdequateAutonomousLead(validation.lead);
     const cap = getAutonomousDailyLeadCap();
     const adequateToday = await countAdequateLeadsToday();
-    if (adequateToday >= cap) {
+
+    if (!isAdequate) {
       await appendScrapeJobEvent(input.jobId, "log", {
         jobId: input.jobId,
         jobStatus: currentJob.status,
-        message: `[LEAD] Skipped autonomous lead because the rolling 24h adequate-lead cap is reached (${adequateToday}/${cap}).`,
+        message: `[LEAD] Saved non-adequate autonomous lead to vault (will not be queued): ${validation.lead.businessName} (${validation.lead.axiomScore ?? "n/a"}/100).`,
       });
-      return null;
+    } else if (adequateToday >= cap) {
+      await appendScrapeJobEvent(input.jobId, "log", {
+        jobId: input.jobId,
+        jobStatus: currentJob.status,
+        message: `[LEAD] Saved adequate autonomous lead to vault, but daily intake cap is reached (${adequateToday}/${cap}).`,
+      });
     }
   }
 
