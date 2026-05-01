@@ -89,6 +89,31 @@ export type QueueAutomationResult = {
   skipped: Array<{ leadId: number; reason: string }>;
 };
 
+export type AutomationFirstTouchDiagnostics = {
+  eligibleFirstTouchCount: number;
+  queuedFirstTouchCount: number;
+  skippedAlreadyContactedCount: number;
+  skippedGenericEmailCount: number;
+  skippedCooldownCount: number;
+  skippedExistingOpenStepCount: number;
+};
+
+export type AutomationReadyLeadSelectionInput = {
+  leads: LeadRecord[];
+  activeLeadIds?: Set<number>;
+  activeRecipientEmails?: Set<string>;
+  sentRecipientEmails?: Set<string>;
+  suppressedEmails?: Set<string>;
+  suppressedDomains?: Set<string>;
+  openFirstTouchLeadIds?: Set<number>;
+  openFirstTouchRecipientEmails?: Set<string>;
+};
+
+export type AutomationReadyLeadSelectionResult = {
+  leads: LeadRecord[];
+  diagnostics: AutomationFirstTouchDiagnostics;
+};
+
 export type OutreachSequenceSummary = OutreachSequenceRecord & {
   lead?: LeadRecord | null;
   mailbox?: OutreachMailboxRecord | null;
@@ -246,6 +271,7 @@ const ACTIVE_SEQUENCE_STATUSES = ["QUEUED", "ACTIVE", "PAUSED", "SENDING"] as co
 const CLAIMABLE_SEQUENCE_STATUSES = ["QUEUED", "ACTIVE", "SENDING"] as const;
 const TERMINAL_SEQUENCE_STATUSES = ["STOPPED", "FAILED", "COMPLETED"] as const;
 const MAILBOX_SENDABLE_STATUSES = ["ACTIVE", "WARMING"] as const;
+const OPEN_FIRST_TOUCH_STEP_STATUSES = ["SCHEDULED", "CLAIMED", "SENDING"] as const;
 const D1_IN_CLAUSE_CHUNK_SIZE = 40;
 const REQUEUEABLE_STALE_STOP_REASONS = new Set([
   "below_send_min_score",
@@ -269,6 +295,20 @@ const FIRST_TOUCH_RECHECK_BLOCKERS = [
 
 function normalizeEmail(email: string | null | undefined) {
   return (email || "").trim().toLowerCase();
+}
+
+export function createFirstTouchDiagnostics(
+  overrides: Partial<AutomationFirstTouchDiagnostics> = {},
+): AutomationFirstTouchDiagnostics {
+  return {
+    eligibleFirstTouchCount: 0,
+    queuedFirstTouchCount: 0,
+    skippedAlreadyContactedCount: 0,
+    skippedGenericEmailCount: 0,
+    skippedCooldownCount: 0,
+    skippedExistingOpenStepCount: 0,
+    ...overrides,
+  };
 }
 
 const SHARED_EMAIL_PROVIDER_EXACT_DOMAINS = new Set([
@@ -1409,11 +1449,175 @@ async function getActiveAutomationRecipientEmails(prisma: PrismaLike) {
   return emails;
 }
 
-export async function listAutomationReadyLeads(prisma: PrismaLike = getPrisma()) {
+type OpenFirstTouchAutomationCandidate = {
+  stepId: string;
+  sequenceId: string;
+  leadId: number;
+  recipientEmail: string;
+  scheduledFor: Date | null;
+};
+
+type OpenFirstTouchAutomationState = {
+  leadIds: Set<number>;
+  recipientEmails: Set<string>;
+};
+
+async function getOpenFirstTouchAutomationCandidates(prisma: PrismaLike) {
+  const steps = (await prisma.outreachSequenceStep.findMany({
+    where: {
+      stepNumber: 1,
+      status: { in: [...OPEN_FIRST_TOUCH_STEP_STATUSES] },
+    },
+  })) as OutreachSequenceStepRecord[];
+
+  if (steps.length === 0) {
+    return [] satisfies OpenFirstTouchAutomationCandidate[];
+  }
+
+  const sequenceIds = Array.from(new Set(steps.map((step) => step.sequenceId)));
+  const sequences: Array<Pick<OutreachSequenceRecord, "id" | "leadId">> = [];
+  for (const chunk of chunkArray(sequenceIds)) {
+    const chunkSequences = (await prisma.outreachSequence.findMany({
+      where: { id: { in: chunk } },
+      select: { id: true, leadId: true },
+    })) as Array<Pick<OutreachSequenceRecord, "id" | "leadId">>;
+    sequences.push(...chunkSequences);
+  }
+
+  const sequenceById = new Map(sequences.map((sequence) => [sequence.id, sequence]));
+  const leadIds = Array.from(new Set(sequences.map((sequence) => sequence.leadId)));
+  const leadMap = await getLeadMap(prisma, leadIds);
+  const candidates: OpenFirstTouchAutomationCandidate[] = [];
+
+  for (const step of steps) {
+    const sequence = sequenceById.get(step.sequenceId);
+    if (!sequence) continue;
+    const recipientEmail = normalizeEmail(leadMap.get(sequence.leadId)?.email);
+    if (!recipientEmail) continue;
+    candidates.push({
+      stepId: step.id,
+      sequenceId: step.sequenceId,
+      leadId: sequence.leadId,
+      recipientEmail,
+      scheduledFor: coerceDate(step.scheduledFor),
+    });
+  }
+
+  return candidates;
+}
+
+function buildOpenFirstTouchAutomationState(
+  candidates: OpenFirstTouchAutomationCandidate[],
+): OpenFirstTouchAutomationState {
+  return {
+    leadIds: new Set(candidates.map((candidate) => candidate.leadId)),
+    recipientEmails: new Set(candidates.map((candidate) => candidate.recipientEmail)),
+  };
+}
+
+async function getOpenFirstTouchAutomationState(prisma: PrismaLike) {
+  return buildOpenFirstTouchAutomationState(await getOpenFirstTouchAutomationCandidates(prisma));
+}
+
+function compareOpenFirstTouchCandidates(
+  a: OpenFirstTouchAutomationCandidate,
+  b: OpenFirstTouchAutomationCandidate,
+) {
+  const scheduledDiff = (a.scheduledFor?.getTime() || 0) - (b.scheduledFor?.getTime() || 0);
+  if (scheduledDiff !== 0) return scheduledDiff;
+  return a.stepId.localeCompare(b.stepId);
+}
+
+async function hasHigherPriorityOpenFirstTouchForRecipient(
+  prisma: PrismaLike,
+  currentStep: OutreachSequenceStepRecord,
+  recipientEmail: string,
+) {
+  const normalizedRecipient = normalizeEmail(recipientEmail);
+  if (!normalizedRecipient) {
+    return false;
+  }
+
+  const matchingCandidates = (await getOpenFirstTouchAutomationCandidates(prisma))
+    .filter((candidate) => candidate.recipientEmail === normalizedRecipient);
+  if (matchingCandidates.length === 0) {
+    return false;
+  }
+
+  const currentIsOpen = matchingCandidates.some((candidate) => candidate.stepId === currentStep.id);
+  if (!currentIsOpen) {
+    return true;
+  }
+
+  matchingCandidates.sort(compareOpenFirstTouchCandidates);
+  return matchingCandidates[0]?.stepId !== currentStep.id;
+}
+
+export function selectAutomationReadyLeads(
+  input: AutomationReadyLeadSelectionInput,
+): AutomationReadyLeadSelectionResult {
+  const activeLeadIds = input.activeLeadIds ?? new Set<number>();
+  const activeRecipientEmails = input.activeRecipientEmails ?? new Set<string>();
+  const sentRecipientEmails = input.sentRecipientEmails ?? new Set<string>();
+  const suppressedEmails = input.suppressedEmails ?? new Set<string>();
+  const suppressedDomains = input.suppressedDomains ?? new Set<string>();
+  const openFirstTouchLeadIds = input.openFirstTouchLeadIds ?? new Set<number>();
+  const openFirstTouchRecipientEmails = input.openFirstTouchRecipientEmails ?? new Set<string>();
+  const diagnostics = createFirstTouchDiagnostics();
+  const seenRecipientEmails = new Set<string>();
+  const readyLeads: LeadRecord[] = [];
+
+  for (const lead of input.leads) {
+    const normalizedEmail = normalizeEmail(lead.email);
+    const alreadyContacted =
+      hasAlreadyReceivedAutomationEmail(lead) ||
+      Boolean(normalizedEmail && sentRecipientEmails.has(normalizedEmail));
+    if (alreadyContacted) {
+      diagnostics.skippedAlreadyContactedCount += 1;
+      continue;
+    }
+
+    if (String(lead.emailType || "").trim().toLowerCase() === "generic") {
+      diagnostics.skippedGenericEmailCount += 1;
+      continue;
+    }
+
+    const hasOpenFirstTouchStep =
+      openFirstTouchLeadIds.has(lead.id) ||
+      Boolean(normalizedEmail && openFirstTouchRecipientEmails.has(normalizedEmail));
+    if (hasOpenFirstTouchStep) {
+      diagnostics.skippedExistingOpenStepCount += 1;
+      continue;
+    }
+
+    if (activeLeadIds.has(lead.id)) continue;
+    if (!normalizedEmail) continue;
+    if (seenRecipientEmails.has(normalizedEmail)) continue;
+    if (activeRecipientEmails.has(normalizedEmail)) continue;
+    if (suppressedEmails.has(normalizedEmail)) continue;
+    const businessDomain = getAutomationBusinessDomain(lead);
+    if (businessDomain && suppressedDomains.has(businessDomain)) continue;
+    if (!isLeadQueueReady(lead)) continue;
+    seenRecipientEmails.add(normalizedEmail);
+    readyLeads.push(lead);
+  }
+
+  readyLeads.sort((a, b) => {
+    const scoreDiff = (b.axiomScore || 0) - (a.axiomScore || 0);
+    if (scoreDiff !== 0) return scoreDiff;
+    return (coerceDate(b.enrichedAt)?.getTime() || 0) - (coerceDate(a.enrichedAt)?.getTime() || 0);
+  });
+
+  diagnostics.eligibleFirstTouchCount = readyLeads.length;
+  return { leads: readyLeads, diagnostics };
+}
+
+export async function getAutomationReadyLeadSnapshot(prisma: PrismaLike = getPrisma()) {
   const activeLeadIds = new Set(await getActiveAutomationLeadIds());
-  const [activeRecipientEmails, sentRecipientEmails, suppressions] = await Promise.all([
+  const [activeRecipientEmails, sentRecipientEmails, openFirstTouchState, suppressions] = await Promise.all([
     getActiveAutomationRecipientEmails(prisma),
     getSentRecipientEmails(),
+    getOpenFirstTouchAutomationState(prisma),
     prisma.outreachSuppression.findMany({
       select: { email: true, domain: true },
     }) as Promise<Array<Pick<OutreachSuppressionRecord, "email" | "domain">>>,
@@ -1430,27 +1634,20 @@ export async function listAutomationReadyLeads(prisma: PrismaLike = getPrisma())
     orderBy: { enrichedAt: "desc" },
   })) as LeadRecord[];
 
-  const seenRecipientEmails = new Set<string>();
-  return leads
-    .filter((lead) => {
-      if (activeLeadIds.has(lead.id)) return false;
-      const normalizedEmail = normalizeEmail(lead.email);
-      if (!normalizedEmail) return false;
-      if (seenRecipientEmails.has(normalizedEmail)) return false;
-      if (activeRecipientEmails.has(normalizedEmail)) return false;
-      if (sentRecipientEmails.has(normalizedEmail)) return false;
-      if (suppressedEmails.has(normalizedEmail)) return false;
-      const businessDomain = getAutomationBusinessDomain(lead);
-      if (businessDomain && suppressedDomains.has(businessDomain)) return false;
-      if (!isLeadQueueReady(lead)) return false;
-      seenRecipientEmails.add(normalizedEmail);
-      return true;
-    })
-    .sort((a, b) => {
-      const scoreDiff = (b.axiomScore || 0) - (a.axiomScore || 0);
-      if (scoreDiff !== 0) return scoreDiff;
-      return (coerceDate(b.enrichedAt)?.getTime() || 0) - (coerceDate(a.enrichedAt)?.getTime() || 0);
-    });
+  return selectAutomationReadyLeads({
+    leads,
+    activeLeadIds,
+    activeRecipientEmails,
+    sentRecipientEmails,
+    suppressedEmails,
+    suppressedDomains,
+    openFirstTouchLeadIds: openFirstTouchState.leadIds,
+    openFirstTouchRecipientEmails: openFirstTouchState.recipientEmails,
+  });
+}
+
+export async function listAutomationReadyLeads(prisma: PrismaLike = getPrisma()) {
+  return (await getAutomationReadyLeadSnapshot(prisma)).leads;
 }
 
 function getMailboxNextAvailableAt(
@@ -1688,6 +1885,7 @@ export async function queueLeadsForAutomation(input: {
   const activeLeadIds = new Set(activeSequences.map((sequence) => sequence.leadId));
   const activeRecipientEmails = await getActiveAutomationRecipientEmails(prisma);
   const sentRecipientEmails = await getSentRecipientEmails();
+  const openFirstTouchState = await getOpenFirstTouchAutomationState(prisma);
   const pendingRecipientEmails = new Set<string>();
 
   for (const leadId of input.leadIds) {
@@ -1718,6 +1916,16 @@ export async function queueLeadsForAutomation(input: {
 
     if (pendingRecipientEmails.has(normalizedLeadEmail)) {
       result.skipped.push({ leadId, reason: "Another lead with this email is already being queued" });
+      continue;
+    }
+
+    if (openFirstTouchState.leadIds.has(leadId)) {
+      result.skipped.push({ leadId, reason: "Lead already has an open first-touch send step" });
+      continue;
+    }
+
+    if (openFirstTouchState.recipientEmails.has(normalizedLeadEmail)) {
+      result.skipped.push({ leadId, reason: "Recipient already has an open first-touch send step" });
       continue;
     }
 
@@ -1792,6 +2000,8 @@ export async function queueLeadsForAutomation(input: {
     });
     pendingRecipientEmails.add(normalizedLeadEmail);
     activeRecipientEmails.add(normalizedLeadEmail);
+    openFirstTouchState.leadIds.add(lead.id);
+    openFirstTouchState.recipientEmails.add(normalizedLeadEmail);
     if (lead.outreachStatus !== READY_FOR_FIRST_TOUCH_STATUS) {
       await prisma.lead.update({
         where: { id: lead.id },
@@ -2623,6 +2833,13 @@ async function sendScheduledStep(
     await stopSequenceInternal(prisma, claim.sequence, "already_contacted");
     throw new AutomationStoppedError("already_contacted");
   }
+  if (
+    claim.step.stepNumber === 1 &&
+    await hasHigherPriorityOpenFirstTouchForRecipient(prisma, claim.step, recipientEmail)
+  ) {
+    await stopSequenceInternal(prisma, claim.sequence, "duplicate_active_sequence");
+    throw new AutomationStoppedError("duplicate_active_sequence");
+  }
 
   if (claim.step.stepNumber > 1) {
     const previousSentAt = coerceDate(context.previousStep?.sentAt);
@@ -2827,21 +3044,8 @@ async function sendScheduledStep(
   }
 
   const sentAt = new Date();
-  await prisma.outreachSequenceStep.update({
-    where: { id: claim.step.id },
-    data: {
-      status: "SENT",
-      sentAt,
-      gmailMessageId: sendResult.messageId,
-      gmailThreadId: sendResult.threadId || context.previousStep?.gmailThreadId || null,
-      subject: email.subject,
-      bodyHtml: email.bodyHtml,
-      bodyPlain: email.bodyPlain,
-      generationModel: "deepseek-chat",
-      claimedByRunId: runId,
-    },
-  });
-
+  // Persist the immutable sent-recipient marker first. If a later state write
+  // fails, claim recovery will see this row and stop instead of sending again.
   await prisma.outreachEmail.create({
     data: {
       id: crypto.randomUUID(),
@@ -2859,6 +3063,21 @@ async function sendScheduledStep(
       gmailThreadId: sendResult.threadId || context.previousStep?.gmailThreadId || null,
       status: "sent",
       sentAt,
+    },
+  });
+
+  await prisma.outreachSequenceStep.update({
+    where: { id: claim.step.id },
+    data: {
+      status: "SENT",
+      sentAt,
+      gmailMessageId: sendResult.messageId,
+      gmailThreadId: sendResult.threadId || context.previousStep?.gmailThreadId || null,
+      subject: email.subject,
+      bodyHtml: email.bodyHtml,
+      bodyPlain: email.bodyPlain,
+      generationModel: "deepseek-chat",
+      claimedByRunId: runId,
     },
   });
 
@@ -3076,6 +3295,7 @@ async function fastForwardInitialTouches(prisma: PrismaLike, now: Date) {
 }
 
 async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: number) {
+  const diagnostics = createFirstTouchDiagnostics();
   const cleanedTerminalSteps = await cleanupTerminalSequenceSteps(prisma);
   if (cleanedTerminalSteps > 0) {
     console.log(`[scheduler] Cleaned ${cleanedTerminalSteps} terminal sequence steps`);
@@ -3163,6 +3383,40 @@ async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: numbe
       continue;
     }
 
+    const mailboxGate = await canMailboxSend(prisma, mailbox, now, liveSequenceConfig, settings);
+    if (!mailboxGate.allowed) {
+      const nextAttempt = await getRateLimitRecheckAt(
+        prisma,
+        { sequence, step, mailbox },
+        mailboxGate.reason,
+        liveSequenceConfig,
+        now,
+      );
+      await prisma.outreachSequenceStep.update({
+        where: { id: step.id },
+        data: {
+          status: "SCHEDULED",
+          claimedAt: null,
+          claimedByRunId: null,
+          scheduledFor: nextAttempt,
+          errorMessage: mailboxGate.reason,
+        },
+      }).catch(() => null);
+      await prisma.outreachSequence.update({
+        where: { id: sequence.id },
+        data: {
+          status: sequence.lastSentAt ? "ACTIVE" : "QUEUED",
+          currentStep: step.stepType,
+          nextScheduledAt: nextAttempt,
+          stopReason: mailboxGate.reason,
+        },
+      }).catch(() => null);
+      if (mailboxGate.reason === "mailbox_cooldown") {
+        diagnostics.skippedCooldownCount += 1;
+      }
+      continue;
+    }
+
     // Fair distribution: one claim per mailbox per cron tick. The scheduler
     // runs every minute and send-time gates enforce cooldown/hour/day caps.
     // Claiming more than one per mailbox creates stuck CLAIMED rows when any
@@ -3198,7 +3452,7 @@ async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: numbe
     }
   }
 
-  return claims;
+  return { claims, diagnostics };
 }
 
 async function rescheduleClaimStep(
@@ -3387,7 +3641,14 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
   let failedCount = 0;
   let skippedCount = 0;
   let fastForwardedCount = 0;
-  let pipeline = { enriched: 0, enrichFailed: 0, qualified: 0, queued: 0, queueSkipped: 0 };
+  let pipeline = {
+    enriched: 0,
+    enrichFailed: 0,
+    qualified: 0,
+    queued: 0,
+    queueSkipped: 0,
+    firstTouchDiagnostics: createFirstTouchDiagnostics(),
+  };
 
   try {
     if (!settings.enabled || settings.globalPaused) {
@@ -3486,9 +3747,15 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
     }
 
     fastForwardedCount = await fastForwardInitialTouches(prisma, now);
-    const claims = await claimDueSteps(prisma, run.id, settings.schedulerClaimBatch);
+    const claimResult = await claimDueSteps(prisma, run.id, settings.schedulerClaimBatch);
+    const claims = claimResult.claims;
+    const firstTouchDiagnostics = {
+      ...createFirstTouchDiagnostics(pipeline.firstTouchDiagnostics),
+      skippedCooldownCount: claimResult.diagnostics.skippedCooldownCount,
+    };
 
     console.log(`[scheduler] Pipeline: ${JSON.stringify(pipeline)} | Replies: checked=${replySync.checked} stopped=${replySync.stopped} | Fast-forwarded: ${fastForwardedCount} | Claims: ${claims.length}`);
+    console.log(`[scheduler] First-touch diagnostics: ${JSON.stringify(firstTouchDiagnostics)}`);
 
     const { recordSendDecision } = await import("@/lib/send-decisions");
 
@@ -3616,6 +3883,7 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
           replySync,
           pipeline,
           fastForwarded: fastForwardedCount,
+          firstTouchDiagnostics,
         }),
       },
     });

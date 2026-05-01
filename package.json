@@ -11,6 +11,8 @@
     "deploy": "wrangler deploy --experimental-autoconfig false",
     "worker": "tsx scripts/local-scrape-worker.ts",
     "worker:local": "tsx scripts/local-scrape-worker.ts",
+    "test": "tsx --test \"src/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit --project tsconfig.typecheck.json",
     "lint": "eslint",
     "postinstall": "patch-package",
     "db:setup:local": "wrangler d1 migrations apply axiom-ops-omniscient --local",

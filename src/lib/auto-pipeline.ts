@@ -16,9 +16,11 @@ import {
   shouldAutonomouslyQueueLead,
 } from "@/lib/automation-policy";
 import {
+  createFirstTouchDiagnostics,
+  getAutomationReadyLeadSnapshot,
   getAutomationSettings,
-  listAutomationReadyLeads,
   queueLeadsForAutomation,
+  type AutomationFirstTouchDiagnostics,
 } from "@/lib/outreach-automation";
 import { getPrisma } from "@/lib/prisma";
 import type { LeadRecord } from "@/lib/prisma";
@@ -29,6 +31,7 @@ export type AutoPipelineResult = {
   qualified: number;
   queued: number;
   queueSkipped: number;
+  firstTouchDiagnostics: AutomationFirstTouchDiagnostics;
 };
 
 /**
@@ -191,15 +194,19 @@ async function autoQualify(prisma: ReturnType<typeof getPrisma>): Promise<number
 /**
  * Auto-queue qualified leads into the automation engine.
  */
-async function autoQueue(systemUserId: string): Promise<{ queued: number; skipped: number }> {
+async function autoQueue(
+  systemUserId: string,
+): Promise<{ queued: number; skipped: number; firstTouchDiagnostics: AutomationFirstTouchDiagnostics }> {
   const prisma = getPrisma();
 
   // Build from the fully filtered ready set. Taking the top N raw enriched rows
   // first lets generic/already-sent leads repeatedly block lower-scored viable
   // first touches from ever entering the queue.
-  const readyLeads = await listAutomationReadyLeads(prisma);
+  const readySnapshot = await getAutomationReadyLeadSnapshot(prisma);
+  const readyLeads = readySnapshot.leads;
+  const firstTouchDiagnostics = { ...readySnapshot.diagnostics };
 
-  if (readyLeads.length === 0) return { queued: 0, skipped: 0 };
+  if (readyLeads.length === 0) return { queued: 0, skipped: 0, firstTouchDiagnostics };
 
   let queued = 0;
   let skipped = 0;
@@ -229,7 +236,8 @@ async function autoQueue(systemUserId: string): Promise<{ queued: number; skippe
     }
   }
 
-  return { queued, skipped };
+  firstTouchDiagnostics.queuedFirstTouchCount = queued;
+  return { queued, skipped, firstTouchDiagnostics };
 }
 
 /**
@@ -248,6 +256,7 @@ export async function runAutoPipeline(systemUserId: string): Promise<AutoPipelin
       qualified: 0,
       queued: 0,
       queueSkipped: 0,
+      firstTouchDiagnostics: createFirstTouchDiagnostics(),
     };
   }
 
@@ -266,7 +275,8 @@ export async function runAutoPipeline(systemUserId: string): Promise<AutoPipelin
   const qualified = await autoQualify(prisma);
 
   // Step 3: Auto-queue qualified leads
-  const { queued, skipped: queueSkipped } = await autoQueue(systemUserId);
+  const { queued, skipped: queueSkipped, firstTouchDiagnostics } = await autoQueue(systemUserId);
+  console.log(`[auto-pipeline] First-touch diagnostics: ${JSON.stringify(firstTouchDiagnostics)}`);
 
   return {
     enriched,
@@ -274,5 +284,6 @@ export async function runAutoPipeline(systemUserId: string): Promise<AutoPipelin
     qualified,
     queued,
     queueSkipped,
+    firstTouchDiagnostics,
   };
 }
