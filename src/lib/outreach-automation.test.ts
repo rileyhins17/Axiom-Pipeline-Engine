@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import test from "node:test";
 
-import { selectAutomationReadyLeads } from "./outreach-automation";
+import { buildScheduledTimeline, getStepType, selectAutomationReadyLeads } from "./outreach-automation";
 import type { LeadRecord } from "./prisma";
 
 function makeLead(overrides: Partial<LeadRecord> & Pick<LeadRecord, "id">): LeadRecord {
@@ -107,4 +107,45 @@ test("first-touch selection blocks contacted, sent, and open first-touch recipie
   assert.deepEqual(result.leads.map((lead) => lead.id), [viable.id]);
   assert.equal(result.diagnostics.skippedAlreadyContactedCount, 2);
   assert.equal(result.diagnostics.skippedExistingOpenStepCount, 2);
+});
+
+test("automation sequence timeline includes initial plus three periodic follow-ups", () => {
+  const timeline = buildScheduledTimeline(new Date("2026-01-01T12:00:00.000Z"), {
+    timezone: "America/Toronto",
+    weekdaysOnly: false,
+    sendWindowStartHour: 0,
+    sendWindowStartMinute: 0,
+    sendWindowEndHour: 23,
+    sendWindowEndMinute: 59,
+    initialDelayMinMinutes: 1,
+    initialDelayMaxMinutes: 1,
+    followUp1BusinessDays: 2,
+    followUp2BusinessDays: 3,
+    followUp3BusinessDays: 4,
+    schedulerClaimBatch: 60,
+    replySyncStaleMinutes: 15,
+    leadSnapshot: {
+      id: 1,
+      businessName: "Lead 1 Roofing",
+      city: "Kitchener",
+      niche: "Roofers",
+      email: "owner@lead1.ca",
+      contactName: null,
+      websiteStatus: "ACTIVE",
+      axiomScore: 65,
+      axiomTier: "B",
+    },
+    enrichmentSnapshot: {},
+  });
+
+  assert.equal(timeline.length, 4);
+  assert.deepEqual([1, 2, 3, 4].map(getStepType), [
+    "INITIAL",
+    "FOLLOW_UP_1",
+    "FOLLOW_UP_2",
+    "FOLLOW_UP_3",
+  ]);
+  assert(timeline[1].getTime() > timeline[0].getTime());
+  assert(timeline[2].getTime() > timeline[1].getTime());
+  assert(timeline[3].getTime() > timeline[2].getTime());
 });

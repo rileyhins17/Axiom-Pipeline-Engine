@@ -6,6 +6,7 @@ import { getValidAccessToken, getGmailThreadMetadata, normalizeGmailAddress, sen
 import {
   AUTOMATION_SETTINGS_DEFAULTS,
   AUTONOMOUS_SEND_MIN_SCORE,
+  FOLLOW_UP_3_DELAY_DAYS,
   isAdequateAutonomousLead,
   isHardDisqualified,
   MAILBOX_DAILY_SEND_TARGET,
@@ -43,6 +44,7 @@ export type OutreachSequenceConfig = {
   initialDelayMaxMinutes: number;
   followUp1BusinessDays: number;
   followUp2BusinessDays: number;
+  followUp3BusinessDays: number;
   schedulerClaimBatch: number;
   replySyncStaleMinutes: number;
   leadSnapshot: {
@@ -798,10 +800,11 @@ function adjustToAllowedSendWindow(date: Date, config: OutreachSequenceConfig) {
   return candidate;
 }
 
-function getStepType(stepNumber: number): OutreachSequenceStepType {
+export function getStepType(stepNumber: number): OutreachSequenceStepType {
   if (stepNumber === 1) return "INITIAL";
   if (stepNumber === 2) return "FOLLOW_UP_1";
-  return "FOLLOW_UP_2";
+  if (stepNumber === 3) return "FOLLOW_UP_2";
+  return "FOLLOW_UP_3";
 }
 
 function normalizeAutomationSettings(settings: OutreachAutomationSettingRecord) {
@@ -981,6 +984,7 @@ async function getSequenceSnapshotConfig(
     initialDelayMaxMinutes: settings.initialDelayMaxMinutes,
     followUp1BusinessDays: settings.followUp1BusinessDays,
     followUp2BusinessDays: settings.followUp2BusinessDays,
+    followUp3BusinessDays: FOLLOW_UP_3_DELAY_DAYS,
     schedulerClaimBatch: settings.schedulerClaimBatch,
     replySyncStaleMinutes: settings.replySyncStaleMinutes,
     leadSnapshot: {
@@ -998,7 +1002,7 @@ async function getSequenceSnapshotConfig(
   } satisfies OutreachSequenceConfig;
 }
 
-function buildScheduledTimeline(now: Date, config: OutreachSequenceConfig) {
+export function buildScheduledTimeline(now: Date, config: OutreachSequenceConfig) {
   const initialDelay = getRandomInt(config.initialDelayMinMinutes, config.initialDelayMaxMinutes);
   const initial = adjustToAllowedSendWindow(addMinutes(now, initialDelay), config);
 
@@ -1012,8 +1016,14 @@ function buildScheduledTimeline(now: Date, config: OutreachSequenceConfig) {
     addDaysRespectingWeekdays(followUp1, config.followUp2BusinessDays, config.timezone, config.weekdaysOnly),
     config,
   );
+  // Follow-up 3: final periodic touch after follow-up 2. After this sends,
+  // the sequence completes as EXHAUSTED and leaves the active queue.
+  const followUp3 = adjustToAllowedSendWindow(
+    addDaysRespectingWeekdays(followUp2, config.followUp3BusinessDays ?? FOLLOW_UP_3_DELAY_DAYS, config.timezone, config.weekdaysOnly),
+    config,
+  );
 
-  return [initial, followUp1, followUp2];
+  return [initial, followUp1, followUp2, followUp3];
 }
 
 function applyLiveSendWindowSettings(
@@ -1033,6 +1043,7 @@ function applyLiveSendWindowSettings(
 function getFollowUpDelayBusinessDays(stepNumber: number, config: OutreachSequenceConfig) {
   if (stepNumber === 2) return config.followUp1BusinessDays;
   if (stepNumber === 3) return config.followUp2BusinessDays;
+  if (stepNumber === 4) return config.followUp3BusinessDays ?? FOLLOW_UP_3_DELAY_DAYS;
   return 0;
 }
 
@@ -1683,6 +1694,7 @@ function getMailboxNextAvailableAt(
     initialDelayMaxMinutes: settings.initialDelayMaxMinutes,
     followUp1BusinessDays: settings.followUp1BusinessDays,
     followUp2BusinessDays: settings.followUp2BusinessDays,
+    followUp3BusinessDays: FOLLOW_UP_3_DELAY_DAYS,
     schedulerClaimBatch: settings.schedulerClaimBatch,
     replySyncStaleMinutes: settings.replySyncStaleMinutes,
     leadSnapshot: {
@@ -1794,6 +1806,7 @@ async function getSequenceRuntimeBlockers(
       initialDelayMaxMinutes: settings.initialDelayMaxMinutes,
       followUp1BusinessDays: settings.followUp1BusinessDays,
       followUp2BusinessDays: settings.followUp2BusinessDays,
+      followUp3BusinessDays: FOLLOW_UP_3_DELAY_DAYS,
       schedulerClaimBatch: settings.schedulerClaimBatch,
       replySyncStaleMinutes: settings.replySyncStaleMinutes,
       leadSnapshot: { id: 0, businessName: "", city: "", niche: "", email: "", contactName: null, websiteStatus: null, axiomScore: null, axiomTier: null },
@@ -2380,7 +2393,7 @@ export async function mutateSequence(
   return prisma.outreachSequence.findUnique({ where: { id: sequence.id } });
 }
 
-async function canMailboxSend(prisma: PrismaLike, mailbox: OutreachMailboxRecord, now: Date, _config: OutreachSequenceConfig, liveSettings?: OutreachAutomationSettingRecord, stepNumber?: number) {
+async function canMailboxSend(prisma: PrismaLike, mailbox: OutreachMailboxRecord, now: Date, _config: OutreachSequenceConfig, liveSettings?: OutreachAutomationSettingRecord, _stepNumber?: number) {
   if (!MAILBOX_SENDABLE_STATUSES.includes(mailbox.status as (typeof MAILBOX_SENDABLE_STATUSES)[number])) {
     return { allowed: false, reason: "mailbox_disabled" as AutomationBlockerReason };
   }
@@ -2391,21 +2404,8 @@ async function canMailboxSend(prisma: PrismaLike, mailbox: OutreachMailboxRecord
     return { allowed: false, reason: "outside_send_window" as AutomationBlockerReason };
   }
 
+  void _stepNumber;
   const { sentToday, sentThisHour } = await getMailboxLoad(prisma, mailbox.id, now);
-  if (stepNumber && stepNumber > 1) {
-    const followupSentToday = await prisma.outreachSequenceStep.count({
-      where: {
-        sequence: { assignedMailboxId: mailbox.id },
-        stepNumber: { not: 1 },
-        status: "SENT",
-        sentAt: { gte: startOfDay(now) },
-      },
-    }).catch(() => 0);
-    const maxFollowups = Math.max(1, Math.floor(mailbox.dailyLimit * 0.25));
-    if (followupSentToday >= maxFollowups) {
-      return { allowed: false, reason: "daily_cap_reached" as AutomationBlockerReason };
-    }
-  }
   if (sentToday >= mailbox.dailyLimit) {
     return { allowed: false, reason: "daily_cap_reached" as AutomationBlockerReason };
   }
@@ -3312,6 +3312,105 @@ async function fastForwardInitialTouches(prisma: PrismaLike, now: Date) {
   return updatedCount;
 }
 
+function normalizeSequenceConfigForRuntime(config: OutreachSequenceConfig): OutreachSequenceConfig {
+  return {
+    ...config,
+    followUp3BusinessDays: config.followUp3BusinessDays ?? FOLLOW_UP_3_DELAY_DAYS,
+  };
+}
+
+async function ensureThirdFollowUpSteps(prisma: PrismaLike, now: Date) {
+  const candidates = (await prisma.outreachSequence.findMany({
+    where: {
+      status: { in: ["QUEUED", "ACTIVE", "SENDING", "COMPLETED"] },
+    },
+    orderBy: { updatedAt: "asc" },
+    take: 500,
+  })) as OutreachSequenceRecord[];
+  let repaired = 0;
+
+  for (const sequence of candidates) {
+    if (sequence.replyDetectedAt) {
+      continue;
+    }
+    if (
+      sequence.status === "COMPLETED" &&
+      sequence.stopReason &&
+      sequence.stopReason !== "EXHAUSTED"
+    ) {
+      continue;
+    }
+
+    const steps = (await prisma.outreachSequenceStep.findMany({
+      where: { sequenceId: sequence.id },
+      orderBy: { stepNumber: "asc" },
+    })) as OutreachSequenceStepRecord[];
+    if (steps.some((step) => step.stepNumber >= 4)) {
+      continue;
+    }
+
+    const followUp2 = steps.find((step) => step.stepNumber === 3);
+    if (!followUp2) {
+      continue;
+    }
+
+    let rawConfig: OutreachSequenceConfig;
+    try {
+      rawConfig = JSON.parse(sequence.sequenceConfigSnapshot) as OutreachSequenceConfig;
+    } catch {
+      continue;
+    }
+    const config = normalizeSequenceConfigForRuntime(rawConfig);
+    const baseDate =
+      coerceDate(followUp2.sentAt) ||
+      coerceDate(followUp2.scheduledFor) ||
+      coerceDate(sequence.lastSentAt) ||
+      now;
+    const earliest = getEarliestFollowUpSendAt(baseDate, 4, config);
+    const scheduledFor = earliest.getTime() < now.getTime()
+      ? adjustToAllowedSendWindow(now, config)
+      : earliest;
+
+    await prisma.outreachSequenceStep.create({
+      data: {
+        id: crypto.randomUUID(),
+        sequenceId: sequence.id,
+        stepNumber: 4,
+        stepType: "FOLLOW_UP_3",
+        status: "SCHEDULED",
+        scheduledFor,
+        updatedAt: now,
+      },
+    });
+
+    const hasOpenEarlierStep = steps.some(
+      (step) =>
+        step.stepNumber < 4 &&
+        ["SCHEDULED", "CLAIMED", "SENDING"].includes(step.status),
+    );
+    if (!hasOpenEarlierStep) {
+      await prisma.outreachSequence.update({
+        where: { id: sequence.id },
+        data: {
+          status: sequence.lastSentAt ? "ACTIVE" : "QUEUED",
+          currentStep: "FOLLOW_UP_3",
+          nextScheduledAt: scheduledFor,
+          stopReason: null,
+          sequenceConfigSnapshot: JSON.stringify(config),
+        },
+      }).catch(() => null);
+    } else if (!("followUp3BusinessDays" in (rawConfig as Record<string, unknown>))) {
+      await prisma.outreachSequence.update({
+        where: { id: sequence.id },
+        data: { sequenceConfigSnapshot: JSON.stringify(config) },
+      }).catch(() => null);
+    }
+    repaired++;
+  }
+
+  return repaired;
+}
+
 async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: number) {
   const diagnostics = createFirstTouchDiagnostics();
   const cleanedTerminalSteps = await cleanupTerminalSequenceSteps(prisma);
@@ -3326,6 +3425,14 @@ async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: numbe
   }
 
   const now = new Date();
+  const repairedThirdFollowUps = await ensureThirdFollowUpSteps(prisma, now).catch((error) => {
+    console.warn("[scheduler] Failed to ensure third follow-up steps:", error);
+    return 0;
+  });
+  if (repairedThirdFollowUps > 0) {
+    console.log(`[scheduler] Ensured third follow-up step for ${repairedThirdFollowUps} sequence(s)`);
+  }
+
   const settings = await getSettings(prisma);
   const dueStepScanLimit = Math.max(batchSize * 50, 500);
   const [initialDueSteps, followUpDueSteps] = await Promise.all([
@@ -3465,13 +3572,11 @@ async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: numbe
       continue;
     }
 
-    // Allow up to 2 claims per mailbox per cron tick. The send-time
-    // canMailboxSend gate re-checks cooldown/hour/day caps before each
-    // actual send, so claiming 2 lets the second proceed once the first's
-    // cooldown expires (the send loop processes them sequentially). Stale
-    // claim recovery handles any that remain stuck.
+    // Claim one send per mailbox per cron tick. Combined with the 36-minute
+    // mailbox cooldown this keeps delivery steady 24/7 instead of bursting
+    // into hourly caps and then looking stalled.
     const currentMailboxClaims = mailboxClaimCounts.get(mailbox.id) || 0;
-    const maxPerMailbox = 2;
+    const maxPerMailbox = 1;
     if (currentMailboxClaims >= maxPerMailbox) {
       continue;
     }

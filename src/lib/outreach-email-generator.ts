@@ -31,7 +31,7 @@ export type GeneratedEmail = {
   confidence_score?: number;
 };
 
-export type OutreachSequenceStepType = "INITIAL" | "FOLLOW_UP_1" | "FOLLOW_UP_2";
+export type OutreachSequenceStepType = "INITIAL" | "FOLLOW_UP_1" | "FOLLOW_UP_2" | "FOLLOW_UP_3";
 
 type FollowUpSourceEmail = {
   subject: string;
@@ -237,7 +237,7 @@ const FOLLOW_UP_SYSTEM_PROMPT = `You are writing a short plain-text follow-up em
 
 STRICT RULES:
 1. Follow-up only. Acknowledge the prior note in one natural phrase.
-2. Keep FOLLOW_UP_1 under 65 words and FOLLOW_UP_2 under 55 words.
+2. Keep FOLLOW_UP_1 under 65 words and FOLLOW_UP_2/FOLLOW_UP_3 under 55 words.
 3. Plain text only. No HTML, markdown, bullets, footer, title, or company name in the body.
 4. End with exactly "Best,\\n{sender first name}". Nothing after it.
 5. Add one fresh useful angle, but do not repeat the same critique verbatim.
@@ -471,8 +471,10 @@ function buildFallbackFollowUpEmail(
 ): GeneratedEmail {
   const senderFirst = firstName(senderName);
   const recipientName = getRecipientName(lead);
-  const followUpLine = stepType === "FOLLOW_UP_2"
-    ? "Wanted to send one final practical thought in case this is useful."
+  const followUpLine = stepType === "FOLLOW_UP_3"
+    ? "Wanted to send one practical thought before I close this out."
+    : stepType === "FOLLOW_UP_2"
+      ? "Wanted to send one more practical thought in case this is useful."
     : "Wanted to send one practical thought that may be useful.";
   const bodyPlain = buildPlainTextEmail(
     [
@@ -489,7 +491,7 @@ function buildFallbackFollowUpEmail(
   );
 
   return {
-    subject: sanitizeSubject(stepType === "FOLLOW_UP_2" ? "quick site thought" : "one site thought", lead.businessName),
+    subject: sanitizeSubject(stepType === "FOLLOW_UP_3" ? "last site thought" : stepType === "FOLLOW_UP_2" ? "quick site thought" : "one site thought", lead.businessName),
     bodyPlain,
     bodyHtml: buildHtmlEmail(bodyPlain),
     personalization_reason: enrichment.personalizedHook,

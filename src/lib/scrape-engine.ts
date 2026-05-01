@@ -801,6 +801,95 @@ function buildPreVaultOutreachEnrichment(input: {
   };
 }
 
+function scoreWebsiteRiskFromSignals(input: {
+  rawFootprint: string;
+  targetWebsite: string;
+  category: string;
+  niche: string;
+}): WebsiteAssessment {
+  const text = input.rawFootprint.toLowerCase();
+  const normalizedText = normalizeWhitespace(text);
+  const contentLength = normalizedText.length;
+  const hasQuotePath = /\b(quote|estimate|book|booking|appointment|schedule|contact|call now|get started)\b/i.test(text);
+  const hasForm = /\b(form|submit|request a quote|get a quote|send message|contact us)\b/i.test(text);
+  const hasPhone = hasPhoneLikeText(text);
+  const hasTrustSignals = /\b(review|testimonial|licensed|insured|warranty|guarantee|gallery|portfolio|before|after|years experience|family owned)\b/i.test(text);
+  const hasServiceDetail = /\b(services?|service area|repair|install|maintenance|emergency|residential|commercial)\b/i.test(text);
+  const hasLocalContext = input.category
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word.length >= 4)
+    .some((word) => text.includes(word)) ||
+    input.niche
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((word) => word.length >= 4)
+      .some((word) => text.includes(word));
+  const hasHttps = /^https:\/\//i.test(input.targetWebsite);
+
+  const conversionRisk = Math.min(
+    5,
+    (hasQuotePath ? 1 : 4) +
+      (hasForm || hasPhone ? 0 : 1),
+  );
+  const trustRisk = Math.min(
+    5,
+    (hasTrustSignals ? 1 : 4) +
+      (hasHttps ? 0 : 1),
+  );
+  const seoRisk = Math.min(
+    5,
+    (contentLength >= 1200 ? 1 : contentLength >= 500 ? 3 : 5) +
+      (hasServiceDetail && hasLocalContext ? 0 : 1),
+  );
+  const speedRisk = contentLength > 18000 ? 4 : contentLength > 10000 ? 3 : 2;
+  const totalRisk = speedRisk + conversionRisk + trustRisk + seoRisk;
+  const overallGrade = totalRisk <= 5 ? "A" : totalRisk <= 8 ? "B" : totalRisk <= 11 ? "C" : totalRisk <= 14 ? "D" : "F";
+  const topFixes = [
+    !hasQuotePath ? "Make the quote/contact path obvious above the fold" : "",
+    !hasTrustSignals ? "Bring reviews, proof, or project examples higher on the page" : "",
+    !hasServiceDetail || !hasLocalContext ? "Add clearer service and local-area detail" : "",
+    !hasForm && !hasPhone ? "Add a simple direct contact option" : "",
+  ].filter(Boolean).slice(0, 3);
+
+  return {
+    conversionRisk,
+    overallGrade,
+    seoRisk,
+    speedRisk,
+    topFixes: topFixes.length > 0 ? topFixes : ["Keep the main offer and next step easy to scan"],
+    trustRisk,
+  };
+}
+
+function mergeWebsiteAssessments(
+  aiAssessment: WebsiteAssessment | null,
+  heuristicAssessment: WebsiteAssessment | null,
+): WebsiteAssessment | null {
+  if (!heuristicAssessment) return aiAssessment;
+  if (!aiAssessment) return heuristicAssessment;
+
+  const speedRisk = Math.max(aiAssessment.speedRisk || 0, heuristicAssessment.speedRisk);
+  const conversionRisk = Math.max(aiAssessment.conversionRisk || 0, heuristicAssessment.conversionRisk);
+  const trustRisk = Math.max(aiAssessment.trustRisk || 0, heuristicAssessment.trustRisk);
+  const seoRisk = Math.max(aiAssessment.seoRisk || 0, heuristicAssessment.seoRisk);
+  const totalRisk = speedRisk + conversionRisk + trustRisk + seoRisk;
+  const overallGrade = totalRisk <= 5 ? "A" : totalRisk <= 8 ? "B" : totalRisk <= 11 ? "C" : totalRisk <= 14 ? "D" : "F";
+  const topFixes = Array.from(new Set([
+    ...(aiAssessment.topFixes || []),
+    ...(heuristicAssessment.topFixes || []),
+  ].filter(Boolean))).slice(0, 3);
+
+  return {
+    conversionRisk,
+    overallGrade,
+    seoRisk,
+    speedRisk,
+    topFixes,
+    trustRisk,
+  };
+}
+
 function buildActiveWebsitePrompt(input: {
   businessName: string;
   category: string;
@@ -1420,6 +1509,26 @@ export async function executeScrapeJob(input: ExecuteScrapeJobInput): Promise<Ex
           source: "heuristic",
           type: "CONVERSION",
         });
+      }
+
+      if (websiteStatus === "ACTIVE") {
+        const heuristicAssessment = scoreWebsiteRiskFromSignals({
+          category: scoringCategory,
+          niche: input.niche,
+          rawFootprint,
+          targetWebsite: target.website,
+        });
+        assessment = mergeWebsiteAssessments(assessment, heuristicAssessment);
+        for (const fix of heuristicAssessment.topFixes) {
+          if (!painSignals.some((signal) => signal.evidence === fix)) {
+            painSignals.push({
+              evidence: fix,
+              severity: 3,
+              source: "site_scan",
+              type: fix.includes("proof") || fix.includes("reviews") ? "TRUST" : "CONVERSION",
+            });
+          }
+        }
       }
 
       const contactValidation = validateContact(email, target.phone, {
