@@ -75,7 +75,7 @@ export default async function SettingsPage() {
         appBaseUrl: env.APP_BASE_URL,
         browserRenderingConfigured: Boolean(bindings?.BROWSER),
         databaseTarget: bindings?.DB ? "cloudflare-d1" : "binding-missing",
-        geminiConfigured: Boolean(env.GEMINI_API_KEY),
+        deepSeekConfigured: Boolean(env.DEEPSEEK_API_KEY),
         scrapeConcurrencyLimit: env.SCRAPE_CONCURRENCY_LIMIT,
         scrapeTimeoutMs: env.SCRAPE_TIMEOUT_MS,
         cloudScrapeEnabled: env.CLOUD_SCRAPE_ENABLED,

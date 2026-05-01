@@ -1,5 +1,3 @@
-import { GoogleGenerativeAI, HarmBlockThreshold, HarmCategory } from "@google/generative-ai";
-
 import {
   computeAxiomScore,
   type PainSignal,
@@ -63,7 +61,6 @@ type CollectedMapsTarget = {
 export interface ExecuteScrapeJobInput {
   city: string;
   existingDedupeKeys: string[];
-  geminiApiKey?: string;
   jobId: string;
   maxDepth: number;
   niche: string;
@@ -360,10 +357,10 @@ function extractAddressFromMapsText(text: string, title: string): string {
   return "";
 }
 
-async function readLocatorText(page: any, selector: string, preserveLineBreaks = false): Promise<string> {
+async function readLocatorText(page: AutomationPage, selector: string, preserveLineBreaks = false): Promise<string> {
   try {
-    const text = await (page as any)
-      .evaluate((sel: string) => {
+    const text = await page
+      .evaluate((sel) => {
         const element = document.querySelector(sel) as HTMLElement | null;
         if (!element) {
           return "";
@@ -372,32 +369,21 @@ async function readLocatorText(page: any, selector: string, preserveLineBreaks =
       }, selector)
       .catch(() => "");
 
-    if (text) {
-      return preserveLineBreaks ? text.replace(/\r\n/g, "\n").trim() : normalizeWhitespace(text);
-    }
-
-    const locator = page.locator(selector);
-    if ((await locator.count()) === 0) {
-      return "";
-    }
-
-    const first = locator.first();
-    const fallbackText = await first.innerText().catch(async () => first.textContent());
     if (preserveLineBreaks) {
-      return (fallbackText || "").replace(/\r\n/g, "\n").trim();
+      return (text || "").replace(/\r\n/g, "\n").trim();
     }
 
-    return normalizeWhitespace(fallbackText || "");
+    return normalizeWhitespace(text || "");
   } catch {
     return "";
   }
 }
 
-async function readLocatorAttribute(page: any, selector: string, attribute: string): Promise<string> {
+async function readLocatorAttribute(page: AutomationPage, selector: string, attribute: string): Promise<string> {
   try {
-    const value = await (page as any)
+    const value = await page
       .evaluate(
-        ([sel, attr]: [string, string]) => {
+        ([sel, attr]) => {
           const element = document.querySelector(sel) as HTMLElement | null;
           if (!element) {
             return "";
@@ -408,17 +394,7 @@ async function readLocatorAttribute(page: any, selector: string, attribute: stri
       )
       .catch(() => "");
 
-    if (value) {
-      return normalizeWhitespace(value);
-    }
-
-    const locator = page.locator(selector);
-    if ((await locator.count()) === 0) {
-      return "";
-    }
-
-    const fallbackValue = await locator.first().getAttribute(attribute);
-    return normalizeWhitespace(fallbackValue || "");
+    return normalizeWhitespace(value || "");
   } catch {
     return "";
   }
@@ -426,22 +402,6 @@ async function readLocatorAttribute(page: any, selector: string, attribute: stri
 
 function extractCategoryFromMapsText(text: string, title: string): string {
   return extractMapsCategoryFromText(text, title);
-}
-
-function extractListingCategory(lines: string[], title: string): string {
-  return extractCategoryFromMapsText(lines.join(" "), title);
-}
-
-function extractListingAddress(lines: string[], title: string): string {
-  const normalizedTitle = normalizeWhitespace(title).toLowerCase();
-  for (const line of lines) {
-    const lower = line.toLowerCase();
-    if (!line || lower === normalizedTitle) continue;
-    if (isLikelyAddressText(line)) {
-      return line;
-    }
-  }
-  return "";
 }
 
 function extractCategoryFromBodyText(bodyText: string, title: string): string {
@@ -625,7 +585,7 @@ async function collectMapsListings(page: AutomationPage): Promise<MapsListing[]>
 }
 
 async function extractMapsDetailFromPage(
-  detailPage: any,
+  detailPage: AutomationPage,
   place: MapsListing,
   fallbackTitle: string,
   listingFallback: Omit<CollectedMapsTarget, "detailMode">,
@@ -777,22 +737,6 @@ function sanitizeTacticalNote(note: string | null | undefined, fallback: string)
   }
 
   return clean;
-}
-
-function createGeminiModel(apiKey?: string) {
-  if (!apiKey) {
-    return null;
-  }
-
-  return new GoogleGenerativeAI(apiKey).getGenerativeModel({
-    model: "gemini-1.5-pro",
-    safetySettings: [
-      { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-      { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
-      { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
-      { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-    ],
-  });
 }
 
 function buildActiveWebsitePrompt(input: {
@@ -1070,7 +1014,6 @@ async function enrichWithAi(input: {
   city: string;
   discoveryPages: EmailDiscoveryPage[];
   emailResolution: ReturnType<typeof resolvePublicBusinessEmail>;
-  model: ReturnType<typeof createGeminiModel>;
   niche: string;
   ownerName: string;
   rawFootprint: string;
@@ -1123,23 +1066,12 @@ async function enrichWithAi(input: {
             vettedEmailCandidates,
           });
 
-    let resultText = "";
-    try {
-      const result = await chatCompletion({
-        messages: [{ role: "user", content: prompt }],
-        responseFormat: "json_object",
-        temperature: 0.2,
-      });
-      resultText = result.content;
-    } catch (err) {
-      console.error("[enrichWithAi] DeepSeek failed, falling back to Gemini:", err);
-      if (input.model) {
-        const geminiResult = await input.model.generateContent(prompt);
-        resultText = geminiResult.response.text();
-      } else {
-        throw err;
-      }
-    }
+    const result = await chatCompletion({
+      messages: [{ role: "user", content: prompt }],
+      responseFormat: "json_object",
+      temperature: 0.2,
+    });
+    const resultText = result.content;
     const textResponse = sanitizeAiJsonResponse(resultText);
     const aiData = JSON.parse(textResponse) as {
       email?: string;
@@ -1210,7 +1142,8 @@ async function enrichWithAi(input: {
       pages: input.discoveryPages,
     });
     email = emailResolution.email || email;
-  } catch {
+  } catch (error) {
+    console.error("[enrichWithAi] DeepSeek enrichment failed; using local fallback intelligence:", error);
     tacticalNote = buildFallbackTacticalNote({
       businessName: input.businessName,
       category: input.category,
@@ -1235,7 +1168,6 @@ async function enrichWithAi(input: {
 }
 
 export async function executeScrapeJob(input: ExecuteScrapeJobInput): Promise<ExecuteScrapeJobResult> {
-  const model = createGeminiModel(input.geminiApiKey);
   const source = `${input.niche}|${input.city}|${new Date().toISOString().split("T")[0]}`;
   const existingDedupeKeys = new Set(input.existingDedupeKeys);
   let browser: AutomationBrowser | null = null;
@@ -1269,14 +1201,8 @@ export async function executeScrapeJob(input: ExecuteScrapeJobInput): Promise<Ex
     });
     await input.sendEvent({
       message:
-        "[ENGINE] Intelligence modules online: scoring, dedupe, contact validation, public email resolver",
+        "[ENGINE] Intelligence modules online: scoring, dedupe, contact validation, public email resolver, DeepSeek enrichment",
     });
-
-    if (!model) {
-      await input.sendEvent({
-        message: "[AI] Gemini key not configured. Running heuristic-only enrichment.",
-      });
-    }
 
     const targets = await collectTargets(
       context,
@@ -1388,34 +1314,31 @@ export async function executeScrapeJob(input: ExecuteScrapeJobInput): Promise<Ex
       let hasContactForm = false;
       let hasSocialMessaging = /facebook|instagram|messenger/i.test(socialLink);
 
-      if (model || true) {
-        const aiResult = await enrichWithAi({
-          businessName: target.businessName,
-          category: scoringCategory,
-          city: input.city,
-          discoveryPages,
-          emailResolution,
-          model,
-          niche: input.niche,
-          ownerName,
-          rawFootprint,
-          rating: target.rating,
-          reviewCount: target.reviewCount,
-          socialLink,
-          targetWebsite: target.website,
-          websiteStatus,
-        });
+      const aiResult = await enrichWithAi({
+        businessName: target.businessName,
+        category: scoringCategory,
+        city: input.city,
+        discoveryPages,
+        emailResolution,
+        niche: input.niche,
+        ownerName,
+        rawFootprint,
+        rating: target.rating,
+        reviewCount: target.reviewCount,
+        socialLink,
+        targetWebsite: target.website,
+        websiteStatus,
+      });
 
-        ownerName = aiResult.ownerName;
-        socialLink = aiResult.socialLink;
-        tacticalNote = aiResult.tacticalNote;
-        hasContactForm = aiResult.hasContactForm;
-        hasSocialMessaging = aiResult.hasSocialMessaging;
-        assessment = aiResult.assessment;
-        painSignals = aiResult.painSignals;
-        emailResolution = aiResult.emailResolution;
-        email = aiResult.email;
-      }
+      ownerName = aiResult.ownerName;
+      socialLink = aiResult.socialLink;
+      tacticalNote = aiResult.tacticalNote;
+      hasContactForm = aiResult.hasContactForm;
+      hasSocialMessaging = aiResult.hasSocialMessaging;
+      assessment = aiResult.assessment;
+      painSignals = aiResult.painSignals;
+      emailResolution = aiResult.emailResolution;
+      email = aiResult.email;
 
       if (websiteStatus === "MISSING" && !painSignals.some((signal) => signal.type === "NO_WEBSITE")) {
         painSignals.unshift({

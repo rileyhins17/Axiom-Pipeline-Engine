@@ -145,7 +145,6 @@ async function runClaimedJob(job: ScrapeJobRecord, existingDedupeKeys: string[])
     const result = await executeScrapeJob({
       city: job.city,
       existingDedupeKeys,
-      geminiApiKey: env.GEMINI_API_KEY,
       jobId: job.id,
       maxDepth: job.maxDepth,
       niche: job.niche,

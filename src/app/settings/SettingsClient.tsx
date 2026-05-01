@@ -10,7 +10,7 @@ type RuntimeStatus = {
   appBaseUrl: string;
   browserRenderingConfigured: boolean;
   databaseTarget: "cloudflare-d1" | "binding-missing";
-  geminiConfigured: boolean;
+  deepSeekConfigured: boolean;
   scrapeConcurrencyLimit: number;
   scrapeTimeoutMs: number;
   cloudScrapeEnabled: string;
@@ -101,10 +101,10 @@ export function SettingsClient({
                 state={runtimeStatus.browserRenderingConfigured ? "ready" : "attention"}
               />
             </StatusRow>
-            <StatusRow label="Gemini API key">
+            <StatusRow label="DeepSeek API key">
               <StatusPill
-                label={runtimeStatus.geminiConfigured ? "Configured" : "Missing"}
-                state={runtimeStatus.geminiConfigured ? "ready" : "attention"}
+                label={runtimeStatus.deepSeekConfigured ? "Configured" : "Missing"}
+                state={runtimeStatus.deepSeekConfigured ? "ready" : "attention"}
               />
             </StatusRow>
             <StatusRow label="App base URL">
