@@ -13,6 +13,7 @@ import {
   MAILBOX_MAX_DELAY_SECONDS,
   MAILBOX_MIN_DELAY_SECONDS,
 } from "@/lib/automation-policy";
+import { isGenericRoleEmail } from "@/lib/contact-validation";
 import { hasValidPipelineEmail, isLeadOutreachEligible } from "@/lib/lead-qualification";
 import { resolveLeadEnrichment } from "@/lib/outreach-enrichment";
 import { getPrisma } from "@/lib/prisma";
@@ -2785,7 +2786,7 @@ async function sendScheduledStep(
   // somehow got created for one. Auto-queue already filters these, but a
   // legacy sequence could still exist.
   const sendEmailType = (context.lead.emailType || "").toLowerCase();
-  if (sendEmailType === "generic") {
+  if (sendEmailType === "generic" || isGenericRoleEmail(context.lead.email)) {
     await prisma.outreachSequenceStep.update({
       where: { id: claim.step.id },
       data: {

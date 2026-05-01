@@ -1,5 +1,6 @@
 import type { LeadRecord, OutreachAutomationSettingRecord } from "@/lib/prisma";
 
+import { isGenericRoleEmail } from "@/lib/contact-validation";
 import { isLeadOutreachEligible } from "@/lib/lead-qualification";
 
 /**
@@ -64,8 +65,7 @@ export function isAdequateAutonomousLead(lead: {
     return false;
   }
 
-  const isGenericPrefix = /^(info|sales|hello|contact|admin|support|office|marketing|service|enquiries|enquiry|booking|team|webmaster)@/i.test(lead.email || "");
-  if (isGenericPrefix) {
+  if (isGenericRoleEmail(lead.email)) {
     return false;
   }
 

@@ -40,6 +40,13 @@ export const BANNED_EMAIL_PHRASES = [
   "winning more leads",
   "drive more leads",
   "unlock growth",
+  "broken",
+  "still broken",
+  "costing you leads",
+  "one last time",
+  "last note",
+  "final chance",
+  "limited time",
 ];
 
 const GENERIC_FALLBACK_PATTERNS = [
@@ -136,13 +143,6 @@ function normalizeText(value: string | null | undefined) {
 
 function normalizeLower(value: string | null | undefined) {
   return normalizeText(value).toLowerCase();
-}
-
-function firstSentence(value: string | null | undefined, fallback: string) {
-  const cleaned = normalizeText(value);
-  if (!cleaned) return fallback;
-  const sentence = cleaned.split(/(?<=[.!?])\s+/)[0] || cleaned;
-  return sentence.trim();
 }
 
 function extractDomain(value: string | null | undefined) {
@@ -404,7 +404,9 @@ function buildConfidenceScore(lead: LeadRecord, observationStrength: number, val
   return clamp(score, 35, 95);
 }
 
-export function chooseColdEmailPlan(lead: LeadRecord, enrichment: EnrichmentResult): ColdEmailPlan {
+export function chooseColdEmailPlan(lead: LeadRecord, _enrichment: EnrichmentResult): ColdEmailPlan {
+  void _enrichment;
+
   const validEmail = getEmailValidity(lead);
   const observation = getObservationCandidate(lead);
   const observationStrength = observation?.strength || 0;
@@ -628,6 +630,33 @@ export function buildRetryInstructions(validation: ColdEmailValidation, plan: Co
   ].join("\n");
 }
 
+function sentenceSplit(value: string) {
+  return value
+    .split(/(?<=[.!?])\s+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function ensureReadableLineBreaks(value: string) {
+  const clean = value.trim();
+  if (!clean) return clean;
+
+  const lines = clean.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  if (lines.length >= 3) {
+    return lines.join("\n\n");
+  }
+
+  const sentences = sentenceSplit(clean);
+  if (sentences.length < 2) {
+    return clean;
+  }
+
+  const firstLine = sentences[0];
+  const middle = sentences.slice(1, -1).join(" ");
+  const lastLine = sentences[sentences.length - 1];
+  return [firstLine, middle, lastLine].filter(Boolean).join("\n\n");
+}
+
 export function buildPlainTextEmail(body: string, senderFirstName: string) {
   const escapedSender = senderFirstName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const signaturePattern = new RegExp(
@@ -665,7 +694,7 @@ export function buildPlainTextEmail(body: string, senderFirstName: string) {
     .trim()
     .replace(/\n{3,}/g, "\n\n");
 
-  return `${sanitized}\n\nBest,\n${senderFirstName}`.trim();
+  return `${ensureReadableLineBreaks(sanitized)}\n\nBest,\n${senderFirstName}`.trim();
 }
 
 function escapeHtml(value: string) {

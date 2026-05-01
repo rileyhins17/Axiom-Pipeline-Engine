@@ -14,6 +14,7 @@ import {
   type AutomationPage,
 } from "@/lib/browser-rendering";
 import { generatePersonalization } from "@/lib/lead-personalization";
+import type { EnrichmentResult } from "@/lib/outreach-enrichment";
 import {
   formatEmailCandidatesForPrompt,
   resolvePublicBusinessEmail,
@@ -739,6 +740,67 @@ function sanitizeTacticalNote(note: string | null | undefined, fallback: string)
   return clean;
 }
 
+function getPrimaryPainSignal(painSignals: PainSignal[]) {
+  return [...painSignals].sort((a, b) => b.severity - a.severity)[0] || null;
+}
+
+function buildPreVaultOutreachEnrichment(input: {
+  assessment: WebsiteAssessment | null;
+  businessName: string;
+  category: string;
+  painSignals: PainSignal[];
+  tacticalNote: string;
+  targetWebsite: string;
+  websiteStatus: string;
+}): EnrichmentResult {
+  const primaryPain = getPrimaryPainSignal(input.painSignals);
+  const domain = cleanTextOrNull(extractDomain(input.targetWebsite));
+  const siteReference = domain || input.businessName;
+  const topFix = input.assessment?.topFixes?.find(Boolean);
+  const observedIssue =
+    primaryPain?.evidence ||
+    topFix ||
+    (input.websiteStatus === "MISSING"
+      ? "No clear website surfaced during the scan."
+      : "The scan found friction in the website path.");
+  const keyPainPoint =
+    input.websiteStatus === "MISSING"
+      ? "No clear website surfaced for a new visitor."
+      : primaryPain?.type === "SPEED"
+        ? "The site may feel slower than it should on first load."
+        : primaryPain?.type === "TRUST"
+          ? "Trust signals may not be visible early enough."
+          : primaryPain?.type === "SEO"
+            ? "Service information may be harder to scan than it should be."
+            : "The contact or quote path may be creating avoidable friction.";
+
+  return {
+    valueProposition:
+      input.websiteStatus === "MISSING"
+        ? `Axiom can help ${input.businessName} give new visitors a clearer place to understand the work and reach out.`
+        : `Axiom can help ${input.businessName} make the path from ${siteReference} to a real enquiry clearer.`,
+    pitchAngle:
+      input.websiteStatus === "MISSING"
+        ? "Lead with the missing website and keep the note curiosity-based."
+        : `Lead with the clearest scan finding: ${observedIssue}`,
+    anticipatedObjections: [
+      "Most work already comes from referrals.",
+      "The current site may feel good enough for now.",
+      "They may not be actively looking for website help.",
+    ],
+    emailTone: "professional",
+    keyPainPoint,
+    competitiveEdge:
+      "A stronger local site usually makes services, proof, and the next step obvious within the first few seconds.",
+    personalizedHook:
+      input.websiteStatus === "MISSING"
+        ? `I could not find a clear site for ${input.businessName} while checking the local listing.`
+        : `I looked through ${siteReference} and noticed ${observedIssue.toLowerCase()}`,
+    recommendedCTA: "Worth me sending over a couple of quick fixes?",
+    enrichmentSummary: `${input.tacticalNote} Primary outreach issue: ${observedIssue}`,
+  };
+}
+
 function buildActiveWebsitePrompt(input: {
   businessName: string;
   category: string;
@@ -765,6 +827,7 @@ EMAIL RULES:
 - You may only return an email that appears exactly in the vetted public email candidates list above.
 - If no candidate is clearly usable for outreach, return "".
 - Prefer public owner, founder, director, or person-named inboxes over generic inboxes.
+- Never choose role inboxes such as info@, contact@, sales@, marketing@, office@, admin@, support@, service@, quotes@, estimates@, booking@, or web@.
 - Never invent, normalize, or guess an email.
 
 Return a JSON object (no markdown, no code fences):
@@ -813,6 +876,7 @@ EMAIL RULES:
 - You may only return an email that appears exactly in the vetted public email candidates list above.
 - If no candidate is clearly usable for outreach, return "".
 - Prefer public owner, founder, director, or person-named inboxes over generic inboxes.
+- Never choose role inboxes such as info@, contact@, sales@, marketing@, office@, admin@, support@, service@, quotes@, estimates@, booking@, or web@.
 - Never invent, normalize, or guess an email.
 
 Return a JSON object (no markdown, no code fences):
@@ -1406,6 +1470,15 @@ export async function executeScrapeJob(input: ExecuteScrapeJobInput): Promise<Ex
         painSignals,
         websiteStatus,
       });
+      const preVaultEnrichment = buildPreVaultOutreachEnrichment({
+        assessment,
+        businessName: target.businessName,
+        category: scoringCategory,
+        painSignals,
+        tacticalNote,
+        targetWebsite: target.website,
+        websiteStatus,
+      });
 
       const isArchived = disqualifyResult.disqualified;
       if (isArchived) disqualifiedCount++;
@@ -1429,6 +1502,8 @@ export async function executeScrapeJob(input: ExecuteScrapeJobInput): Promise<Ex
         emailConfidence: contactValidation.emailConfidence,
         emailFlags: JSON.stringify(contactValidation.emailFlags),
         emailType: contactValidation.emailType,
+        enrichedAt: new Date(),
+        enrichmentData: JSON.stringify(preVaultEnrichment),
         followUpQuestion: personalization.followUpQuestion,
         isArchived,
         lastUpdated: new Date(),

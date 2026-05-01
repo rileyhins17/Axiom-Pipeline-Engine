@@ -1,4 +1,4 @@
-import { after, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
 import { isValidJobId, normalizeAgentName, validateAgentLeadPayload } from "@/lib/agent-protocol";
 import { appendScrapeJobEvent } from "@/lib/scrape-jobs";
@@ -6,7 +6,7 @@ import { requireAgentAuth } from "@/lib/agent-auth";
 import { extractDomain } from "@/lib/dedupe";
 import { hasValidPipelineEmail } from "@/lib/lead-qualification";
 import { enrichLead } from "@/lib/outreach-enrichment";
-import { getPrisma } from "@/lib/prisma";
+import { getPrisma, type LeadRecord } from "@/lib/prisma";
 import { getScrapeJob } from "@/lib/scrape-jobs";
 
 function cleanText(value: unknown): string | null {
@@ -62,6 +62,8 @@ function normalizeLeadPayload(lead: Record<string, unknown>) {
     disqualifyReason: cleanText(lead.disqualifyReason),
     email: cleanText(lead.email) || "",
     emailFlags: cleanJsonText(lead.emailFlags),
+    enrichedAt: lead.enrichedAt || null,
+    enrichmentData: cleanJsonText(lead.enrichmentData),
     followUpQuestion: cleanText(lead.followUpQuestion),
     painSignals: cleanJsonText(lead.painSignals) || "[]",
     phone: cleanText(lead.phone) || "",
@@ -152,11 +154,69 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   }
 
   const prisma = getPrisma();
+  const now = new Date();
+  const createData = {
+    ...validation.lead,
+    isArchived: validation.lead.isArchived ? true : false,
+  };
+
+  if (
+    !createData.enrichmentData &&
+    createData.email &&
+    typeof createData.axiomScore === "number" &&
+    !createData.isArchived &&
+    hasValidPipelineEmail(createData)
+  ) {
+    try {
+      const enrichment = await enrichLead({
+        ...createData,
+        id: 0,
+        category: createData.category || null,
+        address: createData.address || null,
+        phone: createData.phone || null,
+        email: createData.email || null,
+        socialLink: createData.socialLink || null,
+        websiteUrl: createData.websiteUrl || null,
+        websiteDomain: createData.websiteDomain || null,
+        contactName: createData.contactName || null,
+        tacticalNote: createData.tacticalNote || null,
+        websiteGrade: createData.websiteGrade || null,
+        axiomTier: createData.axiomTier || null,
+        scoreBreakdown: createData.scoreBreakdown || null,
+        painSignals: createData.painSignals || null,
+        callOpener: createData.callOpener || null,
+        followUpQuestion: createData.followUpQuestion || null,
+        axiomWebsiteAssessment: createData.axiomWebsiteAssessment || null,
+        dedupeKey: createData.dedupeKey || null,
+        dedupeMatchedBy: createData.dedupeMatchedBy || null,
+        emailType: createData.emailType || null,
+        emailFlags: createData.emailFlags || null,
+        phoneFlags: createData.phoneFlags || null,
+        disqualifiers: createData.disqualifiers || null,
+        disqualifyReason: createData.disqualifyReason || null,
+        outreachStatus: null,
+        outreachChannel: null,
+        firstContactedAt: null,
+        lastContactedAt: null,
+        nextFollowUpDue: null,
+        outreachNotes: null,
+        enrichedAt: null,
+        enrichmentData: null,
+        source: createData.source || null,
+        isArchived: createData.isArchived,
+        createdAt: now,
+        lastUpdated: now,
+      } satisfies LeadRecord);
+      createData.enrichedAt = now;
+      createData.enrichmentData = JSON.stringify(enrichment);
+      createData.outreachStatus = "ENRICHED";
+    } catch (error) {
+      console.error(`[agent.results] Pre-vault enrichment failed for job ${jobId}:`, error);
+    }
+  }
+
   const createdLead = await prisma.lead.create({
-    data: {
-      ...validation.lead,
-      isArchived: validation.lead.isArchived ? true : false,
-    },
+    data: createData,
   });
 
   await appendScrapeJobEvent(jobId, "result", {
@@ -167,41 +227,6 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     city: createdLead.city,
     message: `[LEAD] Saved ${createdLead.businessName} — ${createdLead.city}`,
   });
-
-  // Fire-and-forget enrichment so fresh leads don't sit waiting for the next
-  // cron tick. Gated on having a valid email + score so we don't waste calls.
-  if (
-    createdLead.email &&
-    typeof createdLead.axiomScore === "number" &&
-    !createdLead.isArchived &&
-    hasValidPipelineEmail(createdLead)
-  ) {
-    after(async () => {
-      try {
-        await prisma.lead.update({
-          where: { id: createdLead.id },
-          data: { outreachStatus: "ENRICHING" },
-        });
-        const enrichment = await enrichLead(createdLead);
-        await prisma.lead.update({
-          where: { id: createdLead.id },
-          data: {
-            enrichedAt: new Date(),
-            enrichmentData: JSON.stringify(enrichment),
-            outreachStatus: "ENRICHED",
-          },
-        });
-      } catch (error) {
-        console.error(`[agent.results] Inline enrichment failed for lead ${createdLead.id}:`, error);
-        await prisma.lead
-          .update({
-            where: { id: createdLead.id },
-            data: { outreachStatus: "NOT_CONTACTED" },
-          })
-          .catch(() => null);
-      }
-    });
-  }
 
   return NextResponse.json({ ok: true, leadId: createdLead.id });
 }

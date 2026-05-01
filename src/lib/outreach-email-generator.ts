@@ -389,10 +389,11 @@ function buildFallbackInitialEmail(
   const recipientName = getRecipientName(lead);
   const bodyPlain = buildPlainTextEmail(
     [
-      `Hi ${recipientName},`,
+      lead.contactName ? `Hey ${recipientName},` : "Hi,",
       "",
-      `I took a quick look at ${lead.businessName} and it looks like ${enrichment.pitchAngle.toLowerCase()}`,
-      enrichment.recommendedCTA,
+      enrichment.personalizedHook,
+      `The main thing I noticed is that ${enrichment.keyPainPoint.toLowerCase()}`,
+      "Worth me sending over the 2 or 3 fixes I'd make?",
       "",
       "Best,",
       senderFirst,
@@ -408,6 +409,57 @@ function buildFallbackInitialEmail(
     observed_issue: enrichment.keyPainPoint,
     CTA_type: "permission_offer",
     confidence_score: 48,
+  };
+}
+
+function cleanEmailLine(value: string, fallback: string, maxLength = 180) {
+  const cleaned = (value || fallback)
+    .replace(/[!]/g, ".")
+    .replace(/[—–]/g, ",")
+    .replace(/\s+/g, " ")
+    .trim();
+  return (cleaned || fallback).slice(0, maxLength).trim();
+}
+
+function buildPlanBasedInitialEmail(
+  lead: LeadRecord,
+  plan: ColdEmailPlan,
+  senderName: string,
+): GeneratedEmail {
+  const senderFirst = firstName(senderName);
+  const recipientName = getRecipientName(lead);
+  const greeting = lead.contactName ? `Hey ${recipientName},` : "Hi,";
+  const observation = cleanEmailLine(plan.observationHint, `I was looking at ${lead.businessName} and had one quick thought.`);
+  const consequence = cleanEmailLine(
+    plan.consequenceHint,
+    "That can make it harder for a new visitor to know what to do next.",
+  );
+  const cta =
+    plan.CTA_type === "soft_call"
+      ? "Open to me walking you through the quick fix?"
+      : "Worth me sending over a couple of quick fixes?";
+  const bodyPlain = buildPlainTextEmail(
+    [
+      greeting,
+      "",
+      observation,
+      consequence,
+      cta.endsWith("?") ? cta : `${cta}?`,
+      "",
+      "Best,",
+      senderFirst,
+    ].join("\n"),
+    senderFirst,
+  );
+
+  return {
+    subject: sanitizeSubject(`quick thought on ${lead.websiteDomain || lead.businessName}`, lead.businessName),
+    bodyPlain,
+    bodyHtml: buildHtmlEmail(bodyPlain),
+    personalization_reason: plan.personalization_reason,
+    observed_issue: plan.observed_issue,
+    CTA_type: plan.CTA_type,
+    confidence_score: Math.max(70, plan.confidence_score),
   };
 }
 
@@ -479,6 +531,12 @@ export async function generateEmail(
       retryValidation.valid || retryValidation.score >= firstValidation.score
         ? retryDraft
         : firstDraft;
+    const finalValidation = retryValidation.valid || retryValidation.score >= firstValidation.score
+      ? retryValidation
+      : firstValidation;
+    if (!finalValidation.valid) {
+      return buildPlanBasedInitialEmail(lead, plan, senderName);
+    }
     return finalizeColdEmail(finalDraft, senderName);
   } catch (error) {
     console.warn(`[outreach-email-generator] Falling back to template email for ${lead.id}:`, error);

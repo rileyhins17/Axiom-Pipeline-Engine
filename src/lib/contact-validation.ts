@@ -18,12 +18,14 @@ export interface ValidateEmailOptions {
     businessWebsite?: string | null;
 }
 
-const GENERIC_PREFIXES = [
+export const GENERIC_ROLE_PREFIXES = [
     "info", "contact", "hello", "office", "admin", "support",
     "sales", "enquiry", "inquiry", "mail", "team", "service",
     "general", "help", "customerservice", "reception",
     "bookings", "booking", "appointments", "frontdesk", "dispatch",
-    "operations", "welcome",
+    "operations", "welcome", "marketing", "market", "web", "website",
+    "quote", "quotes", "estimate", "estimates", "estimating",
+    "leads", "lead", "media", "social",
 ];
 
 const STAFF_PREFIXES = [
@@ -50,6 +52,12 @@ const FREE_PROVIDERS = [
     "protonmail.com", "mail.com", "zoho.com",
     "yahoo.ca", "outlook.ca",
 ];
+
+export function isGenericRoleEmail(email: string | null | undefined): boolean {
+    if (!email || !email.includes("@")) return false;
+    const localPart = email.toLowerCase().trim().split("@")[0] || "";
+    return GENERIC_ROLE_PREFIXES.some((prefix) => localPart === prefix || localPart.startsWith(`${prefix}.`));
+}
 
 const ONTARIO_AREA_CODES = [
     "226", "249", "289", "343", "365", "382",
@@ -132,7 +140,7 @@ export function validateEmail(
 
     let type: ContactValidation["emailType"] = "unknown";
 
-    const isGeneric = GENERIC_PREFIXES.some((prefix) => localPart === prefix || localPart.startsWith(prefix + "."));
+    const isGeneric = isGenericRoleEmail(e);
     const isStaffPrefix = STAFF_PREFIXES.some((prefix) => localPart === prefix || localPart.startsWith(prefix + "."));
     const isOwnerPrefix = OWNER_PREFIXES.some((prefix) => localPart === prefix || localPart.startsWith(prefix + "."));
 

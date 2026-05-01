@@ -113,6 +113,8 @@ export interface ScrapeLeadWriteInput {
   emailConfidence: number;
   emailFlags: string | null;
   emailType: string;
+  enrichedAt?: Date | string | null;
+  enrichmentData?: string | null;
   followUpQuestion: string;
   isArchived: boolean;
   lastUpdated: Date;
@@ -122,6 +124,7 @@ export interface ScrapeLeadWriteInput {
   phone: string;
   phoneConfidence: number;
   phoneFlags: string | null;
+  outreachStatus?: string | null;
   rating: number;
   reviewCount: number;
   scoreBreakdown: string;

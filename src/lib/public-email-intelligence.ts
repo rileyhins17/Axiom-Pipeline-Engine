@@ -1,4 +1,4 @@
-import { validateEmail, type ContactValidation } from "@/lib/contact-validation";
+import { isGenericRoleEmail, validateEmail, type ContactValidation } from "@/lib/contact-validation";
 
 export type EmailPageRole =
     | "homepage"
@@ -45,6 +45,8 @@ export interface PublicEmailResolution {
     reason: string;
     candidates: PublicEmailCandidate[];
 }
+
+const SENDABLE_EMAIL_TYPES = new Set<ContactValidation["emailType"]>(["owner", "staff"]);
 
 const CONTACT_PAGE_PATTERNS = [
     "contact",
@@ -454,7 +456,12 @@ export function resolvePublicBusinessEmail(input: {
         return b.confidence - a.confidence;
     });
 
-    const winner = candidates[0];
+    const winner = candidates.find(
+        (candidate) =>
+            SENDABLE_EMAIL_TYPES.has(candidate.type) &&
+            !candidate.flags.includes("generic_prefix") &&
+            !isGenericRoleEmail(candidate.email),
+    );
 
     return {
         email: winner?.email || "",
@@ -462,6 +469,8 @@ export function resolvePublicBusinessEmail(input: {
         emailType: winner?.type || "unknown",
         reason: winner
             ? `${winner.type} email chosen from ${winner.occurrences[0]?.sourceLabel || "public source"}`
+            : candidates.length > 0
+                ? "Only generic or role-based public emails were found"
             : "No vetted public email found",
         candidates,
     };
