@@ -17,6 +17,7 @@ import {
   type ScrapeJobRecord,
   type ScrapeLeadWriteInput,
 } from "@/lib/scrape-jobs";
+import { markScrapeTargetCompleted } from "@/lib/scrape-targets";
 
 const DEFAULT_CLOUD_WORKER_NAME = "cloudflare-browser";
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 15_000;
@@ -184,6 +185,9 @@ async function runClaimedJob(job: ScrapeJobRecord, existingDedupeKeys: string[])
         leadsFound: result.leadsFound,
         withEmail: result.withEmail,
       },
+    });
+    await markScrapeTargetCompleted(job.id, result.leadsFound).catch((error) => {
+      console.warn(`[cloud-scrape] failed to update target yield for ${job.id}:`, error);
     });
     jobFinished = true;
 

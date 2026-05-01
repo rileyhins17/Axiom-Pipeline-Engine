@@ -1,8 +1,13 @@
 import { strict as assert } from "node:assert";
 import test from "node:test";
 
-import { buildScheduledTimeline, getStepType, selectAutomationReadyLeads } from "./outreach-automation";
-import type { LeadRecord } from "./prisma";
+import {
+  buildScheduledTimeline,
+  getStepType,
+  orderDueStepsForClaiming,
+  selectAutomationReadyLeads,
+} from "./outreach-automation";
+import type { LeadRecord, OutreachSequenceStepRecord } from "./prisma";
 
 function makeLead(overrides: Partial<LeadRecord> & Pick<LeadRecord, "id">): LeadRecord {
   const now = new Date("2026-01-01T12:00:00.000Z");
@@ -59,6 +64,34 @@ function makeLead(overrides: Partial<LeadRecord> & Pick<LeadRecord, "id">): Lead
   };
 }
 
+function makeStep(overrides: Partial<OutreachSequenceStepRecord> & Pick<OutreachSequenceStepRecord, "id">) {
+  const now = new Date("2026-01-01T12:00:00.000Z");
+  const { id, ...rest } = overrides;
+
+  return {
+    id,
+    sequenceId: "sequence-1",
+    stepNumber: 1,
+    stepType: "INITIAL",
+    status: "SCHEDULED",
+    scheduledFor: now,
+    claimedAt: null,
+    claimedByRunId: null,
+    sentAt: null,
+    gmailMessageId: null,
+    gmailThreadId: null,
+    subject: null,
+    bodyHtml: null,
+    bodyPlain: null,
+    generationModel: null,
+    errorMessage: null,
+    attemptCount: 0,
+    createdAt: now,
+    updatedAt: now,
+    ...rest,
+  } satisfies OutreachSequenceStepRecord;
+}
+
 test("first-touch selection filters ineligible leads before the queue batch limit", () => {
   const ineligibleTopFifty = Array.from({ length: 50 }, (_, index) =>
     makeLead({
@@ -107,6 +140,35 @@ test("first-touch selection blocks contacted, sent, and open first-touch recipie
   assert.deepEqual(result.leads.map((lead) => lead.id), [viable.id]);
   assert.equal(result.diagnostics.skippedAlreadyContactedCount, 2);
   assert.equal(result.diagnostics.skippedExistingOpenStepCount, 2);
+});
+
+test("scheduler claim ordering keeps initial outreach ahead of overdue follow-ups", () => {
+  const ordered = orderDueStepsForClaiming([
+    makeStep({
+      id: "follow-up-oldest",
+      stepNumber: 3,
+      stepType: "FOLLOW_UP_2",
+      scheduledFor: new Date("2026-01-01T08:00:00.000Z"),
+    }),
+    makeStep({
+      id: "initial-newer",
+      stepNumber: 1,
+      stepType: "INITIAL",
+      scheduledFor: new Date("2026-01-01T11:00:00.000Z"),
+    }),
+    makeStep({
+      id: "follow-up-newer",
+      stepNumber: 2,
+      stepType: "FOLLOW_UP_1",
+      scheduledFor: new Date("2026-01-01T10:00:00.000Z"),
+    }),
+  ]);
+
+  assert.deepEqual(ordered.map((step) => step.id), [
+    "initial-newer",
+    "follow-up-oldest",
+    "follow-up-newer",
+  ]);
 });
 
 test("automation sequence timeline includes initial plus three periodic follow-ups", () => {

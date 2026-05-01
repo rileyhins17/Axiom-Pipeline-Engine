@@ -807,6 +807,21 @@ export function getStepType(stepNumber: number): OutreachSequenceStepType {
   return "FOLLOW_UP_3";
 }
 
+export function orderDueStepsForClaiming<T extends Pick<OutreachSequenceStepRecord, "id" | "scheduledFor" | "stepNumber">>(
+  steps: T[],
+): T[] {
+  return [...steps].sort((a, b) => {
+    const initialPriority = (a.stepNumber === 1 ? 0 : 1) - (b.stepNumber === 1 ? 0 : 1);
+    if (initialPriority !== 0) return initialPriority;
+
+    const scheduledDiff =
+      (coerceDate(a.scheduledFor)?.getTime() || 0) - (coerceDate(b.scheduledFor)?.getTime() || 0);
+    if (scheduledDiff !== 0) return scheduledDiff;
+
+    return a.id.localeCompare(b.id);
+  });
+}
+
 function normalizeAutomationSettings(settings: OutreachAutomationSettingRecord) {
   // DB is the source of truth; only fill in missing/invalid values from defaults.
   const pickNumber = (value: unknown, fallback: number) =>
@@ -3493,7 +3508,13 @@ async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: numbe
       take: dueStepScanLimit,
     }) as Promise<OutreachSequenceStepRecord[]>,
   ]);
-  const dueSteps = [...initialDueSteps, ...followUpDueSteps];
+  const claimDiagnostics = {
+    dueInitialCount: initialDueSteps.length,
+    dueFollowUpCount: followUpDueSteps.length,
+    claimedInitialCount: 0,
+    claimedFollowUpCount: 0,
+  };
+  const dueSteps = orderDueStepsForClaiming([...initialDueSteps, ...followUpDueSteps]);
 
   const claims: SchedulerClaim[] = [];
   // Track per-mailbox claims to ensure equal distribution
@@ -3638,13 +3659,18 @@ async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: numbe
     const updated = { ...step, status: "CLAIMED" as const, claimedAt: now, claimedByRunId: runId };
     claims.push({ sequence, step: updated, mailbox });
     mailboxClaimCounts.set(mailbox.id, currentMailboxClaims + 1);
+    if (updated.stepNumber === 1) {
+      claimDiagnostics.claimedInitialCount += 1;
+    } else {
+      claimDiagnostics.claimedFollowUpCount += 1;
+    }
 
     if (claims.length >= batchSize) {
       break;
     }
   }
 
-  return { claims, diagnostics };
+  return { claims, diagnostics, claimDiagnostics };
 }
 
 async function rescheduleClaimStep(
@@ -3948,6 +3974,7 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
 
     console.log(`[scheduler] Pipeline: ${JSON.stringify(pipeline)} | Replies: checked=${replySync.checked} stopped=${replySync.stopped} | Fast-forwarded: ${fastForwardedCount} | Claims: ${claims.length}`);
     console.log(`[scheduler] First-touch diagnostics: ${JSON.stringify(firstTouchDiagnostics)}`);
+    console.log(`[scheduler] Claim diagnostics: ${JSON.stringify(claimResult.claimDiagnostics)}`);
 
     const { recordSendDecision } = await import("@/lib/send-decisions");
 
@@ -4076,6 +4103,7 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
           pipeline,
           fastForwarded: fastForwardedCount,
           firstTouchDiagnostics,
+          claimDiagnostics: claimResult.claimDiagnostics,
         }),
       },
     });
