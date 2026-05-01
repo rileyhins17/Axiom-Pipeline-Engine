@@ -59,8 +59,19 @@ function sanitizeEnrichmentText(value: string | null | undefined, fallback: stri
     const pattern = new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "ig");
     cleaned = cleaned.replace(pattern, "");
   }
-  cleaned = cleaned.replace(/\s{2,}/g, " ").replace(/\s+\./g, ".").trim();
-  return cleaned || fallback;
+  cleaned = cleaned.replace(/\s{2,}/g, " ").replace(/\s+([.,?])/g, "$1").trim();
+  if (!cleaned) return fallback;
+
+  // Ensure the line ends with a sentence-terminating punctuation mark.
+  // Without this, downstream concatenation produces broken-looking output.
+  if (!/[.?]$/.test(cleaned)) {
+    cleaned = `${cleaned.replace(/[,;:]+$/, "")}.`;
+  }
+
+  // Trim duplicated sentence-ending periods that sometimes slip through.
+  cleaned = cleaned.replace(/\.{2,}$/, ".");
+
+  return cleaned;
 }
 
 function sanitizeAnticipatedObjections(value: string[] | null | undefined) {
@@ -243,14 +254,14 @@ const SYSTEM_PROMPT = `You are writing outreach intelligence for Axiom Infrastru
 Your job is not to write polished agency strategy language. Your job is to produce grounded notes that help a human write a short, believable cold email.
 
 Rules:
-1. Be specific to the actual business and scraped evidence.
-2. Prefer concrete observations over broad claims.
-3. If evidence is weak, soften it with wording like "may be", "might be", or "feels like".
-4. Do not exaggerate.
-5. Do not flatter the business with generic compliments.
-6. Do not use agency filler.
+1. Be specific to the actual business and scraped evidence. If you cannot point to a real signal, soften the language; never invent details.
+2. Every field must be a complete grammatical sentence ending in a period. No fragments. No bullet-style snippets.
+3. The personalizedHook must be a single complete sentence that does NOT trail off after a verb like "noticed" or "saw". If you reference an observation, finish the thought in the same sentence.
+4. The keyPainPoint must be phrased as a description of the current state ("the contact form requires 5 fields"), never a prescription ("add fewer fields") and never an instruction.
+5. If evidence is weak, soften with "may be", "might be", "feels like", or "looks like" — but still write a complete sentence.
+6. Do not exaggerate. Do not flatter the business with generic compliments. Do not use agency filler.
 7. Do not recommend a high-friction CTA by default.
-8. Keep each field concise and usable in a human-sounding email.
+8. Keep each field concise (one or two short sentences max) and usable in a human-sounding email.
 9. Do not use em dashes or exclamation marks.
 
 Never use phrases like:

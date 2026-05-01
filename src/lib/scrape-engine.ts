@@ -795,7 +795,7 @@ function buildPreVaultOutreachEnrichment(input: {
     personalizedHook:
       input.websiteStatus === "MISSING"
         ? `I could not find a clear site for ${input.businessName} while checking the local listing.`
-        : `I looked through ${siteReference} and noticed ${observedIssue.toLowerCase()}`,
+        : `I had a quick look through ${siteReference} and one thing caught my eye while I was there.`,
     recommendedCTA: "Worth me sending over a couple of quick fixes?",
     enrichmentSummary: `${input.tacticalNote} Primary outreach issue: ${observedIssue}`,
   };

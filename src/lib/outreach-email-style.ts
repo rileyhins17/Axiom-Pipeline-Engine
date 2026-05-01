@@ -713,7 +713,7 @@ export function buildHtmlEmail(bodyPlain: string) {
     .filter(Boolean)
     .map(
       (paragraph) =>
-        `<p style="margin:0 0 14px;font-size:15px;line-height:1.55;color:#111827;font-family:Arial,Helvetica,sans-serif;">${escapeHtml(paragraph).replace(/\n/g, "<br />")}</p>`,
+        `<p style="margin:0 0 14px;font-size:15px;line-height:1.55;font-family:Arial,Helvetica,sans-serif;">${escapeHtml(paragraph).replace(/\n/g, "<br />")}</p>`,
     )
     .join("");
 
@@ -723,11 +723,11 @@ export function buildHtmlEmail(bodyPlain: string) {
     `<head>`,
     `<meta charset="utf-8">`,
     `<meta name="viewport" content="width=device-width, initial-scale=1.0">`,
+    `<meta name="color-scheme" content="light dark">`,
+    `<meta name="supported-color-schemes" content="light dark">`,
     `</head>`,
-    `<body style="margin:0;padding:0;background-color:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.55;color:#111827;">`,
-    `<div style="padding:0;">`,
+    `<body style="margin:0;padding:0;background:transparent;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.55;">`,
     paragraphs,
-    `</div>`,
     `</body>`,
     `</html>`,
   ].join("");

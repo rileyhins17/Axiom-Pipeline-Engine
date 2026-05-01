@@ -206,7 +206,7 @@ These emails go to real owners and managers on their phones. They take 2 seconds
 
 HARD RULES — violating any of these kills the conversion:
 1. LENGTH: 45-75 words. Under 80 words, period. Short wins.
-2. SUBJECT: 3-6 words, lowercase, no salesy language. Good: "noticed something on your site", "quick thought for {business}", "{city} {niche} — site question". Never: "Exclusive Opportunity", "Unlock Your Potential", "Grow {Business} 10x".
+2. SUBJECT: 3-6 words, sentence case (capitalize the first word and proper nouns only — not Title Case, not all-lowercase), no salesy language. Good: "Noticed something on your site", "Quick thought for {Business}", "{City} {niche} — site question". Never all-lowercase, never SHOUTY CASE, never: "Exclusive Opportunity", "Unlock Your Potential", "Grow {Business} 10x".
 3. OPENING LINE: Must reference a SPECIFIC concrete detail from the context (the niche in that city, the domain, a visible issue, the contact's first name). Never "I hope you're doing well", "My name is X", "I came across your website and was impressed".
 4. ONE OBSERVATION: Point out ONE specific thing you noticed. Soften it with "looks like", "seems to", "might be", "from a visitor's eye". Never list multiple issues. Never sound like an audit.
 5. ONE CTA: A single, easy-to-reply-to question. Best: "worth me sharing a quick fix or two?", "want me to send over what I'd change?", "open to a 10-min look?". Never: "Schedule a call via this link", "Book a demo", "Let me know when you're available to hop on a 30-minute discovery call".
@@ -225,7 +225,7 @@ STRUCTURE that converts (follow this exactly):
 
 Return JSON only:
 {
-  "subject": "3-6 word lowercase subject",
+  "subject": "3-6 word sentence-case subject (capitalize first word and proper nouns only)",
   "body": "plain-text body, no greetings template, exactly the 4-5 lines described",
   "personalization_reason": "one sentence on why this email will resonate with this specific lead",
   "observed_issue": "the single issue referenced",
@@ -245,13 +245,20 @@ STRICT RULES:
 7. Do NOT use placeholders.
 8. Do NOT use "broken", "costing you leads", "one last time", "last note", "circle back", or "touch base".
 9. No exclamation marks. No em dashes.
-10. Prefer a natural reply-style subject. "Re:" is allowed when it fits.
+10. Prefer a natural reply-style subject in sentence case (capitalize first word and proper nouns only — not Title Case, not all-lowercase). "Re:" is allowed when it fits.
 
 Respond with a JSON object:
 {
-  "subject": "short lowercase subject line",
+  "subject": "short sentence-case subject line",
   "bodyPlain": "plain text follow-up"
 }`;
+
+function toSentenceCase(value: string) {
+  const lower = value.toLowerCase();
+  // Capitalize the first alphabetic character only — preserves domain names,
+  // hyphenated tokens, and avoids Title Case which reads spammy.
+  return lower.replace(/^(\W*)([a-z])/, (_match, lead, first) => `${lead}${first.toUpperCase()}`);
+}
 
 function sanitizeSubject(subject: string, businessName: string) {
   const trimmed = subject
@@ -261,14 +268,14 @@ function sanitizeSubject(subject: string, businessName: string) {
     .trim();
 
   if (trimmed.length > 0) {
-    const shortSubject = trimmed.split(/\s+/).filter(Boolean).slice(0, 5).join(" ");
+    const shortSubject = trimmed.split(/\s+/).filter(Boolean).slice(0, 6).join(" ");
     const normalizedSubject = shortSubject.toLowerCase().startsWith("re:")
-      ? `Re: ${shortSubject.replace(/^re:\s*/i, "").toLowerCase()}`
-      : shortSubject.toLowerCase();
+      ? `Re: ${toSentenceCase(shortSubject.replace(/^re:\s*/i, ""))}`
+      : toSentenceCase(shortSubject);
     return normalizedSubject.slice(0, 78);
   }
 
-  return `quick thought on ${businessName}`.slice(0, 78);
+  return toSentenceCase(`quick thought on ${businessName}`).slice(0, 78);
 }
 
 function stripHtmlTags(value: string) {
@@ -316,6 +323,7 @@ async function generateColdEmailAttempt(
   const userPrompt = [
     "Generate one cold email using the selected strategy and context below.",
     "The email must feel human, specific, low-friction, and reply-worthy.",
+    "Ground every line in the PAIN SIGNALS, WEBSITE ASSESSMENT, and ENRICHMENT INTELLIGENCE below — reference a real signal that someone could only know by looking at this specific business. Do not generalize, do not paraphrase into vague advice, and do not echo the strategy or rules back at the reader.",
     "",
     context,
     "",
@@ -326,6 +334,9 @@ async function generateColdEmailAttempt(
     `- Observed issue to anchor around: ${plan.observed_issue}.`,
     `- If evidence is limited, stay curiosity-based and ask permission to send ideas.`,
     "- Do not over-compliment the business.",
+    "- Every sentence must be a complete thought ending in a period or question mark. Never trail off after a verb like \"noticed\" or \"saw\".",
+    "- The opening observation must reference at least one concrete detail from the PAIN SIGNALS or WEBSITE ASSESSMENT (a specific page, contact path, missing element, review pattern, or domain), not a generic statement.",
+    "- Do not write the email as if you are following a template — vary phrasing, do not start with \"I had a quick look\" or \"I looked through\" if those exact phrases appear in the personalized hook.",
     retryInstructions ? `\n${retryInstructions}` : "",
   ]
     .filter(Boolean)
@@ -453,7 +464,7 @@ function buildPlanBasedInitialEmail(
   );
 
   return {
-    subject: sanitizeSubject(`quick thought on ${lead.websiteDomain || lead.businessName}`, lead.businessName),
+    subject: sanitizeSubject(`Quick thought on ${lead.websiteDomain || lead.businessName}`, lead.businessName),
     bodyPlain,
     bodyHtml: buildHtmlEmail(bodyPlain),
     personalization_reason: plan.personalization_reason,
@@ -491,7 +502,7 @@ function buildFallbackFollowUpEmail(
   );
 
   return {
-    subject: sanitizeSubject(stepType === "FOLLOW_UP_3" ? "last site thought" : stepType === "FOLLOW_UP_2" ? "quick site thought" : "one site thought", lead.businessName),
+    subject: sanitizeSubject(stepType === "FOLLOW_UP_3" ? "Last site thought" : stepType === "FOLLOW_UP_2" ? "Quick site thought" : "One site thought", lead.businessName),
     bodyPlain,
     bodyHtml: buildHtmlEmail(bodyPlain),
     personalization_reason: enrichment.personalizedHook,
