@@ -92,3 +92,25 @@ test("scrape target selection cools down recently failed proven targets", () => 
   assert.equal(getScrapeTargetPriorityBand(recentlyFailed), 7);
   assert.equal(ordered[0].id, nextProvenTarget.id);
 });
+
+test("scrape target selection rotates proven targets before repeating the highest-history target", () => {
+  const justRunHighestHistory = makeCandidate({
+    id: "just-run-highest-history",
+    niche: "Custom Cabinetry",
+    city: "Guelph",
+    adequateLeadCount: 11,
+    lastRunAt: new Date("2026-01-01T12:00:00.000Z"),
+  });
+  const neverRunProvenTarget = makeCandidate({
+    id: "never-run-proven-target",
+    niche: "Roofers",
+    city: "Waterloo",
+    adequateLeadCount: 10,
+    lastRunAt: null,
+    totalRuns: 0,
+  });
+
+  const ordered = [justRunHighestHistory, neverRunProvenTarget].sort(compareScrapeTargetCandidates);
+
+  assert.equal(ordered[0].id, neverRunProvenTarget.id);
+});

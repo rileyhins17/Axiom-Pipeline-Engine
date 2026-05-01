@@ -148,6 +148,10 @@ export function compareScrapeTargetCandidates(a: ScrapeTargetCandidate, b: Scrap
   const bandDiff = getScrapeTargetPriorityBand(a) - getScrapeTargetPriorityBand(b);
   if (bandDiff !== 0) return bandDiff;
 
+  const lastRunDiff = (a.lastRunAt?.getTime() ?? Number.NEGATIVE_INFINITY) -
+    (b.lastRunAt?.getTime() ?? Number.NEGATIVE_INFINITY);
+  if (lastRunDiff !== 0) return lastRunDiff;
+
   const adequateDiff = b.adequateLeadCount - a.adequateLeadCount;
   if (adequateDiff !== 0) return adequateDiff;
 
@@ -159,10 +163,6 @@ export function compareScrapeTargetCandidates(a: ScrapeTargetCandidate, b: Scrap
 
   const lifetimeYieldDiff = b.totalLeadsFound - a.totalLeadsFound;
   if (lifetimeYieldDiff !== 0) return lifetimeYieldDiff;
-
-  const lastRunDiff = (a.lastRunAt?.getTime() ?? Number.NEGATIVE_INFINITY) -
-    (b.lastRunAt?.getTime() ?? Number.NEGATIVE_INFINITY);
-  if (lastRunDiff !== 0) return lastRunDiff;
 
   return a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id);
 }
