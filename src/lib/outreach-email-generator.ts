@@ -548,34 +548,54 @@ function buildFallbackFollowUpEmail(
   stepType: OutreachSequenceStepType,
 ): GeneratedEmail {
   const senderFirst = firstName(senderName);
-  const recipientName = getRecipientName(lead);
-  const followUpLine = stepType === "FOLLOW_UP_3"
-    ? "Wanted to send one practical thought before I close this out."
-    : stepType === "FOLLOW_UP_2"
-      ? "Wanted to send one more practical thought in case this is useful."
-    : "Wanted to send one practical thought that may be useful.";
+  const recipientFirst = lead.contactName?.trim().split(/\s+/)[0] || null;
+  const domain = extractLeadDomain(lead);
+
+  // Use plan so the observation is pain-signal-specific, not generic
+  const plan = chooseColdEmailPlan(lead, enrichment);
+
+  // Opening line references the specific domain so the follow-up feels anchored
+  const intro =
+    stepType === "FOLLOW_UP_3"
+      ? "One last thought before I leave this one alone."
+      : stepType === "FOLLOW_UP_2"
+        ? `Wanted to add one more thought on ${domain || lead.businessName}.`
+        : `Just wanted to follow up on my note about ${domain || lead.businessName}.`;
+
+  // Keep the observation short and specific
+  const observationLine = cleanEmailLine(
+    plan.observationHint,
+    enrichment.keyPainPoint || "The site may still be leaving some easy contact opportunities on the table.",
+  );
+
+  const ctaLine =
+    stepType === "FOLLOW_UP_3"
+      ? "Happy to send the specific things I'd fix if that's useful."
+      : plan.CTA_type === "soft_call"
+        ? "Open to a quick look if it helps."
+        : "Worth me sending over what I'd change?";
+
+  const greeting = recipientFirst ? `Hi ${recipientFirst},` : "Hi,";
   const bodyPlain = buildPlainTextEmail(
-    [
-      `Hi ${recipientName},`,
-      "",
-      followUpLine,
-      `The main thing I noticed was that ${enrichment.keyPainPoint.toLowerCase()}.`,
-      enrichment.recommendedCTA,
-      "",
-      "Best,",
-      senderFirst,
-    ].join("\n"),
+    [greeting, "", intro, observationLine, ctaLine].join("\n"),
     senderFirst,
   );
 
+  const subjectMap: Record<OutreachSequenceStepType, string> = {
+    INITIAL: rotateFallbackSubject(lead),
+    FOLLOW_UP_1: "One site thought",
+    FOLLOW_UP_2: "Quick site thought",
+    FOLLOW_UP_3: "Last site thought",
+  };
+
   return {
-    subject: sanitizeSubject(stepType === "FOLLOW_UP_3" ? "Last site thought" : stepType === "FOLLOW_UP_2" ? "Quick site thought" : "One site thought", lead.businessName),
+    subject: sanitizeSubject(subjectMap[stepType] || "One site thought", lead.businessName),
     bodyPlain,
     bodyHtml: buildHtmlEmail(bodyPlain),
-    personalization_reason: enrichment.personalizedHook,
-    observed_issue: enrichment.keyPainPoint,
-    CTA_type: "follow_up",
-    confidence_score: 42,
+    personalization_reason: plan.personalization_reason,
+    observed_issue: plan.observed_issue,
+    CTA_type: plan.CTA_type,
+    confidence_score: 45,
   };
 }
 
