@@ -455,36 +455,80 @@ function cleanEmailLine(value: string, fallback: string, maxLength = 180) {
   return (cleaned || fallback).slice(0, maxLength).trim();
 }
 
+function extractLeadDomain(lead: LeadRecord): string {
+  const raw = lead.websiteUrl || "";
+  return raw.replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0] || "";
+}
+
 function buildPlanBasedInitialEmail(
   lead: LeadRecord,
   plan: ColdEmailPlan,
   senderName: string,
 ): GeneratedEmail {
   const senderFirst = firstName(senderName);
-  const recipientName = getRecipientName(lead);
-  const greeting = lead.contactName ? `Hey ${recipientName},` : "Hi,";
-  const observation = cleanEmailLine(plan.observationHint, `I was looking at ${lead.businessName} and had one quick thought.`);
-  const consequence = cleanEmailLine(
-    plan.consequenceHint,
-    "That can make it harder for a new visitor to know what to do next.",
+  const recipientFirst = lead.contactName?.trim().split(/\s+/)[0] || null;
+  const greeting = recipientFirst ? `Hey ${recipientFirst},` : "Hi,";
+
+  const domain = extractLeadDomain(lead);
+  const city = lead.city?.trim() || "";
+  const niche = lead.niche?.trim() || "";
+  // "electricians in Kitchener", "custom cabinetry in Guelph", etc.
+  const nicheCity = niche && city
+    ? `${niche.toLowerCase()} in ${city}`
+    : niche.toLowerCase() || (city ? `local businesses in ${city}` : "");
+
+  // --- Opening line: prove you looked at their specific business ---
+  let openingLine: string;
+  if (lead.websiteStatus === "MISSING") {
+    openingLine = nicheCity
+      ? `I was searching for ${nicheCity} and couldn't find a clear website for ${lead.businessName}.`
+      : `I came across ${lead.businessName} and couldn't find a proper website for the business.`;
+  } else if (plan.strategy === "observation_based") {
+    if (nicheCity && domain) {
+      openingLine = `I was looking at ${nicheCity} and clicked through ${domain}.`;
+    } else if (domain) {
+      openingLine = `I was looking through ${domain} and noticed one thing.`;
+    } else {
+      openingLine = `I came across ${lead.businessName} in ${city || "your area"} and had one quick thought.`;
+    }
+  } else {
+    // curiosity_based — domain-anchored but soft
+    if (domain && nicheCity) {
+      openingLine = `I came across ${domain} while looking at ${nicheCity}.`;
+    } else if (domain) {
+      openingLine = `I was looking through ${domain} and had one quick thought.`;
+    } else {
+      openingLine = `I came across ${lead.businessName} in ${city || "your area"} and had one quick thought.`;
+    }
+  }
+
+  // --- Observation: the specific issue for this lead ---
+  const observationLine = cleanEmailLine(
+    plan.observationHint,
+    lead.websiteStatus === "MISSING"
+      ? "That can make it harder for a new customer to know where to reach out."
+      : "The site may be making it harder than it needs to for someone to take the next step.",
   );
-  const cta =
+
+  // --- Consequence: why it matters (short, only when it adds something) ---
+  const rawConsequence = (plan.consequenceHint || "").trim();
+  const consequenceLine = rawConsequence.length > 10 && rawConsequence !== observationLine
+    ? cleanEmailLine(rawConsequence, "")
+    : "";
+
+  // --- CTA: low-friction, varied by type ---
+  const ctaLine =
     plan.CTA_type === "soft_call"
-      ? "Open to me walking you through the quick fix?"
-      : "Worth me sending over a couple of quick fixes?";
-  const bodyPlain = buildPlainTextEmail(
-    [
-      greeting,
-      "",
-      observation,
-      consequence,
-      cta.endsWith("?") ? cta : `${cta}?`,
-      "",
-      "Best,",
-      senderFirst,
-    ].join("\n"),
-    senderFirst,
-  );
+      ? "Open to me walking you through what I'd fix?"
+      : plan.CTA_type === "observation_offer"
+      ? "Worth me sending over the 2 or 3 things I'd change?"
+      : "Happy to send over what I noticed if it's useful.";
+
+  const bodyParts = [greeting, "", openingLine, observationLine];
+  if (consequenceLine) bodyParts.push(consequenceLine);
+  bodyParts.push(ctaLine);
+
+  const bodyPlain = buildPlainTextEmail(bodyParts.join("\n"), senderFirst);
 
   return {
     subject: sanitizeSubject(rotateFallbackSubject(lead), lead.businessName),
@@ -493,7 +537,7 @@ function buildPlanBasedInitialEmail(
     personalization_reason: plan.personalization_reason,
     observed_issue: plan.observed_issue,
     CTA_type: plan.CTA_type,
-    confidence_score: Math.max(70, plan.confidence_score),
+    confidence_score: Math.max(62, plan.confidence_score),
   };
 }
 
@@ -543,8 +587,10 @@ export async function generateEmail(
   enrichment: EnrichmentResult,
   senderName: string,
 ): Promise<GeneratedEmail> {
+  // Compute plan outside the try block so it is available in the catch fallback.
+  const plan = chooseColdEmailPlan(lead, enrichment);
+
   try {
-    const plan = chooseColdEmailPlan(lead, enrichment);
     const context = buildGenerationContext(lead, enrichment, senderName, plan);
 
     const firstDraft = normalizeColdEmailDraft(
@@ -575,8 +621,11 @@ export async function generateEmail(
     }
     return finalizeColdEmail(finalDraft, senderName);
   } catch (error) {
-    console.warn(`[outreach-email-generator] Falling back to template email for ${lead.id}:`, error);
-    return buildFallbackInitialEmail(lead, enrichment, senderName);
+    // DeepSeek unavailable or API key not configured — fall back to the
+    // plan-based template which uses niche/city/domain for a specific opener
+    // and the per-lead observationHint/consequenceHint from pain signals.
+    console.warn(`[outreach-email-generator] LLM generation failed for lead ${lead.id}, using plan-based fallback:`, error);
+    return buildPlanBasedInitialEmail(lead, plan, senderName);
   }
 }
 
