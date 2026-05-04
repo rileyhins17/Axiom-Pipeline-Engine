@@ -66,6 +66,14 @@ function makeLead(overrides: Partial<LeadRecord> & Pick<LeadRecord, "id">): Lead
     projectStartDate: null,
     renewalDate: null,
     projectNotes: null,
+    nextAction: null,
+    nextActionDueAt: null,
+    lastReplyAt: null,
+    dealHealth: null,
+    dealLostReason: null,
+    proposalSentAt: null,
+    signedAt: null,
+    clientPriority: null,
     ...rest,
   };
 }

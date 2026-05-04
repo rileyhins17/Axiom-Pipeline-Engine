@@ -1,8 +1,15 @@
 import { NextResponse } from "next/server";
 
-import { isDealStage, isEngagementType } from "@/lib/crm";
+import { isClientPriority, isDealStage, isEngagementType } from "@/lib/crm";
 import { getPrisma } from "@/lib/prisma";
 import { requireApiSession } from "@/lib/session";
+
+function parseDateField(value: unknown): Date | null | { error: string } {
+  if (value === null || value === undefined) return null;
+  const d = new Date(String(value));
+  if (isNaN(d.getTime())) return { error: "invalid date" };
+  return d;
+}
 
 export async function PATCH(
   request: Request,
@@ -32,6 +39,15 @@ export async function PATCH(
       return NextResponse.json({ error: "Invalid dealStage" }, { status: 400 });
     }
     update.dealStage = v ?? null;
+
+    // Auto-set proposalSentAt when stage first moves to PROPOSAL_SENT (client can override)
+    if (v === "PROPOSAL_SENT" && !("proposalSentAt" in body)) {
+      update.proposalSentAt = new Date();
+    }
+    // Auto-set signedAt when stage first moves to SIGNED (client can override)
+    if (v === "SIGNED" && !("signedAt" in body)) {
+      update.signedAt = new Date();
+    }
   }
 
   if ("engagementType" in body) {
@@ -50,34 +66,30 @@ export async function PATCH(
     update.monthlyValue = v ?? null;
   }
 
-  if ("projectStartDate" in body) {
-    const v = body.projectStartDate;
-    if (v !== null) {
-      const d = new Date(String(v));
-      if (isNaN(d.getTime())) {
-        return NextResponse.json({ error: "Invalid projectStartDate" }, { status: 400 });
+  if ("clientPriority" in body) {
+    const v = body.clientPriority;
+    if (v !== null && !isClientPriority(v)) {
+      return NextResponse.json({ error: "Invalid clientPriority" }, { status: 400 });
+    }
+    update.clientPriority = v ?? null;
+  }
+
+  // Date fields
+  for (const field of ["projectStartDate", "renewalDate", "nextActionDueAt", "lastReplyAt", "proposalSentAt", "signedAt"] as const) {
+    if (field in body) {
+      const parsed = parseDateField(body[field]);
+      if (parsed !== null && "error" in parsed) {
+        return NextResponse.json({ error: `Invalid ${field}` }, { status: 400 });
       }
-      update.projectStartDate = d;
-    } else {
-      update.projectStartDate = null;
+      update[field] = parsed;
     }
   }
 
-  if ("renewalDate" in body) {
-    const v = body.renewalDate;
-    if (v !== null) {
-      const d = new Date(String(v));
-      if (isNaN(d.getTime())) {
-        return NextResponse.json({ error: "Invalid renewalDate" }, { status: 400 });
-      }
-      update.renewalDate = d;
-    } else {
-      update.renewalDate = null;
+  // Text fields
+  for (const field of ["projectNotes", "nextAction", "dealHealth", "dealLostReason"] as const) {
+    if (field in body) {
+      update[field] = body[field] ? String(body[field]) : null;
     }
-  }
-
-  if ("projectNotes" in body) {
-    update.projectNotes = body.projectNotes ? String(body.projectNotes) : null;
   }
 
   if (Object.keys(update).length === 0) {

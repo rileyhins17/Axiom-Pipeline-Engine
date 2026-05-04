@@ -1,8 +1,10 @@
 import type { ReactNode } from "react";
 import {
   Activity,
+  AlertTriangle,
   Bot,
   CheckCircle2,
+  Clock,
   Clock3,
   DollarSign,
   MailCheck,
@@ -223,10 +225,85 @@ async function getCrmStats() {
   };
 }
 
+type FollowUpItem = {
+  id: number;
+  businessName: string;
+  dealStage: string;
+  nextAction: string | null;
+  nextActionDueAt: string | null;
+  monthlyValue: number | null;
+};
+
+async function getFollowUpItems() {
+  const db = getDatabase();
+  const now = new Date().toISOString();
+  const todayStart = startOfTodayUtc().toISOString();
+  const tomorrowStart = new Date(startOfTodayUtc().getTime() + 86_400_000).toISOString();
+  const staleCutoff = new Date(Date.now() - 14 * 86_400_000).toISOString();
+  const riskyCutoff = new Date(Date.now() - 21 * 86_400_000).toISOString();
+
+  const [overdue, dueToday, stale, risky] = await Promise.all([
+    // Overdue: past-due action items
+    db.prepare(`
+      SELECT id, businessName, dealStage, nextAction, nextActionDueAt, monthlyValue
+      FROM "Lead"
+      WHERE dealStage IS NOT NULL AND dealStage != 'LOST'
+        AND nextActionDueAt IS NOT NULL AND nextActionDueAt < ?
+        AND isArchived = 0
+      ORDER BY nextActionDueAt ASC LIMIT 8
+    `).bind(todayStart).all<FollowUpItem>(),
+
+    // Due today
+    db.prepare(`
+      SELECT id, businessName, dealStage, nextAction, nextActionDueAt, monthlyValue
+      FROM "Lead"
+      WHERE dealStage IS NOT NULL AND dealStage != 'LOST'
+        AND nextActionDueAt >= ? AND nextActionDueAt < ?
+        AND isArchived = 0
+      ORDER BY nextActionDueAt ASC LIMIT 8
+    `).bind(todayStart, tomorrowStart).all<FollowUpItem>(),
+
+    // Stale: open deal, no outbound or reply in 14+ days
+    db.prepare(`
+      SELECT id, businessName, dealStage, nextAction, nextActionDueAt, monthlyValue
+      FROM "Lead"
+      WHERE dealStage IN ('PROPOSAL_SENT', 'NEGOTIATING')
+        AND (lastReplyAt IS NULL OR lastReplyAt < ?)
+        AND (lastContactedAt IS NULL OR lastContactedAt < ?)
+        AND isArchived = 0
+      ORDER BY lastContactedAt ASC LIMIT 8
+    `).bind(staleCutoff, staleCutoff).all<FollowUpItem>(),
+
+    // Risky: proposal sent 21+ days ago, no sign
+    db.prepare(`
+      SELECT id, businessName, dealStage, nextAction, nextActionDueAt, monthlyValue
+      FROM "Lead"
+      WHERE dealStage = 'PROPOSAL_SENT'
+        AND proposalSentAt IS NOT NULL AND proposalSentAt < ?
+        AND isArchived = 0
+      ORDER BY proposalSentAt ASC LIMIT 8
+    `).bind(riskyCutoff).all<FollowUpItem>(),
+  ]);
+
+  // dedupe stale vs risky by id — risky takes precedence
+  const riskyIds = new Set((risky.results ?? []).map((r) => r.id));
+  const filteredStale = (stale.results ?? []).filter((r) => !riskyIds.has(r.id));
+
+  return {
+    overdue: overdue.results ?? [],
+    dueToday: dueToday.results ?? [],
+    stale: filteredStale,
+    risky: risky.results ?? [],
+    now,
+  };
+}
+
 export default async function DashboardPage() {
   await requireSession();
 
   const prisma = getPrisma();
+  const emptyFollowUps = { overdue: [], dueToday: [], stale: [], risky: [], now: new Date().toISOString() };
+
   const [
     automation,
     scrapeJobs,
@@ -240,6 +317,7 @@ export default async function DashboardPage() {
     activeTargets,
     series,
     crmStats,
+    followUps,
   ] = await Promise.all([
     listAutomationOverview().catch(() => emptyAutomationOverview()),
     listScrapeJobs(8).catch(() => []),
@@ -264,6 +342,7 @@ export default async function DashboardPage() {
       replied: Array(7).fill(0),
     })),
     getCrmStats().catch(() => ({ mrr: 0, activeClients: 0, inPipeline: 0, renewalsDue: 0, lostDeals: 0 })),
+    getFollowUpItems().catch(() => emptyFollowUps),
   ]);
 
   const activeScrape = scrapeJobs.find((j) => j.status === "running" || j.status === "claimed") ?? null;
@@ -453,6 +532,142 @@ export default async function DashboardPage() {
           </a>
         </Panel>
       </section>
+
+      {/* Follow-Ups panel */}
+      <FollowUpsPanel data={followUps} />
+    </div>
+  );
+}
+
+// ---------- Follow-Ups Panel ----------
+
+function FollowUpItemRow({ item, overdue = false }: { item: FollowUpItem; overdue?: boolean }) {
+  const dueLabel = item.nextActionDueAt
+    ? (() => {
+        const d = new Date(item.nextActionDueAt);
+        if (isNaN(d.getTime())) return null;
+        const now = Date.now();
+        const diff = Math.ceil((d.getTime() - now) / 86_400_000);
+        if (diff < 0) return `${Math.abs(diff)}d ago`;
+        if (diff === 0) return "Today";
+        if (diff === 1) return "Tomorrow";
+        return `${diff}d`;
+      })()
+    : null;
+
+  return (
+    <div className="flex items-start justify-between gap-2 py-1.5 border-b border-white/[0.04] last:border-0">
+      <div className="min-w-0">
+        <div className={`text-xs font-medium truncate ${overdue ? "text-red-200" : "text-zinc-200"}`}>
+          {item.businessName}
+        </div>
+        <div className="text-[10.5px] text-zinc-500 truncate mt-px">
+          {item.nextAction ?? item.dealStage.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())}
+        </div>
+      </div>
+      <div className="flex flex-col items-end gap-0.5 shrink-0">
+        {dueLabel && (
+          <span className={`text-[10px] font-mono ${overdue ? "text-red-400" : "text-zinc-500"}`}>{dueLabel}</span>
+        )}
+        {item.monthlyValue ? (
+          <span className="text-[10px] font-mono text-emerald-400">${item.monthlyValue.toLocaleString()}</span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function FollowUpGroup({
+  icon,
+  title,
+  items,
+  emptyLabel,
+  overdue = false,
+}: {
+  icon: ReactNode;
+  title: string;
+  items: FollowUpItem[];
+  emptyLabel: string;
+  overdue?: boolean;
+}) {
+  return (
+    <div className="p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-zinc-500">{icon}</span>
+        <span className="text-[10.5px] font-semibold uppercase tracking-[0.15em] text-zinc-400">{title}</span>
+        {items.length > 0 && (
+          <span className={`font-mono text-[10px] border rounded px-1 py-px ${
+            overdue
+              ? "text-red-400 border-red-500/20 bg-red-500/10"
+              : "text-zinc-500 border-white/[0.09] bg-black/30"
+          }`}>
+            {items.length}
+          </span>
+        )}
+      </div>
+      {items.length === 0 ? (
+        <p className="text-[11px] text-zinc-700">{emptyLabel}</p>
+      ) : (
+        <div>
+          {items.slice(0, 5).map((item) => (
+            <FollowUpItemRow key={item.id} item={item} overdue={overdue} />
+          ))}
+          {items.length > 5 && (
+            <div className="text-[10px] text-zinc-600 pt-1.5">+{items.length - 5} more</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FollowUpsPanel({ data }: { data: { overdue: FollowUpItem[]; dueToday: FollowUpItem[]; stale: FollowUpItem[]; risky: FollowUpItem[] } }) {
+  const hasAny = data.overdue.length > 0 || data.dueToday.length > 0 || data.stale.length > 0 || data.risky.length > 0;
+
+  return (
+    <div className="v2-card overflow-hidden">
+      <header className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
+        <div>
+          <div className="text-sm font-semibold text-white">Follow-Ups</div>
+          <div className="mt-0.5 text-[11px] text-zinc-500">
+            {hasAny ? "Items requiring attention" : "All clear"}
+          </div>
+        </div>
+        <a
+          href="/clients"
+          className="text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors font-medium flex items-center gap-1"
+        >
+          Board
+          <span className="text-[10px]">→</span>
+        </a>
+      </header>
+      <div className="grid grid-cols-2 xl:grid-cols-4 divide-x divide-y xl:divide-y-0 divide-white/[0.05]">
+        <FollowUpGroup
+          icon={<Clock className="size-3.5" />}
+          title="Overdue"
+          items={data.overdue}
+          emptyLabel="No overdue actions"
+          overdue
+        />
+        <FollowUpGroup
+          icon={<Clock3 className="size-3.5" />}
+          title="Due Today"
+          items={data.dueToday}
+          emptyLabel="Nothing due today"
+        />
+        <FollowUpGroup
+          icon={<Users className="size-3.5" />}
+          title="Stale Deals"
+          items={data.stale}
+          emptyLabel="No stale deals"
+        />
+        <FollowUpGroup
+          icon={<AlertTriangle className="size-3.5" />}
+          title="Risky Proposals"
+          items={data.risky}
+          emptyLabel="No risky proposals"
+        />
+      </div>
     </div>
   );
 }

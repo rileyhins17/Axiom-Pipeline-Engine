@@ -94,6 +94,14 @@ export type LeadRecord = {
   projectStartDate: Date | null;
   renewalDate: Date | null;
   projectNotes: string | null;
+  nextAction: string | null;
+  nextActionDueAt: Date | null;
+  lastReplyAt: Date | null;
+  dealHealth: string | null;
+  dealLostReason: string | null;
+  proposalSentAt: Date | null;
+  signedAt: Date | null;
+  clientPriority: string | null;
 };
 
 type AuditEventRecord = {
@@ -509,8 +517,16 @@ const leadTable: TableSpec<LeadRecord> = {
     "projectStartDate",
     "renewalDate",
     "projectNotes",
+    "nextAction",
+    "nextActionDueAt",
+    "lastReplyAt",
+    "dealHealth",
+    "dealLostReason",
+    "proposalSentAt",
+    "signedAt",
+    "clientPriority",
   ],
-  dateFields: new Set(["createdAt", "lastUpdated", "firstContactedAt", "lastContactedAt", "nextFollowUpDue", "enrichedAt", "projectStartDate", "renewalDate"]),
+  dateFields: new Set(["createdAt", "lastUpdated", "firstContactedAt", "lastContactedAt", "nextFollowUpDue", "enrichedAt", "projectStartDate", "renewalDate", "nextActionDueAt", "lastReplyAt", "proposalSentAt", "signedAt"]),
   idField: "id",
   integerFields: new Set(["id", "reviewCount", "leadScore", "axiomScore", "monthlyValue"]),
   stringFields: new Set([
@@ -549,6 +565,10 @@ const leadTable: TableSpec<LeadRecord> = {
     "dealStage",
     "engagementType",
     "projectNotes",
+    "nextAction",
+    "dealHealth",
+    "dealLostReason",
+    "clientPriority",
   ]),
   tableName: "Lead",
   updatedAtField: "lastUpdated",
@@ -908,6 +928,14 @@ async function ensureLeadQualityColumns() {
         ["projectStartDate", "DATETIME"],
         ["renewalDate", "DATETIME"],
         ["projectNotes", "TEXT"],
+        ["nextAction", "TEXT"],
+        ["nextActionDueAt", "DATETIME"],
+        ["lastReplyAt", "DATETIME"],
+        ["dealHealth", "TEXT"],
+        ["dealLostReason", "TEXT"],
+        ["proposalSentAt", "DATETIME"],
+        ["signedAt", "DATETIME"],
+        ["clientPriority", "TEXT"],
       ];
 
       for (const [column, sqlType] of migrations) {
