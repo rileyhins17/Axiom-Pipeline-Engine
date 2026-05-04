@@ -16,7 +16,7 @@ export type AppNavItem = {
   icon: LucideIcon;
   shortcut: string;
   keywords: string[];
-  badgeKey?: "readyForTouch" | "followUp" | "replied" | "total" | "clients";
+  badgeKey?: "readyForTouch" | "followUp" | "replied" | "total";
 };
 
 export const APP_NAV_ITEMS: AppNavItem[] = [
@@ -43,7 +43,7 @@ export const APP_NAV_ITEMS: AppNavItem[] = [
     title: "Clients",
     label: "Clients",
     description: "Deal pipeline & client management",
-    url: "/clients",
+    url: "/clients" as Route,
     icon: Users,
     shortcut: "⌘3",
     keywords: ["crm", "deal", "client", "pipeline", "retainer", "revenue"],

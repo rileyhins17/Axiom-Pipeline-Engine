@@ -60,6 +60,12 @@ function makeLead(overrides: Partial<LeadRecord> & Pick<LeadRecord, "id">): Lead
     isArchived: false,
     createdAt: now,
     lastUpdated: now,
+    dealStage: null,
+    engagementType: null,
+    monthlyValue: null,
+    projectStartDate: null,
+    renewalDate: null,
+    projectNotes: null,
     ...rest,
   };
 }

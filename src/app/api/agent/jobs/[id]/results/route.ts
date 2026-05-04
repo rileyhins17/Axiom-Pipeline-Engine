@@ -206,6 +206,12 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         isArchived: createData.isArchived,
         createdAt: now,
         lastUpdated: now,
+        dealStage: null,
+        engagementType: null,
+        monthlyValue: null,
+        projectStartDate: null,
+        renewalDate: null,
+        projectNotes: null,
       } satisfies LeadRecord);
       createData.enrichedAt = now;
       createData.enrichmentData = JSON.stringify(enrichment);
