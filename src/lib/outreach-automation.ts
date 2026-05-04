@@ -2492,6 +2492,35 @@ async function markReplyStop(
   await stopSequenceInternal(prisma, sequence, "REPLIED", new Date());
 }
 
+/**
+ * Automated-sender patterns that are never a genuine prospect reply.
+ * Covers Google/Microsoft/generic bounce and delivery-notification addresses.
+ */
+const AUTOMATED_SENDER_PATTERNS = [
+  /^mailer-daemon@/i,
+  /^postmaster@/i,
+  /^noreply@/i,
+  /^no-reply@/i,
+  /^delivery-status@/i,
+  /^delivery\.status@/i,
+  /^auto-reply@/i,
+  /^autoreply@/i,
+  /^bounce[s]?@/i,
+  /^notifications?@/i,
+  /^mail-daemon@/i,
+  /^mailerdaemon@/i,
+  // Google MDN / undeliverable senders
+  /googlemail\.com/i,
+  /google\.com.*mailer/i,
+  // Microsoft NDR
+  /microsoftonline\.com/i,
+  /outlook\.com.*postmaster/i,
+];
+
+function isAutomatedSender(email: string): boolean {
+  return AUTOMATED_SENDER_PATTERNS.some((pattern) => pattern.test(email));
+}
+
 async function detectReplyForSequence(
   prisma: PrismaLike,
   sequence: OutreachSequenceRecord,
@@ -2513,6 +2542,12 @@ async function detectReplyForSequence(
   if (!connection) {
     return { detected: false } satisfies ReplyDetectionResult;
   }
+
+  // Look up the lead so we can require the reply comes from their address.
+  const lead = await prisma.lead.findUnique({
+    where: { id: sequence.leadId },
+  }) as LeadRecord | null;
+  const leadEmail = lead?.email ? normalizeEmail(lead.email) : null;
 
   const latestSentStep = await prisma.outreachSequenceStep.findFirst({
     where: {
@@ -2547,7 +2582,21 @@ async function detectReplyForSequence(
     }
 
     const fromHeader = normalizeEmail(message.headers.from);
+
+    // Must have a sender, and it must not be our own mailbox.
     if (!fromHeader || fromHeader.includes(mailboxEmail)) {
+      continue;
+    }
+
+    // Filter out delivery failures, bounce notifications, and automated systems.
+    if (isAutomatedSender(fromHeader)) {
+      continue;
+    }
+
+    // If we know the lead's email, require the reply to come from that address.
+    // This is the primary guard against NDR/bounce messages that slip past the
+    // automated-sender patterns above.
+    if (leadEmail && !fromHeader.includes(leadEmail)) {
       continue;
     }
 
