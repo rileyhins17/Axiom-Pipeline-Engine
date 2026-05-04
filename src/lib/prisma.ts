@@ -88,6 +88,12 @@ export type LeadRecord = {
   isArchived: boolean;
   createdAt: Date;
   lastUpdated: Date | null;
+  dealStage: string | null;
+  engagementType: string | null;
+  monthlyValue: number | null;
+  projectStartDate: Date | null;
+  renewalDate: Date | null;
+  projectNotes: string | null;
 };
 
 type AuditEventRecord = {
@@ -497,10 +503,16 @@ const leadTable: TableSpec<LeadRecord> = {
     "isArchived",
     "createdAt",
     "lastUpdated",
+    "dealStage",
+    "engagementType",
+    "monthlyValue",
+    "projectStartDate",
+    "renewalDate",
+    "projectNotes",
   ],
-  dateFields: new Set(["createdAt", "lastUpdated", "firstContactedAt", "lastContactedAt", "nextFollowUpDue", "enrichedAt"]),
+  dateFields: new Set(["createdAt", "lastUpdated", "firstContactedAt", "lastContactedAt", "nextFollowUpDue", "enrichedAt", "projectStartDate", "renewalDate"]),
   idField: "id",
-  integerFields: new Set(["id", "reviewCount", "leadScore", "axiomScore"]),
+  integerFields: new Set(["id", "reviewCount", "leadScore", "axiomScore", "monthlyValue"]),
   stringFields: new Set([
     "businessName",
     "niche",
@@ -534,6 +546,9 @@ const leadTable: TableSpec<LeadRecord> = {
     "outreachNotes",
     "enrichmentData",
     "source",
+    "dealStage",
+    "engagementType",
+    "projectNotes",
   ]),
   tableName: "Lead",
   updatedAtField: "lastUpdated",
@@ -887,6 +902,12 @@ async function ensureLeadQualityColumns() {
         ["lastContactedAt", "DATETIME"],
         ["nextFollowUpDue", "DATETIME"],
         ["outreachNotes", "TEXT"],
+        ["dealStage", "TEXT"],
+        ["engagementType", "TEXT"],
+        ["monthlyValue", "INTEGER"],
+        ["projectStartDate", "DATETIME"],
+        ["renewalDate", "DATETIME"],
+        ["projectNotes", "TEXT"],
       ];
 
       for (const [column, sqlType] of migrations) {

@@ -3,6 +3,7 @@ import {
   Database,
   LayoutDashboard,
   Settings,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 import type { Route } from "next";
@@ -15,7 +16,7 @@ export type AppNavItem = {
   icon: LucideIcon;
   shortcut: string;
   keywords: string[];
-  badgeKey?: "readyForTouch" | "followUp" | "replied" | "total";
+  badgeKey?: "readyForTouch" | "followUp" | "replied" | "total" | "clients";
 };
 
 export const APP_NAV_ITEMS: AppNavItem[] = [
@@ -39,12 +40,22 @@ export const APP_NAV_ITEMS: AppNavItem[] = [
     badgeKey: "total",
   },
   {
+    title: "Clients",
+    label: "Clients",
+    description: "Deal pipeline & client management",
+    url: "/clients",
+    icon: Users,
+    shortcut: "⌘3",
+    keywords: ["crm", "deal", "client", "pipeline", "retainer", "revenue"],
+    badgeKey: "replied",
+  },
+  {
     title: "Automation",
     label: "Automation",
     description: "Sequences & sends",
     url: "/automation",
     icon: Bot,
-    shortcut: "⌘3",
+    shortcut: "⌘4",
     keywords: ["scheduler", "sequence", "mailbox", "follow-up"],
     badgeKey: "followUp",
   },
@@ -54,7 +65,7 @@ export const APP_NAV_ITEMS: AppNavItem[] = [
     description: "Mailbox connections",
     url: "/settings",
     icon: Settings,
-    shortcut: "⌘4",
+    shortcut: "⌘5",
     keywords: ["runtime", "gmail", "config", "preferences"],
   },
 ];

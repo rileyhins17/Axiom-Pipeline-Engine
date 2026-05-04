@@ -4,10 +4,12 @@ import {
   Bot,
   CheckCircle2,
   Clock3,
+  DollarSign,
   MailCheck,
   Radar,
   Reply,
   Target,
+  Users,
 } from "lucide-react";
 
 import {
@@ -187,6 +189,40 @@ async function get7DaySeries(): Promise<{
   return { leadsFound, enriched, queued, sent, replied };
 }
 
+async function getCrmStats() {
+  const db = getDatabase();
+  const now = new Date().toISOString();
+  const in30 = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+  const [mrrRow, activeCount, proposalCount, renewalCount, lostCount] = await Promise.all([
+    db.prepare(
+      `SELECT COALESCE(SUM("monthlyValue"), 0) AS mrr FROM "Lead"
+       WHERE "dealStage" IN ('ACTIVE', 'RETAINED') AND "monthlyValue" IS NOT NULL AND "isArchived" = 0`,
+    ).first<{ mrr: number | string }>(),
+    db.prepare(
+      `SELECT COUNT(*) AS c FROM "Lead" WHERE "dealStage" IN ('ACTIVE', 'RETAINED') AND "isArchived" = 0`,
+    ).first<{ c: number | string }>(),
+    db.prepare(
+      `SELECT COUNT(*) AS c FROM "Lead" WHERE "dealStage" IN ('PROPOSAL_SENT', 'NEGOTIATING', 'SIGNED') AND "isArchived" = 0`,
+    ).first<{ c: number | string }>(),
+    db.prepare(
+      `SELECT COUNT(*) AS c FROM "Lead"
+       WHERE "renewalDate" IS NOT NULL AND "renewalDate" <= ? AND "renewalDate" >= ? AND "isArchived" = 0`,
+    ).bind(in30, now).first<{ c: number | string }>(),
+    db.prepare(
+      `SELECT COUNT(*) AS c FROM "Lead" WHERE "dealStage" = 'LOST' AND "isArchived" = 0`,
+    ).first<{ c: number | string }>(),
+  ]);
+
+  return {
+    mrr: Number(mrrRow?.mrr ?? 0),
+    activeClients: Number(activeCount?.c ?? 0),
+    inPipeline: Number(proposalCount?.c ?? 0),
+    renewalsDue: Number(renewalCount?.c ?? 0),
+    lostDeals: Number(lostCount?.c ?? 0),
+  };
+}
+
 export default async function DashboardPage() {
   await requireSession();
 
@@ -203,6 +239,7 @@ export default async function DashboardPage() {
     nextTarget,
     activeTargets,
     series,
+    crmStats,
   ] = await Promise.all([
     listAutomationOverview().catch(() => emptyAutomationOverview()),
     listScrapeJobs(8).catch(() => []),
@@ -226,6 +263,7 @@ export default async function DashboardPage() {
       sent: Array(7).fill(0),
       replied: Array(7).fill(0),
     })),
+    getCrmStats().catch(() => ({ mrr: 0, activeClients: 0, inPipeline: 0, renewalsDue: 0, lostDeals: 0 })),
   ]);
 
   const activeScrape = scrapeJobs.find((j) => j.status === "running" || j.status === "claimed") ?? null;
@@ -304,7 +342,7 @@ export default async function DashboardPage() {
         </div>
       ) : null}
 
-      <section className="grid gap-4 xl:grid-cols-3">
+      <section className="grid gap-4 xl:grid-cols-4">
         <Panel
           title="Autonomous Intake"
           subtitle="Lead generation today"
@@ -377,6 +415,42 @@ export default async function DashboardPage() {
           <Divider />
           <KvRow icon={<Target className="size-3.5" />} label="Total leads" value={leadCount.toLocaleString()} />
           <KvRow icon={<CheckCircle2 className="size-3.5" />} label="Contacted" value={contactedCount.toLocaleString()} />
+        </Panel>
+
+        <Panel
+          title="Revenue"
+          subtitle="CRM deal pipeline"
+          accent="amber"
+        >
+          <div className="flex items-baseline gap-2">
+            <span className="font-mono text-3xl font-semibold text-emerald-300 tabular-nums">
+              ${crmStats.mrr.toLocaleString()}
+            </span>
+            <span className="text-xs text-zinc-500">/mo MRR</span>
+          </div>
+          <Divider />
+          <KvRow icon={<Users className="size-3.5" />} label="Active clients" value={crmStats.activeClients.toLocaleString()} />
+          <KvRow icon={<DollarSign className="size-3.5" />} label="In pipeline" value={crmStats.inPipeline.toLocaleString()} />
+          <KvRow
+            icon={<CheckCircle2 className="size-3.5" />}
+            label="Renewals due ≤30d"
+            value={
+              crmStats.renewalsDue > 0 ? (
+                <span className="text-amber-300">{crmStats.renewalsDue}</span>
+              ) : (
+                "0"
+              )
+            }
+          />
+          <KvRow icon={<Reply className="size-3.5" />} label="Lost deals" value={crmStats.lostDeals.toLocaleString()} />
+          <Divider />
+          <a
+            href="/clients"
+            className="inline-flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300 transition-colors font-medium"
+          >
+            <Users className="size-3.5" />
+            Open client board →
+          </a>
         </Panel>
       </section>
     </div>
