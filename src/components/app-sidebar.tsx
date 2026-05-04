@@ -49,14 +49,15 @@ export function AppSidebar() {
       }
     };
 
-    // Fetch immediately on mount or when pathname changes
+    // Fetch immediately on mount. We deliberately do NOT depend on `pathname`
+    // — the stats are global, not per-route, so refetching on every tab click
+    // just adds load and slows navigation. The 30s poll keeps things fresh.
     fetchStats();
 
-    // Poll every 10 seconds for real-time updates
-    const interval = setInterval(fetchStats, 10000);
+    const interval = setInterval(fetchStats, 30_000);
 
     return () => clearInterval(interval);
-  }, [pathname]);
+  }, []);
 
   return (
     <Sidebar className="v2-sidebar">
@@ -91,6 +92,7 @@ export function AppSidebar() {
                     <SidebarMenuButton asChild isActive={isActive}>
                       <Link
                         href={item.url}
+                        prefetch
                         data-active={isActive ? "true" : "false"}
                         className={cn(
                           "v2-nav-item group flex items-center gap-3 px-3 py-2.5 text-sm",

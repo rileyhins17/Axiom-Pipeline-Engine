@@ -11,34 +11,31 @@ export async function GET(request: Request) {
     }
 
     const prisma = getPrisma();
-    const total = await prisma.lead.count({ where: { isArchived: false } });
-
-    // Pipeline status counts powering the sidebar nav badges. Cheap status
-    // bucket counts so the user sees how much work lives behind each route.
-    const [readyForTouch, followUp, replied] = await Promise.all([
-      prisma.lead.count({ where: { isArchived: false, outreachStatus: "READY_FOR_FIRST_TOUCH" } }),
-      prisma.lead.count({ where: { isArchived: false, outreachStatus: "FOLLOW_UP_DUE" } }),
-      prisma.lead.count({ where: { isArchived: false, outreachStatus: "REPLIED" } }),
-    ]);
-
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const todayLeads = await prisma.lead.count({
-      where: { isArchived: false, createdAt: { gte: today } },
-    });
-
-    const allTodayLeads = await prisma.lead.findMany({
-      where: { createdAt: { gte: today } },
-      select: {
-        email: true,
-        axiomTier: true,
-        isArchived: true,
-        phoneConfidence: true,
-        emailConfidence: true,
-        socialLink: true,
-      },
-    });
+    // All counts run in parallel — these power the sidebar badges and stats
+    // bar, so they need to be cheap. Previously the four count queries plus
+    // the today-leads `findMany` ran in 3 sequential awaits; one Promise.all
+    // collapses that into a single round-trip wave.
+    const [total, readyForTouch, followUp, replied, todayLeads, allTodayLeads] = await Promise.all([
+      prisma.lead.count({ where: { isArchived: false } }),
+      prisma.lead.count({ where: { isArchived: false, outreachStatus: "READY_FOR_FIRST_TOUCH" } }),
+      prisma.lead.count({ where: { isArchived: false, outreachStatus: "FOLLOW_UP_DUE" } }),
+      prisma.lead.count({ where: { isArchived: false, outreachStatus: "REPLIED" } }),
+      prisma.lead.count({ where: { isArchived: false, createdAt: { gte: today } } }),
+      prisma.lead.findMany({
+        where: { createdAt: { gte: today } },
+        select: {
+          email: true,
+          axiomTier: true,
+          isArchived: true,
+          phoneConfidence: true,
+          emailConfidence: true,
+          socialLink: true,
+        },
+      }),
+    ]);
 
     const todayEmails = allTodayLeads.filter((lead) => lead.email && lead.email.length > 0 && !lead.isArchived).length;
     const todayCallable = allTodayLeads.filter((lead) => {

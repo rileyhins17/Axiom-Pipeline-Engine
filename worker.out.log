@@ -1,7 +1,0 @@
-
-> the-omniscient@0.1.0 worker
-> tsx scripts/local-scrape-worker.ts
-
-[worker] starting as local-worker
-[worker] running Concrete in Waterloo (f4c14c7d-58f9-4993-924a-479eca3d345b)
-[worker] completed f4c14c7d-58f9-4993-924a-479eca3d345b

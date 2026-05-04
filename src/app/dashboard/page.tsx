@@ -125,70 +125,72 @@ async function get7DaySeries(): Promise<{
 }> {
   const db = getDatabase();
   const days: string[] = [];
+  const dayKeys: string[] = []; // YYYY-MM-DD for matching SQL `date(...)` output
   for (let i = 6; i >= 0; i--) {
     const d = new Date();
     d.setUTCDate(d.getUTCDate() - i);
     d.setUTCHours(0, 0, 0, 0);
     days.push(d.toISOString());
+    dayKeys.push(d.toISOString().slice(0, 10));
   }
-  const dayEnd = (iso: string) => {
-    const d = new Date(iso);
-    d.setUTCDate(d.getUTCDate() + 1);
-    return d.toISOString();
+  const start7 = days[0];
+
+  // Five grouped queries (down from 35 individual day-counts). SQLite's
+  // `date()` strips an ISO timestamp to YYYY-MM-DD; we then bucket the
+  // results back into a 7-element array indexed by day-of-window.
+  const toSeries = (rows: Array<{ d: string; c: number | string }>) => {
+    const map = new Map<string, number>();
+    for (const row of rows) {
+      if (row.d) map.set(row.d, Number(row.c || 0));
+    }
+    return dayKeys.map((k) => map.get(k) ?? 0);
   };
 
-  const [leadsFound, enriched, queued, sent, replied] = await Promise.all([
-    Promise.all(
-      days.map(async (start) => {
-        const r = await db
-          .prepare(`SELECT COUNT(*) AS c FROM "Lead" WHERE "createdAt" >= ? AND "createdAt" < ?`)
-          .bind(start, dayEnd(start))
-          .first<{ c: number | string }>();
-        return Number(r?.c || 0);
-      }),
-    ),
-    Promise.all(
-      days.map(async (start) => {
-        const r = await db
-          .prepare(`SELECT COUNT(*) AS c FROM "Lead" WHERE "enrichedAt" >= ? AND "enrichedAt" < ?`)
-          .bind(start, dayEnd(start))
-          .first<{ c: number | string }>();
-        return Number(r?.c || 0);
-      }),
-    ),
-    Promise.all(
-      days.map(async (start) => {
-        const r = await db
-          .prepare(`SELECT COUNT(*) AS c FROM "OutreachSequence" WHERE "createdAt" >= ? AND "createdAt" < ?`)
-          .bind(start, dayEnd(start))
-          .first<{ c: number | string }>();
-        return Number(r?.c || 0);
-      }),
-    ),
-    Promise.all(
-      days.map(async (start) => {
-        const r = await db
-          .prepare(`SELECT COUNT(*) AS c FROM "OutreachEmail" WHERE "status"='sent' AND "sentAt" >= ? AND "sentAt" < ?`)
-          .bind(start, dayEnd(start))
-          .first<{ c: number | string }>();
-        return Number(r?.c || 0);
-      }),
-    ),
-    Promise.all(
-      days.map(async (start) => {
-        const r = await db
-          .prepare(
-            `SELECT COUNT(*) AS c FROM "OutreachSequence"
-             WHERE "replyDetectedAt" >= ? AND "replyDetectedAt" < ?`,
-          )
-          .bind(start, dayEnd(start))
-          .first<{ c: number | string }>();
-        return Number(r?.c || 0);
-      }),
-    ),
+  const [leadsFoundRows, enrichedRows, queuedRows, sentRows, repliedRows] = await Promise.all([
+    db
+      .prepare(
+        `SELECT date("createdAt") AS d, COUNT(*) AS c FROM "Lead"
+         WHERE "createdAt" >= ? GROUP BY date("createdAt")`,
+      )
+      .bind(start7)
+      .all<{ d: string; c: number | string }>(),
+    db
+      .prepare(
+        `SELECT date("enrichedAt") AS d, COUNT(*) AS c FROM "Lead"
+         WHERE "enrichedAt" IS NOT NULL AND "enrichedAt" >= ? GROUP BY date("enrichedAt")`,
+      )
+      .bind(start7)
+      .all<{ d: string; c: number | string }>(),
+    db
+      .prepare(
+        `SELECT date("createdAt") AS d, COUNT(*) AS c FROM "OutreachSequence"
+         WHERE "createdAt" >= ? GROUP BY date("createdAt")`,
+      )
+      .bind(start7)
+      .all<{ d: string; c: number | string }>(),
+    db
+      .prepare(
+        `SELECT date("sentAt") AS d, COUNT(*) AS c FROM "OutreachEmail"
+         WHERE "status" = 'sent' AND "sentAt" >= ? GROUP BY date("sentAt")`,
+      )
+      .bind(start7)
+      .all<{ d: string; c: number | string }>(),
+    db
+      .prepare(
+        `SELECT date("replyDetectedAt") AS d, COUNT(*) AS c FROM "OutreachSequence"
+         WHERE "replyDetectedAt" IS NOT NULL AND "replyDetectedAt" >= ? GROUP BY date("replyDetectedAt")`,
+      )
+      .bind(start7)
+      .all<{ d: string; c: number | string }>(),
   ]);
 
-  return { leadsFound, enriched, queued, sent, replied };
+  return {
+    leadsFound: toSeries(leadsFoundRows.results ?? []),
+    enriched: toSeries(enrichedRows.results ?? []),
+    queued: toSeries(queuedRows.results ?? []),
+    sent: toSeries(sentRows.results ?? []),
+    replied: toSeries(repliedRows.results ?? []),
+  };
 }
 
 async function getCrmStats() {
@@ -318,6 +320,7 @@ export default async function DashboardPage() {
     series,
     crmStats,
     followUps,
+    connectedRows,
   ] = await Promise.all([
     listAutomationOverview().catch(() => emptyAutomationOverview()),
     listScrapeJobs(8).catch(() => []),
@@ -343,6 +346,13 @@ export default async function DashboardPage() {
     })),
     getCrmStats().catch(() => ({ mrr: 0, activeClients: 0, inPipeline: 0, renewalsDue: 0, lostDeals: 0 })),
     getFollowUpItems().catch(() => emptyFollowUps),
+    // Direct mailbox-table check — independent of listAutomationOverview()
+    // so a broken helper doesn't make the banner falsely show "not connected".
+    getDatabase()
+      .prepare(`SELECT LOWER("gmailAddress") AS gmailAddress FROM "OutreachMailbox"`)
+      .all<{ gmailAddress: string }>()
+      .then((r) => r.results ?? [])
+      .catch(() => [] as Array<{ gmailAddress: string }>),
   ]);
 
   const activeScrape = scrapeJobs.find((j) => j.status === "running" || j.status === "claimed") ?? null;
@@ -359,13 +369,6 @@ export default async function DashboardPage() {
   const intakeTone: ToneKey = adequateToday >= AUTONOMOUS_DAILY_LEAD_INTAKE_CAP ? "amber" : "emerald";
   const sendTone: ToneKey = sendsToday.total >= TARGET_DAILY_SEND ? "amber" : "cyan";
 
-  // Direct mailbox-table check — independent of listAutomationOverview()
-  // so a broken helper doesn't make the banner falsely show "not connected".
-  const connectedRows = await getDatabase()
-    .prepare(`SELECT LOWER("gmailAddress") AS gmailAddress FROM "OutreachMailbox"`)
-    .all<{ gmailAddress: string }>()
-    .then((r) => r.results ?? [])
-    .catch(() => [] as Array<{ gmailAddress: string }>);
   const connectedSet = new Set(connectedRows.map((r) => (r.gmailAddress || "").toLowerCase()));
   const aidanConnected = connectedSet.has("aidan@getaxiom.ca");
   const rileyConnected = connectedSet.has("riley@getaxiom.ca");

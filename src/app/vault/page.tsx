@@ -16,6 +16,7 @@ export default async function VaultPage() {
   const [leads, sequences] = await Promise.all([
     prisma.lead.findMany({
       orderBy: { createdAt: "desc" },
+      take: 2000, // Hard cap — Vault renders all rows client-side; protect from runaway loads.
     }),
     prisma.outreachSequence.findMany({
       select: {
