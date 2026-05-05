@@ -2,9 +2,7 @@ import { Database, Download, Search, ShieldCheck } from "lucide-react";
 
 import VaultDataTable from "@/components/VaultDataTable";
 import { ToastProvider } from "@/components/ui/toast-provider";
-import { hasValidPipelineEmail, isLeadOutreachEligible } from "@/lib/lead-qualification";
-import { getCanonicalLifecycleStage, isIntakeLead } from "@/lib/pipeline-lifecycle";
-import { getPrisma } from "@/lib/prisma";
+import { getDatabase } from "@/lib/cloudflare";
 import { requireSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -12,67 +10,48 @@ export const dynamic = "force-dynamic";
 export default async function VaultPage() {
   await requireSession();
 
-  const prisma = getPrisma();
-  const [leads, sequences] = await Promise.all([
-    prisma.lead.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 2000, // Hard cap — Vault renders all rows client-side; protect from runaway loads.
-    }),
-    prisma.outreachSequence.findMany({
-      select: {
-        leadId: true,
-        lastSentAt: true,
-        status: true,
-      },
-    }).catch(() => []),
+  const db = getDatabase();
+  const [
+    totalRow,
+    readyRow,
+    verifiedRow,
+    missingRow,
+    emailRow,
+  ] = await Promise.all([
+    db.prepare(`SELECT COUNT(*) AS c FROM "Lead"`).first<{ c: number }>(),
+    db
+      .prepare(
+        `SELECT COUNT(*) AS c FROM "Lead" WHERE outreachStatus = 'READY_FOR_FIRST_TOUCH' AND isArchived = 0`,
+      )
+      .first<{ c: number }>(),
+    db
+      .prepare(
+        `SELECT COUNT(*) AS c FROM "Lead" WHERE websiteStatus IS NOT NULL AND websiteStatus != 'MISSING'`,
+      )
+      .first<{ c: number }>(),
+    db
+      .prepare(
+        `SELECT COUNT(*) AS c FROM "Lead" WHERE websiteStatus = 'MISSING'`,
+      )
+      .first<{ c: number }>(),
+    db
+      .prepare(
+        `SELECT COUNT(*) AS c FROM "Lead" WHERE email IS NOT NULL AND email != ''`,
+      )
+      .first<{ c: number }>(),
   ]);
 
-  const activePreSendLeadIds = new Set(
-    sequences
-      .filter((sequence) =>
-        ["QUEUED", "ACTIVE", "PAUSED", "SENDING"].includes(sequence.status) && !sequence.lastSentAt,
-      )
-      .map((sequence) => sequence.leadId),
-  );
-  const postSendLeadIds = new Set(
-    sequences.filter((sequence) => sequence.lastSentAt).map((sequence) => sequence.leadId),
-  );
-
-  const totalLeads = leads.length;
-  const intakeLeads = leads.filter((lead) => isIntakeLead(lead)).length;
-  const preSendLeads = leads.filter((lead) => {
-    const stage = getCanonicalLifecycleStage({
-      enrichedAt: lead.enrichedAt,
-      enrichmentData: lead.enrichmentData,
-      hasActiveSequence: activePreSendLeadIds.has(lead.id) || postSendLeadIds.has(lead.id),
-      hasSentAnyStep: postSendLeadIds.has(lead.id),
-      outreachStatus: lead.outreachStatus,
-      source: lead.source,
-      axiomScore: lead.axiomScore,
-      email: lead.email,
-      emailConfidence: lead.emailConfidence,
-      emailFlags: lead.emailFlags,
-      emailType: lead.emailType,
-      websiteStatus: lead.websiteStatus,
-      isArchived: lead.isArchived,
-    });
-    return (
-      stage === "INTAKE" ||
-      stage === "ENRICHMENT" ||
-      stage === "QUALIFICATION" ||
-      stage === "INITIAL_OUTREACH"
-    );
-  }).length;
-  const withEmail = leads.filter((lead) => hasValidPipelineEmail(lead)).length;
-  const outreachReady = leads.filter((lead) => isLeadOutreachEligible(lead)).length;
-  const missingWebsite = leads.filter((lead) => lead.websiteStatus === "MISSING").length;
-  const verifiedWebsite = leads.filter((lead) => lead.websiteStatus && lead.websiteStatus !== "MISSING").length;
+  const total = totalRow?.c ?? 0;
+  const readyForTouch = readyRow?.c ?? 0;
+  const verifiedWebsite = verifiedRow?.c ?? 0;
+  const missingWebsite = missingRow?.c ?? 0;
+  const withEmail = emailRow?.c ?? 0;
 
   const metrics = [
-    { label: "Records", value: totalLeads, detail: "all leads", icon: Database, tone: "text-zinc-300" },
-    { label: "Pre-send", value: preSendLeads, detail: `${intakeLeads} intake`, icon: Search, tone: "text-cyan-300" },
+    { label: "Records", value: total, detail: "all leads", icon: Database, tone: "text-zinc-300" },
+    { label: "Pre-send", value: readyForTouch, detail: `${readyForTouch} ready`, icon: Search, tone: "text-cyan-300" },
     { label: "Verified", value: verifiedWebsite, detail: `${missingWebsite} no site`, icon: ShieldCheck, tone: "text-emerald-300" },
-    { label: "Exportable", value: withEmail, detail: `${outreachReady} ready`, icon: Download, tone: "text-amber-300" },
+    { label: "Exportable", value: withEmail, detail: `${withEmail} with email`, icon: Download, tone: "text-amber-300" },
   ];
 
   return (
@@ -115,7 +94,7 @@ export default async function VaultPage() {
       </section>
 
       <ToastProvider>
-        <VaultDataTable initialLeads={JSON.parse(JSON.stringify(leads))} />
+        <VaultDataTable totalCount={total} />
       </ToastProvider>
     </div>
   );

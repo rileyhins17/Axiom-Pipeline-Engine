@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
     ArrowUpDown,
     CheckCircle2,
@@ -262,8 +262,19 @@ function TriFilter({ label, value, onChange }: { label: string; value: ContactFi
     );
 }
 
-export default function VaultDataTable({ initialLeads }: { initialLeads: Lead[] }) {
-    const [leads] = useState<Lead[]>(initialLeads);
+export default function VaultDataTable({ totalCount }: { totalCount: number }) {
+    const [leads, setLeads] = useState<Lead[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        fetch("/api/vault/leads")
+            .then((r) => r.json())
+            .then((data: { leads: Lead[] }) => {
+                setLeads(data.leads ?? []);
+            })
+            .catch(() => {})
+            .finally(() => setLoading(false));
+    }, []);
     const [search, setSearch] = useState("");
     const [showFilters, setShowFilters] = useState(false);
     const [statusFilter, setStatusFilter] = useState("ALL");
@@ -511,14 +522,18 @@ export default function VaultDataTable({ initialLeads }: { initialLeads: Lead[] 
             <div className="flex flex-wrap items-center gap-2 text-[11px] text-zinc-500">
                 <span className="inline-flex items-center gap-1.5">
                     <Circle className="h-2 w-2 fill-emerald-400 text-emerald-400" />
-                    {processedLeads.length.toLocaleString()} shown
+                    {loading ? <span className="animate-pulse">Loading…</span> : `${processedLeads.length.toLocaleString()} shown`}
                 </span>
                 <span className="text-zinc-700">/</span>
-                <span>{leads.length.toLocaleString()} total</span>
-                <span className="text-zinc-700">/</span>
-                <span>{statusCounts.email.toLocaleString()} with email</span>
-                <span className="text-zinc-700">/</span>
-                <span>{statusCounts.phone.toLocaleString()} with phone</span>
+                <span>{loading ? `${totalCount.toLocaleString()} total` : `${statusCounts.all.toLocaleString()} total`}</span>
+                {!loading ? (
+                    <>
+                        <span className="text-zinc-700">/</span>
+                        <span>{statusCounts.email.toLocaleString()} with email</span>
+                        <span className="text-zinc-700">/</span>
+                        <span>{statusCounts.phone.toLocaleString()} with phone</span>
+                    </>
+                ) : null}
                 {activeFilterCount > 0 ? (
                     <button type="button" onClick={clearAllFilters} className="ml-1 text-red-300/80 hover:text-red-200">
                         Clear filters
@@ -664,6 +679,11 @@ export default function VaultDataTable({ initialLeads }: { initialLeads: Lead[] 
                 </div>
             ) : null}
 
+            {loading ? (
+                <div className="flex items-center justify-center py-16 text-sm text-zinc-500">
+                    <span className="animate-pulse">Loading leads…</span>
+                </div>
+            ) : (
             <div className="overflow-hidden rounded-lg border border-white/[0.06] bg-black/20">
                 <Table>
                     <TableHeader className="bg-black/40">
@@ -775,6 +795,7 @@ export default function VaultDataTable({ initialLeads }: { initialLeads: Lead[] 
                     </TableBody>
                 </Table>
             </div>
+            )}
 
             <div className="flex flex-col gap-3 border-t border-white/[0.06] pt-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex flex-wrap items-center gap-2">
@@ -794,7 +815,7 @@ export default function VaultDataTable({ initialLeads }: { initialLeads: Lead[] 
                         </Button>
                     ))}
                     <span className="ml-1 text-xs text-zinc-600">
-                        {processedLeads.length.toLocaleString()} of {leads.length.toLocaleString()}
+                        {processedLeads.length.toLocaleString()} of {loading ? totalCount.toLocaleString() : leads.length.toLocaleString()}
                     </span>
                 </div>
 
