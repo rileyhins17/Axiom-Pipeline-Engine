@@ -76,9 +76,47 @@ function emptyAutomationOverview() {
   };
 }
 
-function startOfTodayUtc(): Date {
+const BUSINESS_TZ = "America/Toronto";
+
+/**
+ * Cloudflare Workers run in UTC. The business operates in Eastern time.
+ * This returns the integer UTC offset for Eastern right now (-4 EDT / -5 EST)
+ * by comparing what Intl reports as Eastern time vs. UTC.
+ */
+function getEasternOffsetHours(): number {
   const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: BUSINESS_TZ,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+    hour12: false,
+  }).formatToParts(now);
+  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? "0");
+  const easternMs = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour") % 24, get("minute"), get("second"));
+  return Math.round((easternMs - now.getTime()) / 3_600_000); // -4 or -5
+}
+
+/**
+ * Returns a Date representing midnight Eastern time today (expressed in UTC).
+ * e.g. at 20:48 ET on May 4: returns 2026-05-04T04:00:00Z (EDT = UTC-4)
+ */
+function startOfTodayEastern(): Date {
+  const offset = getEasternOffsetHours(); // e.g. -4
+  const easternDateStr = new Intl.DateTimeFormat("en-CA", {
+    timeZone: BUSINESS_TZ,
+    year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(new Date()); // "2026-05-04"
+  const [year, month, day] = easternDateStr.split("-").map(Number);
+  // Eastern midnight in UTC = that date at 00:00 ET = 00:00 - offset in UTC
+  return new Date(Date.UTC(year, month - 1, day, -offset, 0, 0));
+}
+
+/** Returns the current date string (YYYY-MM-DD) in Eastern time */
+function todayEasternStr(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: BUSINESS_TZ,
+    year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(new Date());
 }
 
 function relativeAgo(date: Date | string | null | undefined): string {
@@ -96,7 +134,7 @@ function relativeAgo(date: Date | string | null | undefined): string {
 }
 
 async function getSendsToday(): Promise<{ total: number; perSender: Record<string, number> }> {
-  const since = startOfTodayUtc().toISOString();
+  const since = startOfTodayEastern().toISOString();
   const result = await getDatabase()
     .prepare(
       `SELECT "senderEmail", COUNT(*) AS count FROM "OutreachEmail"
@@ -124,20 +162,28 @@ async function get7DaySeries(): Promise<{
   replied: number[];
 }> {
   const db = getDatabase();
-  const days: string[] = [];
-  const dayKeys: string[] = []; // YYYY-MM-DD for matching SQL `date(...)` output
+  const offsetHours = getEasternOffsetHours(); // -4 (EDT) or -5 (EST)
+  // SQLite modifier string: adjusts a stored UTC timestamp to Eastern local time
+  // so that date() returns the Eastern calendar date, not the UTC calendar date.
+  const tzMod = `${offsetHours} hours`; // e.g. "-4 hours"
+
+  // Build 7 Eastern calendar dates (YYYY-MM-DD) oldest → newest.
+  // We compute them as plain UTC dates using the Eastern calendar day as the
+  // date portion (offset only matters for the time, not the calendar day here).
+  const todayStr = todayEasternStr(); // "2026-05-04"
+  const [ty, tm, td] = todayStr.split("-").map(Number);
+  const dayKeys: string[] = [];
   for (let i = 6; i >= 0; i--) {
-    const d = new Date();
-    d.setUTCDate(d.getUTCDate() - i);
-    d.setUTCHours(0, 0, 0, 0);
-    days.push(d.toISOString());
+    const d = new Date(Date.UTC(ty, tm - 1, td - i));
     dayKeys.push(d.toISOString().slice(0, 10));
   }
-  const start7 = days[0];
 
-  // Five grouped queries (down from 35 individual day-counts). SQLite's
-  // `date()` strips an ISO timestamp to YYYY-MM-DD; we then bucket the
-  // results back into a 7-element array indexed by day-of-window.
+  // Start of 7-day window = Eastern midnight 6 days ago (UTC-expressed)
+  const start7 = new Date(startOfTodayEastern().getTime() - 6 * 86_400_000).toISOString();
+
+  // Group by Eastern calendar date using SQLite's datetime() offset modifier.
+  // date(datetime(col, '-4 hours')) converts the UTC timestamp to Eastern time
+  // before extracting the date, so midnight crossings land on the correct day.
   const toSeries = (rows: Array<{ d: string; c: number | string }>) => {
     const map = new Map<string, number>();
     for (const row of rows) {
@@ -146,43 +192,30 @@ async function get7DaySeries(): Promise<{
     return dayKeys.map((k) => map.get(k) ?? 0);
   };
 
+  /* eslint-disable no-useless-escape */
   const [leadsFoundRows, enrichedRows, queuedRows, sentRows, repliedRows] = await Promise.all([
     db
-      .prepare(
-        `SELECT date("createdAt") AS d, COUNT(*) AS c FROM "Lead"
-         WHERE "createdAt" >= ? GROUP BY date("createdAt")`,
-      )
+      .prepare(`SELECT date(datetime("createdAt", '${tzMod}')) AS d, COUNT(*) AS c FROM "Lead" WHERE "createdAt" >= ? GROUP BY 1`)
       .bind(start7)
       .all<{ d: string; c: number | string }>(),
     db
-      .prepare(
-        `SELECT date("enrichedAt") AS d, COUNT(*) AS c FROM "Lead"
-         WHERE "enrichedAt" IS NOT NULL AND "enrichedAt" >= ? GROUP BY date("enrichedAt")`,
-      )
+      .prepare(`SELECT date(datetime("enrichedAt", '${tzMod}')) AS d, COUNT(*) AS c FROM "Lead" WHERE "enrichedAt" IS NOT NULL AND "enrichedAt" >= ? GROUP BY 1`)
       .bind(start7)
       .all<{ d: string; c: number | string }>(),
     db
-      .prepare(
-        `SELECT date("createdAt") AS d, COUNT(*) AS c FROM "OutreachSequence"
-         WHERE "createdAt" >= ? GROUP BY date("createdAt")`,
-      )
+      .prepare(`SELECT date(datetime("createdAt", '${tzMod}')) AS d, COUNT(*) AS c FROM "OutreachSequence" WHERE "createdAt" >= ? GROUP BY 1`)
       .bind(start7)
       .all<{ d: string; c: number | string }>(),
     db
-      .prepare(
-        `SELECT date("sentAt") AS d, COUNT(*) AS c FROM "OutreachEmail"
-         WHERE "status" = 'sent' AND "sentAt" >= ? GROUP BY date("sentAt")`,
-      )
+      .prepare(`SELECT date(datetime("sentAt", '${tzMod}')) AS d, COUNT(*) AS c FROM "OutreachEmail" WHERE "status" = 'sent' AND "sentAt" >= ? GROUP BY 1`)
       .bind(start7)
       .all<{ d: string; c: number | string }>(),
     db
-      .prepare(
-        `SELECT date("replyDetectedAt") AS d, COUNT(*) AS c FROM "OutreachSequence"
-         WHERE "replyDetectedAt" IS NOT NULL AND "replyDetectedAt" >= ? GROUP BY date("replyDetectedAt")`,
-      )
+      .prepare(`SELECT date(datetime("replyDetectedAt", '${tzMod}')) AS d, COUNT(*) AS c FROM "OutreachSequence" WHERE "replyDetectedAt" IS NOT NULL AND "replyDetectedAt" >= ? GROUP BY 1`)
       .bind(start7)
       .all<{ d: string; c: number | string }>(),
   ]);
+  /* eslint-enable no-useless-escape */
 
   return {
     leadsFound: toSeries(leadsFoundRows.results ?? []),
@@ -239,8 +272,9 @@ type FollowUpItem = {
 async function getFollowUpItems() {
   const db = getDatabase();
   const now = new Date().toISOString();
-  const todayStart = startOfTodayUtc().toISOString();
-  const tomorrowStart = new Date(startOfTodayUtc().getTime() + 86_400_000).toISOString();
+  const easternToday = startOfTodayEastern();
+  const todayStart = easternToday.toISOString();
+  const tomorrowStart = new Date(easternToday.getTime() + 86_400_000).toISOString();
   const staleCutoff = new Date(Date.now() - 14 * 86_400_000).toISOString();
   const riskyCutoff = new Date(Date.now() - 21 * 86_400_000).toISOString();
 
@@ -388,7 +422,7 @@ export default async function DashboardPage() {
         </div>
         <div className="rounded-lg border border-white/[0.08] bg-white/[0.025] px-3 py-1.5 text-right text-[11px] text-zinc-400">
           <div className="font-medium text-zinc-200">
-            {new Intl.DateTimeFormat("en-US", { weekday: "long", month: "short", day: "numeric" }).format(new Date())}
+            {new Intl.DateTimeFormat("en-US", { weekday: "long", month: "short", day: "numeric", timeZone: BUSINESS_TZ }).format(new Date())}
           </div>
           <div className="font-mono text-[10.5px] text-zinc-500">
             {formatAppDateTime(new Date(), { hour: "numeric", minute: "2-digit" }, "")}
