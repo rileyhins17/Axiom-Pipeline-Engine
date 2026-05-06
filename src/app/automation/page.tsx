@@ -3,6 +3,7 @@ import { Bot, Clock3, Mail, Pause, Play, Reply } from "lucide-react";
 
 import { AUTOMATION_SETTINGS_DEFAULTS, MAILBOX_DAILY_SEND_TARGET } from "@/lib/automation-policy";
 import { EmergencyControlCard } from "@/components/emergency-control-card";
+import { IntakeControlCard } from "@/components/intake-control-card";
 import { listAutomationOverview } from "@/lib/outreach-automation";
 import { getDatabase } from "@/lib/cloudflare";
 import { requireSession } from "@/lib/session";
@@ -162,6 +163,10 @@ export default async function AutomationPage() {
             emergencyPausedBy: overview.settings.emergencyPausedBy,
             emergencyPauseReason: overview.settings.emergencyPauseReason,
           }}
+        />
+        <IntakeControlCard
+          initialPaused={overview.settings.intakePaused}
+          initialPausedBy={overview.settings.intakePausedBy}
         />
       </section>
 

@@ -188,6 +188,9 @@ export type OutreachAutomationSettingRecord = {
   emergencyPausedAt: Date | null;
   emergencyPausedBy: string | null;
   emergencyPauseReason: string | null;
+  intakePaused: boolean;
+  intakePausedAt: Date | null;
+  intakePausedBy: string | null;
   sendWindowStartHour: number;
   sendWindowStartMinute: number;
   sendWindowEndHour: number;
@@ -657,7 +660,7 @@ const outreachEmailTable: TableSpec<OutreachEmailRecord> = {
 };
 
 const outreachAutomationSettingTable: TableSpec<OutreachAutomationSettingRecord> = {
-  booleanFields: new Set(["enabled", "globalPaused", "emergencyPaused", "weekdaysOnly"]),
+  booleanFields: new Set(["enabled", "globalPaused", "emergencyPaused", "intakePaused", "weekdaysOnly"]),
   columns: [
     "id",
     "enabled",
@@ -666,6 +669,9 @@ const outreachAutomationSettingTable: TableSpec<OutreachAutomationSettingRecord>
     "emergencyPausedAt",
     "emergencyPausedBy",
     "emergencyPauseReason",
+    "intakePaused",
+    "intakePausedAt",
+    "intakePausedBy",
     "sendWindowStartHour",
     "sendWindowStartMinute",
     "sendWindowEndHour",
@@ -680,7 +686,7 @@ const outreachAutomationSettingTable: TableSpec<OutreachAutomationSettingRecord>
     "createdAt",
     "updatedAt",
   ],
-  dateFields: new Set(["createdAt", "updatedAt", "emergencyPausedAt"]),
+  dateFields: new Set(["createdAt", "updatedAt", "emergencyPausedAt", "intakePausedAt"]),
   idField: "id",
   integerFields: new Set([
     "sendWindowStartHour",
@@ -694,7 +700,7 @@ const outreachAutomationSettingTable: TableSpec<OutreachAutomationSettingRecord>
     "schedulerClaimBatch",
     "replySyncStaleMinutes",
   ]),
-  stringFields: new Set(["emergencyPausedBy", "emergencyPauseReason"]),
+  stringFields: new Set(["emergencyPausedBy", "emergencyPauseReason", "intakePausedBy"]),
   tableName: "OutreachAutomationSetting",
   updatedAtField: "updatedAt",
 };

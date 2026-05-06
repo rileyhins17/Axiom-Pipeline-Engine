@@ -101,6 +101,9 @@ export async function runAutonomousIntake(): Promise<IntakeResult> {
   if (settings.emergencyPaused) {
     return { dispatched: false, reason: "emergency_stop_active" };
   }
+  if (settings.intakePaused) {
+    return { dispatched: false, reason: "intake_paused_by_operator" };
+  }
 
   const activeJobs = await countActiveOrPendingScrapeJobs();
   if (activeJobs > 0) {
