@@ -1082,7 +1082,18 @@ async function collectTargets(
               timeout: 15000,
               waitUntil: "commit",
             });
-            await detailPage.waitForTimeout(1000);
+            // Wait for the detail panel to fully render before reading.
+            // "commit" only means the navigation started — the website link,
+            // address, and phone are injected by Maps JS after that. Waiting
+            // for the address button is the most reliable signal that the
+            // panel DOM is ready; fall back to a hard 4s wait if it never
+            // appears (e.g. bot-challenged page).
+            await detailPage
+              .waitForSelector(
+                'button[data-item-id="address"], a[data-item-id="address"], button[data-tooltip*="Address"]',
+                { timeout: 8000 },
+              )
+              .catch(() => detailPage.waitForTimeout(4000));
 
             return await extractMapsDetailFromPage(detailPage, place, fallbackTitle, {
               address: listingFallback.address,
