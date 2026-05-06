@@ -1470,19 +1470,25 @@ export async function getActiveAutomationLeadIds() {
   }) as OutreachSequenceRecord[];
 
   const blockingLeadIds: number[] = [];
+  const recoverableSequences: OutreachSequenceRecord[] = [];
+
   for (const sequence of sequences) {
     if (!isRecoverableSequenceBlocker(sequence)) {
       blockingLeadIds.push(sequence.leadId);
-      continue;
+    } else {
+      recoverableSequences.push(sequence);
     }
+  }
 
-    const nextPendingStep = await getNextPendingStep(prisma, sequence.id);
-    if (nextPendingStep) {
-      blockingLeadIds.push(sequence.leadId);
-      continue;
+  if (recoverableSequences.length > 0) {
+    const nextStepMap = await getNextPendingStepMap(prisma, recoverableSequences.map((s) => s.id));
+    for (const sequence of recoverableSequences) {
+      if (nextStepMap.has(sequence.id)) {
+        blockingLeadIds.push(sequence.leadId);
+      } else {
+        await stopSequenceInternal(prisma, sequence, "stale_empty_sequence_recovered").catch(() => null);
+      }
     }
-
-    await stopSequenceInternal(prisma, sequence, "stale_empty_sequence_recovered").catch(() => null);
   }
 
   return Array.from(new Set(blockingLeadIds));
@@ -2169,23 +2175,23 @@ async function getSuppressionContextForLeads(prisma: PrismaLike, leads: Array<Le
     return { suppressedEmails, suppressedDomains };
   }
 
-  const suppressions: OutreachSuppressionRecord[] = [];
-  for (const chunk of chunkArray(Array.from(emails))) {
-    const chunkSuppressions = (await prisma.outreachSuppression.findMany({
-      where: { email: { in: chunk } },
-    })) as OutreachSuppressionRecord[];
-    suppressions.push(...chunkSuppressions);
-  }
-  for (const chunk of chunkArray(Array.from(domains))) {
-    const chunkSuppressions = (await prisma.outreachSuppression.findMany({
-      where: { domain: { in: chunk } },
-    })) as OutreachSuppressionRecord[];
-    suppressions.push(...chunkSuppressions);
-  }
+  const [emailChunkResults, domainChunkResults] = await Promise.all([
+    Promise.all(
+      chunkArray(Array.from(emails)).map((chunk) =>
+        prisma.outreachSuppression.findMany({ where: { email: { in: chunk } } }) as Promise<OutreachSuppressionRecord[]>,
+      ),
+    ),
+    Promise.all(
+      chunkArray(Array.from(domains)).map((chunk) =>
+        prisma.outreachSuppression.findMany({ where: { domain: { in: chunk } } }) as Promise<OutreachSuppressionRecord[]>,
+      ),
+    ),
+  ]);
+  const suppressions: OutreachSuppressionRecord[] = [...emailChunkResults.flat(), ...domainChunkResults.flat()];
 
   for (const suppression of suppressions) {
     const email = normalizeEmail(suppression.email);
-    const domain = normalizeEmail(suppression.domain);
+    const domain = normalizeDomain(suppression.domain);
     if (email) suppressedEmails.add(email);
     if (domain) suppressedDomains.add(domain);
   }
@@ -2202,10 +2208,12 @@ type SequenceRuntimeContext = {
 export async function listAutomationOverview() {
   const prisma = getPrisma();
   const now = new Date();
-  const settings = await getSettings(prisma);
-  await syncMailboxesForGmailConnections().catch((error) => {
-    console.warn("[automation] Failed to sync Gmail mailboxes before overview:", error);
-  });
+  const [settings] = await Promise.all([
+    getSettings(prisma),
+    syncMailboxesForGmailConnections().catch((error) => {
+      console.warn("[automation] Failed to sync Gmail mailboxes before overview:", error);
+    }),
+  ]);
   const [mailboxes, sequences, recentRuns, ready, recentSentRaw] = await Promise.all([
     prisma.outreachMailbox.findMany({ orderBy: { updatedAt: "desc" } }) as Promise<OutreachMailboxRecord[]>,
     prisma.outreachSequence.findMany({ orderBy: { createdAt: "desc" }, take: 300 }) as Promise<OutreachSequenceRecord[]>,
@@ -2232,20 +2240,19 @@ export async function listAutomationOverview() {
     nextStep: nextStepMap.get(sequence.id) ?? null,
   }));
 
-  const mailboxStats = await Promise.all(
-    mailboxes.map(async (mailbox) => ({
-      ...mailbox,
-      ...(await getMailboxLoad(prisma, mailbox.id, now)),
-      nextAvailableAt: getMailboxNextAvailableAt(mailbox, settings, now),
-    })),
-  );
+  const [mailboxStats, suppressionContext] = await Promise.all([
+    Promise.all(
+      mailboxes.map(async (mailbox) => ({
+        ...mailbox,
+        ...(await getMailboxLoad(prisma, mailbox.id, now)),
+        nextAvailableAt: getMailboxNextAvailableAt(mailbox, settings, now),
+      })),
+    ),
+    getSuppressionContextForLeads(prisma, rawSummaries.map((sequence) => sequence.lead)),
+  ]);
 
   const mailboxLoadById = new Map(
     mailboxStats.map((mailbox) => [mailbox.id, { sentToday: mailbox.sentToday, sentThisHour: mailbox.sentThisHour }]),
-  );
-  const suppressionContext = await getSuppressionContextForLeads(
-    prisma,
-    rawSummaries.map((sequence) => sequence.lead),
   );
   const runtimeContext: SequenceRuntimeContext = {
     mailboxLoadById,
@@ -2255,10 +2262,19 @@ export async function listAutomationOverview() {
     rawSummaries.map((sequence) => enrichSequenceSummary(prisma, sequence, settings, now, runtimeContext)),
   );
 
-  const recentSentLeadMap = await getLeadMap(
-    prisma,
-    Array.from(new Set(recentSentRaw.map((email) => email.leadId).filter((value): value is number => typeof value === "number"))),
-  );
+  const [recentSentLeadMap, [needsEnrichCount, enrichingCount, enrichedCount, readyForTouchCount]] = await Promise.all([
+    getLeadMap(
+      prisma,
+      Array.from(new Set(recentSentRaw.map((email) => email.leadId).filter((value): value is number => typeof value === "number"))),
+    ),
+    // Pipeline stage counts — independent of recentSentLeadMap
+    Promise.all([
+      prisma.lead.count({ where: { enrichedAt: null, enrichmentData: null, email: { not: null }, axiomScore: { not: null }, isArchived: false, outreachStatus: "NOT_CONTACTED" } }),
+      prisma.lead.count({ where: { outreachStatus: "ENRICHING", isArchived: false } }),
+      prisma.lead.count({ where: { outreachStatus: "ENRICHED", isArchived: false } }),
+      prisma.lead.count({ where: { outreachStatus: READY_FOR_FIRST_TOUCH_STATUS, isArchived: false } }),
+    ]),
+  ]);
 
   const recentSent = recentSentRaw.map((email) => ({
     id: email.id,
@@ -2291,14 +2307,6 @@ export async function listAutomationOverview() {
   const sendingCount = summaries.filter((sequence) => sequence.state === "SENDING").length;
   const waitingCount = summaries.filter((sequence) => sequence.state === "WAITING").length;
   const repliedCount = summaries.filter((sequence) => sequence.blockerReason === "reply_detected").length;
-
-  // Pipeline stage counts (for auto-pipeline visibility)
-  const [needsEnrichCount, enrichingCount, enrichedCount, readyForTouchCount] = await Promise.all([
-    prisma.lead.count({ where: { enrichedAt: null, enrichmentData: null, email: { not: null }, axiomScore: { not: null }, isArchived: false, outreachStatus: "NOT_CONTACTED" } }),
-    prisma.lead.count({ where: { outreachStatus: "ENRICHING", isArchived: false } }),
-    prisma.lead.count({ where: { outreachStatus: "ENRICHED", isArchived: false } }),
-    prisma.lead.count({ where: { outreachStatus: READY_FOR_FIRST_TOUCH_STATUS, isArchived: false } }),
-  ]);
   const sendReadyCount = enrichedCount + readyForTouchCount;
 
   return {
@@ -2324,7 +2332,7 @@ export async function listAutomationOverview() {
     pipeline: {
       needsEnrichment: needsEnrichCount,
       enriching: enrichingCount,
-      enriched: 0,
+      enriched: enrichedCount,
       readyForTouch: sendReadyCount,
     },
     recentRuns,

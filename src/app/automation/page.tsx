@@ -115,7 +115,7 @@ export default async function AutomationPage() {
     return fallback;
   });
 
-  const queued = overview.sequences.filter((s) => s.state === "QUEUED" || s.state === "SENDING");
+  const queued = overview.sequences.filter((s) => s.state === "QUEUED");
   const waiting = overview.sequences.filter((s) => s.state === "WAITING");
   const blocked = overview.sequences.filter((s) => s.state === "BLOCKED");
 
