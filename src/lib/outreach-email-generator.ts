@@ -102,7 +102,7 @@ function buildGenerationContext(
 ): string {
   const lines: string[] = [];
 
-  lines.push(`SENDER: ${senderName} from Axiom Infrastructure`);
+  lines.push(`SENDER: ${senderName} from Axiom Web`);
   lines.push(`SENDER FIRST NAME: ${firstName(senderName)}`);
   lines.push(`BUSINESS: ${lead.businessName}`);
   lines.push(`CITY: ${lead.city}`);
@@ -161,7 +161,7 @@ function buildFollowUpContext(
 ): string {
   const lines: string[] = [];
 
-  lines.push(`SENDER: ${senderName} from Axiom Infrastructure`);
+  lines.push(`SENDER: ${senderName} from Axiom Web`);
   lines.push(`RECIPIENT BUSINESS: ${lead.businessName}`);
   if (lead.contactName) lines.push(`RECIPIENT CONTACT NAME: ${lead.contactName}`);
   lines.push(`RECIPIENT EMAIL: ${lead.email}`);
@@ -200,7 +200,7 @@ function buildFollowUpContext(
   return lines.join("\n");
 }
 
-const COLD_EMAIL_SYSTEM_PROMPT = `You write cold emails for Axiom Infrastructure, a small studio that helps local service businesses get more from their website. Your only job is to earn a reply.
+const COLD_EMAIL_SYSTEM_PROMPT = `You write cold emails for Axiom Web, a small studio that helps local service businesses get more from their website. Your only job is to earn a reply.
 
 These emails go to real owners and managers on their phones. They take 2 seconds to judge. You have ONE shot to sound like a real person who actually looked at their business — not an agency, not a marketer, not a bot.
 
@@ -233,7 +233,7 @@ Return JSON only:
   "confidence_score": 0
 }`;
 
-const FOLLOW_UP_SYSTEM_PROMPT = `You are writing a short plain-text follow-up email on behalf of Axiom Infrastructure.
+const FOLLOW_UP_SYSTEM_PROMPT = `You are writing a short plain-text follow-up email on behalf of Axiom Web.
 
 STRICT RULES:
 1. Follow-up only. Acknowledge the prior note in one natural phrase.
