@@ -575,10 +575,8 @@ async function dismissGoogleMapsConsent(
 
   const clickConsentButton = async (selector: string): Promise<boolean> => {
     try {
-      const locator = page.locator(selector).first();
-      const visible = await locator.isVisible().catch(() => false);
-      if (!visible) return false;
-      await locator.click({ timeout: 3000 });
+      // locator.click() throws if element is absent/hidden, which we catch.
+      await page.locator(selector).click();
       return true;
     } catch {
       return false;
