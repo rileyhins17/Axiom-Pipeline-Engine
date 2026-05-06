@@ -94,9 +94,22 @@ function cleanTextOrNull(value: string | null | undefined): string | null {
 function normalizeWebsiteUrl(value: string): string {
   const clean = normalizeWhitespace(value);
   if (!clean) return "";
+
+  // Unwrap Google redirect URLs (e.g. google.com/url?q=https%3A%2F%2Fexample.com)
+  const googleRedirectMatch = /[?&](?:q|url)=(https?(?:%3A|:)[^&#]+)/i.exec(clean);
+  if (googleRedirectMatch) {
+    try {
+      const decoded = decodeURIComponent(googleRedirectMatch[1]);
+      return normalizeWebsiteUrl(decoded);
+    } catch {
+      return "";
+    }
+  }
+
   try {
     const url = new URL(clean.startsWith("http") ? clean : `https://${clean}`);
-    if (url.hostname.includes("google.") && url.pathname.includes("/maps")) {
+    // Filter any google.com URL (maps redirects, /url wrapper, etc.)
+    if (url.hostname.includes("google.")) {
       return "";
     }
     return url.toString();
@@ -106,6 +119,35 @@ function normalizeWebsiteUrl(value: string): string {
     }
     return clean;
   }
+}
+
+/**
+ * Last-resort: extract a website URL from the Maps detail page body text.
+ * Maps renders the website domain as visible text (e.g. "northmedicalspa.com")
+ * directly below a "Website" label line. This handles cases where the DOM
+ * selector fires before the link element is painted.
+ */
+function extractWebsiteFromBodyText(bodyText: string): string {
+  const lines = bodyText.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+
+  // Primary: look for the "Website" label and read the next non-empty line
+  const websiteIdx = lines.findIndex((l) => /^website$/i.test(l));
+  if (websiteIdx >= 0 && websiteIdx + 1 < lines.length) {
+    const candidate = lines[websiteIdx + 1];
+    if (/^[a-z0-9][a-z0-9\-.]+\.[a-z]{2,}(?:\/\S*)?$/i.test(candidate) && candidate.length < 120) {
+      return normalizeWebsiteUrl(candidate.startsWith("http") ? candidate : `https://${candidate}`);
+    }
+  }
+
+  // Secondary: any line that looks like a bare domain (no spaces, has a TLD)
+  const domainLike = /^(?:https?:\/\/)?(?:www\.)?[a-z0-9][a-z0-9\-.]+\.[a-z]{2,}(?:\/\S*)?$/i;
+  for (const line of lines) {
+    if (domainLike.test(line) && line.length < 120 && !/google\.|maps\.|goo\.gl/i.test(line)) {
+      return normalizeWebsiteUrl(line.startsWith("http") ? line : `https://${line}`);
+    }
+  }
+
+  return "";
 }
 
 function normalizeCategory(category: string, niche: string, businessName?: string): string {
@@ -178,7 +220,15 @@ function isLikelyHoursText(value: string): boolean {
 }
 
 function isLikelyAddressText(value: string): boolean {
-  return /\d/.test(value) && /(st|street|ave|avenue|rd|road|blvd|boulevard|dr|drive|way|ln|lane|ct|court|hwy|highway|pkwy|parkway|unit|suite|floor|on|ontario|kitchener|waterloo|guelph|hamilton|cambridge)/i.test(value);
+  // Street-number + street-type pattern (works for any city, not a hardcoded list)
+  if (/\d{1,6}\s+\w/.test(value) && /(st|street|ave|avenue|rd|road|blvd|boulevard|dr|drive|way|ln|lane|ct|court|hwy|highway|pkwy|parkway|unit|suite|floor)\b/i.test(value)) {
+    return true;
+  }
+  // Canadian postal code present → almost certainly an address fragment
+  if (/[a-z]\d[a-z]\s*\d[a-z]\d/i.test(value)) {
+    return true;
+  }
+  return false;
 }
 
 function extractPhoneFromText(value: string): string {
@@ -524,15 +574,15 @@ async function dismissGoogleMapsConsent(
   ];
 
   const clickConsentButton = async (selector: string): Promise<boolean> => {
-    return page.evaluate((candidateSelector: string) => {
-      const button = document.querySelectorAll(candidateSelector)[0] as HTMLButtonElement | undefined;
-      if (!button) {
-        return false;
-      }
-
-      setTimeout(() => button.click(), 0);
+    try {
+      const locator = page.locator(selector).first();
+      const visible = await locator.isVisible().catch(() => false);
+      if (!visible) return false;
+      await locator.click({ timeout: 3000 });
       return true;
-    }, selector).catch(() => false);
+    } catch {
+      return false;
+    }
   };
 
   for (let attempt = 1; attempt <= 3; attempt++) {
@@ -574,7 +624,7 @@ async function collectMapsListings(page: AutomationPage): Promise<MapsListing[]>
           const card = element.closest("div.Nv2PK") || element.closest("div[role='article']") || element.parentElement;
           return {
             ariaLabel: element.getAttribute("aria-label") || "",
-            cardText: (card?.textContent || "").trim().slice(0, 2000),
+            cardText: (card?.textContent || "").trim().slice(0, 4000),
             name: element.getAttribute("aria-label") || "",
             url: element.href || element.getAttribute("href") || "",
           };
@@ -591,65 +641,83 @@ async function extractMapsDetailFromPage(
   fallbackTitle: string,
   listingFallback: Omit<CollectedMapsTarget, "detailMode">,
 ): Promise<CollectedMapsTarget> {
-  const bodyText = await readLocatorText(detailPage, "body", true);
-  const titleCandidate =
-    normalizeWhitespace(
-      (await readLocatorText(detailPage, "h1")) ||
-        (await readLocatorAttribute(detailPage, 'meta[property="og:title"]', "content")) ||
-        (await readLocatorAttribute(detailPage, 'meta[name="title"]', "content")) ||
+  // Single round-trip: batch all DOM reads into one evaluate call instead of
+  // firing 8+ sequential evaluate() calls. Each call has IPC overhead; one
+  // call is dramatically faster and reduces the window for race conditions.
+  const raw = await detailPage.evaluate(() => {
+    const q = (sel: string): HTMLElement | null => document.querySelector(sel) as HTMLElement | null;
+    const text = (sel: string) => {
+      const el = q(sel);
+      return el ? (el.innerText || el.textContent || "").trim() : "";
+    };
+    const attr = (sel: string, a: string) => {
+      const el = q(sel);
+      return el ? (el.getAttribute(a) || "") : "";
+    };
+    return {
+      h1: text("h1"),
+      ogTitle: attr('meta[property="og:title"]', "content"),
+      metaTitle: attr('meta[name="title"]', "content"),
+      websiteHref:
+        attr('a[data-item-id="authority"]', "href") ||
+        attr('a[data-tooltip*="Website"]', "href") ||
+        attr('a[aria-label*="Website"]', "href") ||
+        attr('a[aria-label*="website"]', "href") ||
+        attr('a[aria-label*="Open website"]', "href") ||
         "",
-    );
+      phoneDataId: attr('button[data-item-id*="phone:tel:"]', "data-item-id"),
+      addressText: text('button[data-item-id="address"], a[data-item-id="address"], button[data-tooltip*="Address"]'),
+      categoryText: text(
+        'button[jsaction="pane.rating.category"], button[jsaction*="pane.rating.category"], button[data-item-id="category"], div[data-item-id="category"]',
+      ),
+      ratingAriaLabel: attr('div[jsaction="pane.rating.moreReviews"]', "aria-label"),
+      ratingText: text('div[jsaction="pane.rating.moreReviews"]'),
+      bodyText: (document.body?.innerText || "").trim(),
+    };
+  }).catch(() => ({
+    h1: "", ogTitle: "", metaTitle: "", websiteHref: "",
+    phoneDataId: "", addressText: "", categoryText: "",
+    ratingAriaLabel: "", ratingText: "", bodyText: "",
+  }));
+
+  const bodyText = raw.bodyText.replace(/\r\n/g, "\n");
+
+  const titleCandidate = normalizeWhitespace(raw.h1 || raw.ogTitle || raw.metaTitle || "");
   const title = isMeaningfulMapsTitle(titleCandidate)
     ? titleCandidate
     : normalizeWhitespace(fallbackTitle || listingFallback.title || place.name);
+
   const website =
-    normalizeWebsiteUrl(
-      (await readLocatorAttribute(
-        detailPage,
-        'a[data-item-id="authority"], a[data-tooltip*="Website"], a[aria-label*="Website"]',
-        "href",
-      )) || listingFallback.website,
-    );
-  const phone =
-    normalizePhoneText(
-      (await readLocatorAttribute(detailPage, 'button[data-item-id*="phone:tel:"]', "data-item-id"))
-        .replace("phone:tel:", "") ||
-        extractPhoneFromText(bodyText) ||
-        listingFallback.phone,
-    );
-  const address =
-    normalizeWhitespace(
-      cleanMapsAddressCandidate(
-        (await readLocatorText(detailPage, 'button[data-item-id="address"], a[data-item-id="address"], button[data-tooltip*="Address"]'))
-          .replace(/^Address:\s*/i, ""),
-      ) ||
-        extractAddressFromMapsText(bodyText, title) ||
-        listingFallback.address,
-    );
+    normalizeWebsiteUrl(raw.websiteHref) ||
+    extractWebsiteFromBodyText(bodyText) ||
+    listingFallback.website;
+
+  const phone = normalizePhoneText(
+    raw.phoneDataId.replace("phone:tel:", "") ||
+      extractPhoneFromText(bodyText) ||
+      listingFallback.phone,
+  );
+
+  const address = normalizeWhitespace(
+    cleanMapsAddressCandidate(raw.addressText.replace(/^Address:\s*/i, "")) ||
+      extractAddressFromMapsText(bodyText, title) ||
+      listingFallback.address,
+  );
+
   const directCategory = extractCategoryFromBodyText(bodyText, title);
-  const category =
-    normalizeWhitespace(
-      extractMapsCategoryFromText(
-        await readLocatorText(
-          detailPage,
-          'button[jsaction="pane.rating.category"], button[jsaction*="pane.rating.category"], button[data-item-id="category"], div[data-item-id="category"]',
-        ),
-        title,
-      ) ||
-        directCategory ||
-        extractCategoryFromMapsText(bodyText, title) ||
-        listingFallback.category,
-    );
+  const category = normalizeWhitespace(
+    extractMapsCategoryFromText(raw.categoryText, title) ||
+      directCategory ||
+      extractCategoryFromMapsText(bodyText, title) ||
+      listingFallback.category,
+  );
   const finalCategory = isMeaningfulMapsCategory(category, title)
     ? category
     : (isMeaningfulMapsCategory(listingFallback.category, title) ? listingFallback.category : "");
-  const ratingText =
-    normalizeWhitespace(
-      (await readLocatorAttribute(detailPage, 'div[jsaction="pane.rating.moreReviews"]', "aria-label")) ||
-        (await readLocatorText(detailPage, 'div[jsaction="pane.rating.moreReviews"]')) ||
-        listingFallback.ratingText ||
-        bodyText,
-    );
+
+  const ratingText = normalizeWhitespace(
+    raw.ratingAriaLabel || raw.ratingText || listingFallback.ratingText || bodyText,
+  );
 
   return {
     address,
