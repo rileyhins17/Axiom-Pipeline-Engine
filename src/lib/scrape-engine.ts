@@ -543,7 +543,7 @@ async function waitForMapsResultSurface(
     }
 
     await sendEvent({ message: `[MAPS] Waiting for Maps results (${attempt}/5)` });
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(1000);
   }
 
   return false;
@@ -1103,14 +1103,14 @@ async function collectTargets(
       if (newHeight === lastHeight) break;
       lastHeight = newHeight;
       scrollAttempts++;
-      await page.waitForTimeout(1500);
+      await page.waitForTimeout(800);
       await sendEvent({ message: `[MAPS] Depth ${scrollAttempts}/${maxDepth}` });
     }
 
     let placeLinks = await collectMapsListings(page);
     if (placeLinks.length === 0) {
       await sendEvent({ message: "[MAPS] No listings on first pass, retrying once..." });
-      await page.waitForTimeout(5000);
+      await page.waitForTimeout(3000);
       placeLinks = await collectMapsListings(page);
     }
 
@@ -1159,7 +1159,7 @@ async function collectTargets(
                 'button[data-item-id="address"], a[data-item-id="address"], button[data-tooltip*="Address"]',
                 { timeout: 8000 },
               )
-              .catch(() => detailPage.waitForTimeout(4000));
+              .catch(() => detailPage.waitForTimeout(2500));
 
             return await extractMapsDetailFromPage(detailPage, place, fallbackTitle, {
               address: listingFallback.address,

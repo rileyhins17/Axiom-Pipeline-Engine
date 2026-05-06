@@ -63,7 +63,7 @@ export async function collectWebsiteDiscoveryPages(
         });
         sections.push(buildDiscoverySection("Homepage", homepageSnapshot));
 
-        const contactLinks = pickRelevantContactLinks(website, homepageSnapshot.links, 4);
+        const contactLinks = pickRelevantContactLinks(website, homepageSnapshot.links, 2);
         for (const link of contactLinks) {
             const subPage = await context.newPage();
             try {
