@@ -15,7 +15,7 @@ import {
   MAILBOX_MIN_DELAY_SECONDS,
 } from "@/lib/automation-policy";
 import { isGenericRoleEmail } from "@/lib/contact-validation";
-import { hasValidPipelineEmail, isLeadOutreachEligible } from "@/lib/lead-qualification";
+import { hasValidPipelineEmail, isLeadOutreachEligible, normalizePipelineEmail } from "@/lib/lead-qualification";
 import { resolveLeadEnrichment } from "@/lib/outreach-enrichment";
 import { getPrisma } from "@/lib/prisma";
 import { READY_FOR_FIRST_TOUCH_STATUS } from "@/lib/outreach";
@@ -297,7 +297,7 @@ const FIRST_TOUCH_RECHECK_BLOCKERS = [
 ] as const satisfies readonly AutomationBlockerReason[];
 
 function normalizeEmail(email: string | null | undefined) {
-  return (email || "").trim().toLowerCase();
+  return normalizePipelineEmail(email);
 }
 
 export function createFirstTouchDiagnostics(
@@ -1641,7 +1641,7 @@ export function selectAutomationReadyLeads(
     }
 
     const isGenericEmailType = String(lead.emailType || "").trim().toLowerCase() === "generic";
-    const isGenericPrefix = /^(info|sales|hello|contact|admin|support|hello|office|marketing|service|enquiries|enquiry|booking|team|webmaster)@/i.test(lead.email || "");
+    const isGenericPrefix = /^(info|sales|hello|contact|admin|support|hello|office|marketing|service|enquiries|enquiry|booking|team|webmaster)@/i.test(normalizedEmail);
     
     if (isGenericEmailType || isGenericPrefix) {
       diagnostics.skippedGenericEmailCount += 1;
@@ -2883,12 +2883,17 @@ async function sendScheduledStep(
     throw new AutomationSkipError("policy_ineligible");
   }
 
+  const recipientEmail = normalizeEmail(context.lead.email);
+  if (!recipientEmail) {
+    throw new AutomationSkipError("missing_valid_email");
+  }
+
   // Defense-in-depth: refuse to send to generic role inboxes
   // (info@, contact@, sales@, etc.) at the moment of send, even if a sequence
   // somehow got created for one. Auto-queue already filters these, but a
   // legacy sequence could still exist.
   const sendEmailType = (context.lead.emailType || "").toLowerCase();
-  if (sendEmailType === "generic" || isGenericRoleEmail(context.lead.email)) {
+  if (sendEmailType === "generic" || isGenericRoleEmail(recipientEmail)) {
     await prisma.outreachSequenceStep.update({
       where: { id: claim.step.id },
       data: {
@@ -2924,17 +2929,12 @@ async function sendScheduledStep(
   const hardDq = isHardDisqualified({
     businessName: context.lead.businessName,
     category: context.lead.category,
-    email: context.lead.email,
+    email: recipientEmail,
   });
   if (hardDq.disqualified) {
     const reason = (hardDq.reason || "hard_disqualified") as AutomationBlockerReason;
     await stopSequenceInternal(prisma, claim.sequence, reason);
     throw new AutomationStoppedError(reason);
-  }
-
-  const recipientEmail = context.lead.email;
-  if (!recipientEmail) {
-    throw new AutomationSkipError("missing_valid_email");
   }
 
   // Exact-recipient safety: never start a second automated thread for an

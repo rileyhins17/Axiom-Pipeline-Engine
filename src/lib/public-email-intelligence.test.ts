@@ -45,3 +45,19 @@ test("resolvePublicBusinessEmail prefers a person inbox over generic candidates"
   assert.equal(result.email, "sarah.lee@example-roofing.ca");
   assert.equal(result.emailType, "owner");
 });
+
+test("resolvePublicBusinessEmail canonicalizes encoded mailto addresses", () => {
+  const result = resolvePublicBusinessEmail({
+    businessName: "Example Roofing",
+    businessWebsite: "https://example-roofing.ca",
+    ownerName: "Sarah Lee",
+    pages: [
+      page("Owner Sarah Lee handles projects directly.", [
+        { href: "mailto:%20Sarah.Lee%40Example-Roofing.ca?subject=Estimate", text: "Email Sarah" },
+      ]),
+    ],
+  });
+
+  assert.equal(result.email, "sarah.lee@example-roofing.ca");
+  assert.equal(result.emailType, "owner");
+});

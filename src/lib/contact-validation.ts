@@ -5,6 +5,8 @@
  * and phone formatting with area code verification.
  */
 
+import { isPipelineEmailFormat, normalizePipelineEmail } from "./lead-qualification";
+
 export interface ContactValidation {
     emailType: "owner" | "staff" | "generic" | "unknown";
     emailConfidence: number;     // 0.0 - 1.0
@@ -54,8 +56,9 @@ const FREE_PROVIDERS = [
 ];
 
 export function isGenericRoleEmail(email: string | null | undefined): boolean {
-    if (!email || !email.includes("@")) return false;
-    const localPart = email.toLowerCase().trim().split("@")[0] || "";
+    const normalizedEmail = normalizePipelineEmail(email);
+    if (!normalizedEmail || !normalizedEmail.includes("@")) return false;
+    const localPart = normalizedEmail.split("@")[0] || "";
     return GENERIC_ROLE_PREFIXES.some((prefix) => localPart === prefix || localPart.startsWith(`${prefix}.`));
 }
 
@@ -109,12 +112,11 @@ export function validateEmail(
         return { type: "unknown", confidence: 0, flags: ["no_email"] };
     }
 
-    const e = email.toLowerCase().trim();
+    const e = normalizePipelineEmail(email);
     const flags: string[] = [];
     let confidence = 0.5;
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(e)) {
+    if (!isPipelineEmailFormat(e)) {
         return { type: "unknown", confidence: 0.1, flags: ["invalid_format"] };
     }
 

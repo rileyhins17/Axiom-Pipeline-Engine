@@ -1,4 +1,5 @@
 import { isGenericRoleEmail, validateEmail, type ContactValidation } from "@/lib/contact-validation";
+import { normalizePipelineEmail } from "@/lib/lead-qualification";
 
 export type EmailPageRole =
     | "homepage"
@@ -149,12 +150,7 @@ function extractRootDomain(hostname: string | null): string | null {
 }
 
 function canonicalizeEmail(raw: string): string {
-    return raw
-        .trim()
-        .replace(/^mailto:/i, "")
-        .replace(/[)>.,;:]+$/g, "")
-        .split("?")[0]
-        .toLowerCase();
+    return normalizePipelineEmail(raw);
 }
 
 function normalizeObfuscatedEmails(text: string): string {
@@ -175,9 +171,9 @@ function extractEmailsFromHref(href: string): string[] {
     if (!href) return [];
     if (href.startsWith("mailto:")) {
         try {
-            return [canonicalizeEmail(decodeURIComponent(href))];
+            return [canonicalizeEmail(decodeURIComponent(href))].filter(Boolean);
         } catch {
-            return [canonicalizeEmail(href)];
+            return [canonicalizeEmail(href)].filter(Boolean);
         }
     }
 

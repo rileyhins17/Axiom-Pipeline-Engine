@@ -156,6 +156,38 @@ test("first-touch selection blocks contacted, sent, and open first-touch recipie
   assert.equal(result.diagnostics.skippedExistingOpenStepCount, 2);
 });
 
+test("first-touch selection canonicalizes wrapped recipient emails", () => {
+  const genericWrapped = makeLead({
+    id: 6,
+    email: "mailto:%20info@wrapped.ca?subject=Hello",
+    emailType: "unknown",
+  });
+  const viableWrapped = makeLead({
+    id: 7,
+    email: "mailto:%20owner@wrapped.ca?subject=Hello",
+    emailType: "owner",
+  });
+
+  const result = selectAutomationReadyLeads({
+    leads: [genericWrapped, viableWrapped],
+  });
+
+  assert.deepEqual(result.leads.map((lead) => lead.id), [viableWrapped.id]);
+  assert.equal(result.diagnostics.skippedGenericEmailCount, 1);
+});
+
+test("first-touch selection matches sent recipients after canonicalization", () => {
+  const wrapped = makeLead({ id: 8, email: "mailto:%20owner@already-sent.ca" });
+
+  const result = selectAutomationReadyLeads({
+    leads: [wrapped],
+    sentRecipientEmails: new Set(["owner@already-sent.ca"]),
+  });
+
+  assert.deepEqual(result.leads, []);
+  assert.equal(result.diagnostics.skippedAlreadyContactedCount, 1);
+});
+
 test("scheduler claim ordering keeps initial outreach ahead of overdue follow-ups", () => {
   const ordered = orderDueStepsForClaiming([
     makeStep({

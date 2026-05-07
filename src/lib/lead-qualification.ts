@@ -18,6 +18,36 @@ const INVALID_EMAIL_FLAGS = new Set([
   "noreply",
 ]);
 
+const EMAIL_PATTERN = /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i;
+
+function decodeEmailCandidate(value: string) {
+  try {
+    return decodeURIComponent(value.replace(/\+/g, "%20"));
+  } catch {
+    return value;
+  }
+}
+
+export function normalizePipelineEmail(email: string | null | undefined) {
+  let value = (email || "").trim();
+  if (!value) return "";
+
+  value = decodeEmailCandidate(value)
+    .replace(/^mailto:/i, "")
+    .split("?")[0]
+    .trim()
+    .replace(/^<|>$/g, "")
+    .replace(/^[\s"'(<{[]+|[\s"')>}\].,;:]+$/g, "")
+    .toLowerCase();
+
+  return value.match(/[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9.-]+\.[a-z]{2,}/i)?.[0].toLowerCase() || "";
+}
+
+export function isPipelineEmailFormat(email: string | null | undefined) {
+  const normalized = normalizePipelineEmail(email);
+  return Boolean(normalized && EMAIL_PATTERN.test(normalized));
+}
+
 function normalizeFlags(value: string | null | string[] | undefined) {
   if (!value) return [] as string[];
   if (Array.isArray(value)) {
@@ -40,7 +70,8 @@ function normalizeFlags(value: string | null | string[] | undefined) {
 }
 
 export function hasValidPipelineEmail(input: EmailQualificationInput) {
-  if (!input.email || !input.email.trim()) return false;
+  const normalizedEmail = normalizePipelineEmail(input.email);
+  if (!normalizedEmail) return false;
 
   const flags = normalizeFlags(input.emailFlags);
   if (flags.some((flag) => INVALID_EMAIL_FLAGS.has(flag))) {
@@ -49,7 +80,7 @@ export function hasValidPipelineEmail(input: EmailQualificationInput) {
 
   // Basic format check — cheap defense against garbage the scraper may have
   // let through (missing @, whitespace, etc.).
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email.trim())) {
+  if (!EMAIL_PATTERN.test(normalizedEmail)) {
     return false;
   }
 
