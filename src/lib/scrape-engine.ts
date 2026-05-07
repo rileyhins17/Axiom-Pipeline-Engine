@@ -1159,7 +1159,14 @@ async function collectTargets(
                 'button[data-item-id="address"], a[data-item-id="address"], button[data-tooltip*="Address"]',
                 { timeout: 8000 },
               )
-              .catch(() => detailPage.waitForTimeout(2500));
+              .catch(() => detailPage.waitForTimeout(4000));
+            // The address button appears before the website link in Maps' JS
+            // rendering order. Wait a second pass specifically for the authority
+            // anchor so we don't read the DOM before it's injected.
+            // For businesses with no website this harmlessly times out.
+            await detailPage
+              .waitForSelector('a[data-item-id="authority"]', { timeout: 3000 })
+              .catch(() => {});
 
             return await extractMapsDetailFromPage(detailPage, place, fallbackTitle, {
               address: listingFallback.address,
