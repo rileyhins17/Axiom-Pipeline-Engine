@@ -22,12 +22,40 @@ import { markScrapeTargetCompleted } from "@/lib/scrape-targets";
 const DEFAULT_CLOUD_WORKER_NAME = "cloudflare-browser";
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 15_000;
 
+type ExistingLeadDedupeCandidate = {
+  axiomScore?: number | null;
+  axiomTier?: string | null;
+  email?: string | null;
+  isArchived?: boolean | null;
+  websiteDomain?: string | null;
+  websiteUrl?: string | null;
+};
+
 function isEnabled(value: string | undefined, fallback = true) {
   if (value === undefined || value === null || value === "") {
     return fallback;
   }
 
   return !/^(0|false|no|off)$/i.test(value.trim());
+}
+
+export function shouldUseExistingLeadForScrapeDedupe(lead: ExistingLeadDedupeCandidate) {
+  const hasContactOrWebsite = Boolean(
+    String(lead.email || "").trim() ||
+      String(lead.websiteUrl || "").trim() ||
+      String(lead.websiteDomain || "").trim(),
+  );
+
+  if (hasContactOrWebsite) {
+    return true;
+  }
+
+  if (!lead.isArchived) {
+    return true;
+  }
+
+  const score = Number(lead.axiomScore || 0);
+  return score >= 45 && String(lead.axiomTier || "").toUpperCase() !== "D";
 }
 
 function eventTypeForPayload(payload: ScrapeJobEventPayload) {
@@ -41,16 +69,24 @@ async function getExistingDedupeKeys() {
   const prisma = getPrisma();
   const existingLeads = await prisma.lead.findMany({
     select: {
+      axiomScore: true,
+      axiomTier: true,
       businessName: true,
       city: true,
       dedupeKey: true,
+      email: true,
+      isArchived: true,
       phone: true,
+      websiteDomain: true,
+      websiteUrl: true,
     },
   });
 
-  return existingLeads.map((lead) =>
-    lead.dedupeKey || generateDedupeKey(lead.businessName, lead.city || "", lead.phone || "").key,
-  );
+  return existingLeads
+    .filter(shouldUseExistingLeadForScrapeDedupe)
+    .map((lead) =>
+      lead.dedupeKey || generateDedupeKey(lead.businessName, lead.city || "", lead.phone || "").key,
+    );
 }
 
 async function sendEvent(job: ScrapeJobRecord, payload: ScrapeJobEventPayload) {

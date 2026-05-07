@@ -12,6 +12,7 @@ const place: MapsListing = {
   cardText: "",
   name: "Closets by Design - Niagara",
   url: "https://www.google.com/maps/place/Closets+by+Design+-+Niagara",
+  websiteUrl: "",
 };
 
 test("maps detail extraction prefers the authority website and contact fields", () => {
@@ -62,4 +63,42 @@ test("body-text website fallback uses the final Maps domain line", () => {
   ].join("\n"));
 
   assert.equal(website, "https://niagara.closetsbydesign.com/");
+});
+
+test("listing-card website survives when Maps detail rendering is blank", () => {
+  const fallback = scrapeEngineTestInternals.buildMapsListingFallback({
+    ariaLabel: "Plumber To Your Door of Waterloo",
+    cardText: "Plumber To Your Door of Waterloo  4.9 Plumber Open · (519) 498-0562 Website Directions",
+    name: "Plumber To Your Door of Waterloo",
+    url: "https://www.google.com/maps/place/Plumber+To+Your+Door+of+Waterloo",
+    websiteUrl: "https://plumbertoyourdoor.ca/plumber-kitchener/",
+  });
+
+  const result = scrapeEngineTestInternals.extractMapsDetailFromSnapshot(
+    {
+      addressText: "",
+      bodyText: "",
+      categoryText: "",
+      h1: "",
+      metaTitle: "",
+      ogTitle: "",
+      phoneDataId: "",
+      phoneHref: "",
+      ratingAriaLabel: "",
+      ratingText: "",
+      websiteHref: "",
+    },
+    {
+      ariaLabel: fallback.title,
+      cardText: "",
+      name: fallback.title,
+      url: "https://www.google.com/maps/place/Plumber+To+Your+Door+of+Waterloo",
+      websiteUrl: fallback.website,
+    },
+    fallback.title,
+    fallback,
+  );
+
+  assert.equal(result.website, "https://plumbertoyourdoor.ca/plumber-kitchener/");
+  assert.equal(result.phone, "(519) 498-0562");
 });

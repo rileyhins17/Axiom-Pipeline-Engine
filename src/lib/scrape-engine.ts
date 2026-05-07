@@ -47,6 +47,7 @@ export type MapsListing = {
   cardText: string;
   name: string;
   url: string;
+  websiteUrl: string;
 };
 
 export type CollectedMapsTarget = {
@@ -510,7 +511,7 @@ function buildMapsListingFallback(listing: MapsListing): {
     phone: extractPhoneFromText(sourceText),
     ratingText,
     title,
-    website: "",
+    website: normalizeWebsiteUrl(listing.websiteUrl),
   };
 }
 
@@ -620,23 +621,50 @@ async function collectMapsListings(page: AutomationPage): Promise<MapsListing[]>
         .map((anchor) => {
           const element = anchor as HTMLAnchorElement;
           const card = element.closest("div.Nv2PK") || element.closest("div[role='article']") || element.parentElement;
+          const cardAnchors = Array.from(card?.querySelectorAll("a") || []) as HTMLAnchorElement[];
+          const isExternalWebsiteHref = (href: string) =>
+            href &&
+            !/^(?:tel|mailto|javascript):/i.test(href) &&
+            !/google\.[^/]*\/maps|maps\.google\.|accounts\.google\.|support\.google\./i.test(href);
+          const websiteAnchor =
+            cardAnchors.find((candidate) => {
+              const href = candidate.href || candidate.getAttribute("href") || "";
+              if (!href || href === element.href || !isExternalWebsiteHref(href)) return false;
+              const haystack = [
+                candidate.getAttribute("aria-label") || "",
+                candidate.getAttribute("data-tooltip") || "",
+                candidate.getAttribute("data-value") || "",
+                candidate.textContent || "",
+              ].join(" ").toLowerCase();
+              return haystack.includes("website") || haystack.includes("visit ");
+            }) ||
+            cardAnchors.find((candidate) => {
+              const href = candidate.href || candidate.getAttribute("href") || "";
+              return Boolean(href && href !== element.href && isExternalWebsiteHref(href));
+            });
           return {
             ariaLabel: element.getAttribute("aria-label") || "",
             cardText: (card?.textContent || "").trim().slice(0, 4000),
             name: element.getAttribute("aria-label") || "",
             url: element.href || element.getAttribute("href") || "",
+            websiteUrl: websiteAnchor?.href || websiteAnchor?.getAttribute("href") || "",
           };
         })
         .filter((place) => place.name && place.url && !place.url.includes("/search/")),
     );
 
   const seen = new Set<string>();
-  return (listings as MapsListing[]).filter((listing) => {
-    const key = listing.url || listing.name;
-    if (!key || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  return (listings as MapsListing[])
+    .map((listing) => ({
+      ...listing,
+      websiteUrl: normalizeWebsiteUrl(listing.websiteUrl),
+    }))
+    .filter((listing) => {
+      const key = listing.url || listing.name;
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 }
 
 async function collectCurrentPlaceListing(page: AutomationPage): Promise<MapsListing[]> {
@@ -652,6 +680,7 @@ async function collectCurrentPlaceListing(page: AutomationPage): Promise<MapsLis
       cardText: bodyText,
       name: title,
       url: location.href,
+      websiteUrl: "",
     };
   }).catch(() => null);
 
@@ -825,6 +854,7 @@ function extractMapsDetailFromSnapshot(
 }
 
 export const scrapeEngineTestInternals = {
+  buildMapsListingFallback,
   extractMapsDetailFromSnapshot,
   extractWebsiteFromBodyText,
   normalizeWebsiteUrl,
@@ -1245,6 +1275,9 @@ async function collectTargets(
     }
 
     await sendEvent({ message: `[MAPS] Listings found: ${placeLinks.length}` });
+    await sendEvent({
+      message: `[MAPS] Listings with visible website: ${placeLinks.filter((place) => Boolean(place.websiteUrl)).length}`,
+    });
     await sendEvent({ message: `[MAPS] Detail extraction started` });
 
     const targets: Target[] = [];
