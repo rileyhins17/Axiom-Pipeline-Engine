@@ -8,7 +8,7 @@ const envSchema = z.object({
   AUTH_ADMIN_EMAILS: z.string().default(""),
   AUTH_ALLOWED_ORIGINS: z.string().default(""),
   CLOUD_SCRAPE_ENABLED: z.string().default("true"),
-  CLOUD_SCRAPE_TIMEOUT_MS: z.coerce.number().int().positive().default(570000),
+  CLOUD_SCRAPE_TIMEOUT_MS: z.coerce.number().int().positive().default(840000),
   CLOUD_SCRAPE_WORKER_NAME: z.string().trim().min(1).default("cloudflare-browser"),
   AGENT_SHARED_SECRET: z.string().optional(),
   BETTER_AUTH_SECRET: z.string().min(32, "BETTER_AUTH_SECRET must be at least 32 characters long"),
