@@ -42,14 +42,14 @@ type Target = {
   website: string;
 };
 
-type MapsListing = {
+export type MapsListing = {
   ariaLabel: string;
   cardText: string;
   name: string;
   url: string;
 };
 
-type CollectedMapsTarget = {
+export type CollectedMapsTarget = {
   address: string;
   category: string;
   detailMode: "direct" | "fallback";
@@ -77,6 +77,27 @@ export interface ExecuteScrapeJobResult {
   leadsFound: number;
   withEmail: number;
 }
+
+const MAPS_RESULT_WAIT_MS = 2000;
+const MAPS_SCROLL_IDLE_MS = 1500;
+const MAPS_NO_LISTINGS_RETRY_WAIT_MS = 5000;
+const MAPS_DETAIL_READY_TIMEOUT_MS = 14000;
+const MAPS_DETAIL_SETTLE_AFTER_SIGNAL_MS = 3500;
+const MAPS_DETAIL_POLL_MS = 750;
+
+export type MapsDetailSnapshot = {
+  addressText: string;
+  bodyText: string;
+  categoryText: string;
+  h1: string;
+  metaTitle: string;
+  ogTitle: string;
+  phoneDataId: string;
+  phoneHref: string;
+  ratingAriaLabel: string;
+  ratingText: string;
+  websiteHref: string;
+};
 
 function sanitizeAiJsonResponse(text: string): string {
   return text.trim().replace(/```json/g, "").replace(/```/g, "").trim();
@@ -121,6 +142,22 @@ function normalizeWebsiteUrl(value: string): string {
   }
 }
 
+function emptyMapsDetailSnapshot(): MapsDetailSnapshot {
+  return {
+    addressText: "",
+    bodyText: "",
+    categoryText: "",
+    h1: "",
+    metaTitle: "",
+    ogTitle: "",
+    phoneDataId: "",
+    phoneHref: "",
+    ratingAriaLabel: "",
+    ratingText: "",
+    websiteHref: "",
+  };
+}
+
 /**
  * Last-resort: extract a website URL from the Maps detail page body text.
  * Maps renders the website domain as visible text (e.g. "northmedicalspa.com")
@@ -141,13 +178,15 @@ function extractWebsiteFromBodyText(bodyText: string): string {
 
   // Secondary: any line that looks like a bare domain (no spaces, has a TLD)
   const domainLike = /^(?:https?:\/\/)?(?:www\.)?[a-z0-9][a-z0-9\-.]+\.[a-z]{2,}(?:\/\S*)?$/i;
+  const candidates: string[] = [];
   for (const line of lines) {
     if (domainLike.test(line) && line.length < 120 && !/google\.|maps\.|goo\.gl/i.test(line)) {
-      return normalizeWebsiteUrl(line.startsWith("http") ? line : `https://${line}`);
+      candidates.push(line);
     }
   }
 
-  return "";
+  const candidate = candidates.at(-1);
+  return candidate ? normalizeWebsiteUrl(candidate.startsWith("http") ? candidate : `https://${candidate}`) : "";
 }
 
 function normalizeCategory(category: string, niche: string, businessName?: string): string {
@@ -408,49 +447,6 @@ function extractAddressFromMapsText(text: string, title: string): string {
   return "";
 }
 
-async function readLocatorText(page: AutomationPage, selector: string, preserveLineBreaks = false): Promise<string> {
-  try {
-    const text = await page
-      .evaluate((sel) => {
-        const element = document.querySelector(sel) as HTMLElement | null;
-        if (!element) {
-          return "";
-        }
-        return (element.innerText || element.textContent || "").trim();
-      }, selector)
-      .catch(() => "");
-
-    if (preserveLineBreaks) {
-      return (text || "").replace(/\r\n/g, "\n").trim();
-    }
-
-    return normalizeWhitespace(text || "");
-  } catch {
-    return "";
-  }
-}
-
-async function readLocatorAttribute(page: AutomationPage, selector: string, attribute: string): Promise<string> {
-  try {
-    const value = await page
-      .evaluate(
-        ([sel, attr]) => {
-          const element = document.querySelector(sel) as HTMLElement | null;
-          if (!element) {
-            return "";
-          }
-          return element.getAttribute(attr) || "";
-        },
-        [selector, attribute],
-      )
-      .catch(() => "");
-
-    return normalizeWhitespace(value || "");
-  } catch {
-    return "";
-  }
-}
-
 function extractCategoryFromMapsText(text: string, title: string): string {
   return extractMapsCategoryFromText(text, title);
 }
@@ -527,11 +523,15 @@ async function waitForMapsResultSurface(
     { label: "place links", selector: "a.hfpxzc" },
     { label: "place links by href", selector: "a[href*='/maps/place/']" },
     { label: "result cards", selector: "div[role='article']" },
+    { label: "place detail", selector: "h1" },
   ];
 
   for (let attempt = 1; attempt <= 5; attempt++) {
     for (const candidate of selectors) {
       try {
+        if (candidate.label === "place detail" && !page.url().includes("/maps/place/")) {
+          continue;
+        }
         const present = await page.locator(candidate.selector).evaluateAll((elements) => elements.length > 0);
         if (present) {
           await sendEvent({ message: `[MAPS] Results ready via ${candidate.label}` });
@@ -543,7 +543,7 @@ async function waitForMapsResultSurface(
     }
 
     await sendEvent({ message: `[MAPS] Waiting for Maps results (${attempt}/5)` });
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(MAPS_RESULT_WAIT_MS);
   }
 
   return false;
@@ -630,7 +630,36 @@ async function collectMapsListings(page: AutomationPage): Promise<MapsListing[]>
         .filter((place) => place.name && place.url && !place.url.includes("/search/")),
     );
 
-  return listings as MapsListing[];
+  const seen = new Set<string>();
+  return (listings as MapsListing[]).filter((listing) => {
+    const key = listing.url || listing.name;
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+async function collectCurrentPlaceListing(page: AutomationPage): Promise<MapsListing[]> {
+  if (!page.url().includes("/maps/place/")) {
+    return [];
+  }
+
+  const listing = await page.evaluate(() => {
+    const title = (document.querySelector("h1")?.textContent || "").trim();
+    const bodyText = (document.body?.innerText || "").trim().slice(0, 4000);
+    return {
+      ariaLabel: title,
+      cardText: bodyText,
+      name: title,
+      url: location.href,
+    };
+  }).catch(() => null);
+
+  if (!listing?.name || !listing.url) {
+    return [];
+  }
+
+  return [listing as MapsListing];
 }
 
 async function extractMapsDetailFromPage(
@@ -639,10 +668,12 @@ async function extractMapsDetailFromPage(
   fallbackTitle: string,
   listingFallback: Omit<CollectedMapsTarget, "detailMode">,
 ): Promise<CollectedMapsTarget> {
-  // Single round-trip: batch all DOM reads into one evaluate call instead of
-  // firing 8+ sequential evaluate() calls. Each call has IPC overhead; one
-  // call is dramatically faster and reduces the window for race conditions.
-  const raw = await detailPage.evaluate(() => {
+  const raw = await waitForMapsDetailSnapshot(detailPage, fallbackTitle);
+  return extractMapsDetailFromSnapshot(raw, place, fallbackTitle, listingFallback);
+}
+
+async function readMapsDetailSnapshot(detailPage: AutomationPage): Promise<MapsDetailSnapshot> {
+  return detailPage.evaluate(() => {
     const q = (sel: string): HTMLElement | null => document.querySelector(sel) as HTMLElement | null;
     const text = (sel: string) => {
       const el = q(sel);
@@ -652,19 +683,36 @@ async function extractMapsDetailFromPage(
       const el = q(sel);
       return el ? (el.getAttribute(a) || "") : "";
     };
+    const linkData = Array.from(document.querySelectorAll("a")).map((anchor) => {
+      const element = anchor as HTMLAnchorElement;
+      return {
+        aria: element.getAttribute("aria-label") || "",
+        dataItemId: element.getAttribute("data-item-id") || "",
+        dataTooltip: element.getAttribute("data-tooltip") || "",
+        dataValue: element.getAttribute("data-value") || "",
+        href: element.href || element.getAttribute("href") || "",
+        text: (element.textContent || "").trim(),
+      };
+    });
+    const usableHref = (href: string) =>
+      href &&
+      !/^(?:tel|mailto|javascript):/i.test(href) &&
+      !/google\.[^/]*\/maps|maps\.google\./i.test(href);
+    const authorityLink = linkData.find((link) => link.dataItemId === "authority" && usableHref(link.href));
+    const websiteLink = linkData.find((link) => {
+      const haystack = `${link.aria} ${link.dataTooltip} ${link.dataValue} ${link.text}`.toLowerCase();
+      return haystack.includes("website") && usableHref(link.href);
+    });
+    const phoneLink = linkData.find((link) => /^tel:/i.test(link.href));
+
     return {
       h1: text("h1"),
       ogTitle: attr('meta[property="og:title"]', "content"),
       metaTitle: attr('meta[name="title"]', "content"),
-      websiteHref:
-        attr('a[data-item-id="authority"]', "href") ||
-        attr('a[data-tooltip*="Website"]', "href") ||
-        attr('a[aria-label*="Website"]', "href") ||
-        attr('a[aria-label*="website"]', "href") ||
-        attr('a[aria-label*="Open website"]', "href") ||
-        "",
+      websiteHref: authorityLink?.href || websiteLink?.href || "",
+      phoneHref: phoneLink?.href || "",
       phoneDataId: attr('button[data-item-id*="phone:tel:"]', "data-item-id"),
-      addressText: text('button[data-item-id="address"], a[data-item-id="address"], button[data-tooltip*="Address"]'),
+      addressText: text('button[data-item-id="address"], a[data-item-id="address"], button[data-tooltip*="Address"], button[aria-label^="Address:"]'),
       categoryText: text(
         'button[jsaction="pane.rating.category"], button[jsaction*="pane.rating.category"], button[data-item-id="category"], div[data-item-id="category"]',
       ),
@@ -672,12 +720,59 @@ async function extractMapsDetailFromPage(
       ratingText: text('div[jsaction="pane.rating.moreReviews"]'),
       bodyText: (document.body?.innerText || "").trim(),
     };
-  }).catch(() => ({
-    h1: "", ogTitle: "", metaTitle: "", websiteHref: "",
-    phoneDataId: "", addressText: "", categoryText: "",
-    ratingAriaLabel: "", ratingText: "", bodyText: "",
-  }));
+  }).catch(() => emptyMapsDetailSnapshot());
+}
 
+function scoreMapsDetailSnapshot(raw: MapsDetailSnapshot, fallbackTitle: string): number {
+  const bodyText = raw.bodyText.replace(/\r\n/g, "\n");
+  const titleCandidate = normalizeWhitespace(raw.h1 || raw.ogTitle || raw.metaTitle || fallbackTitle);
+  let score = isMeaningfulMapsTitle(titleCandidate) ? 1 : 0;
+
+  if (normalizeWebsiteUrl(raw.websiteHref) || extractWebsiteFromBodyText(bodyText)) score += 3;
+  if (raw.phoneDataId || raw.phoneHref || extractPhoneFromText(bodyText)) score += 2;
+  if (cleanMapsAddressCandidate(raw.addressText.replace(/^Address:\s*/i, "")) || extractAddressFromMapsText(bodyText, titleCandidate)) score += 2;
+  if (extractMapsCategoryFromText(raw.categoryText, titleCandidate) || extractCategoryFromBodyText(bodyText, titleCandidate)) score += 1;
+  if (raw.ratingAriaLabel || raw.ratingText) score += 1;
+
+  return score;
+}
+
+async function waitForMapsDetailSnapshot(detailPage: AutomationPage, fallbackTitle: string): Promise<MapsDetailSnapshot> {
+  const startedAt = Date.now();
+  let firstUsefulSignalAt = 0;
+  let bestSnapshot = emptyMapsDetailSnapshot();
+  let bestScore = -1;
+
+  while (Date.now() - startedAt < MAPS_DETAIL_READY_TIMEOUT_MS) {
+    const snapshot = await readMapsDetailSnapshot(detailPage);
+    const score = scoreMapsDetailSnapshot(snapshot, fallbackTitle);
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestSnapshot = snapshot;
+    }
+
+    const hasUsefulDetail = score >= 4;
+    const hasAnchoredWebsite = Boolean(normalizeWebsiteUrl(snapshot.websiteHref));
+    if (hasUsefulDetail) {
+      firstUsefulSignalAt ||= Date.now();
+      if (hasAnchoredWebsite || Date.now() - firstUsefulSignalAt >= MAPS_DETAIL_SETTLE_AFTER_SIGNAL_MS) {
+        return bestSnapshot;
+      }
+    }
+
+    await detailPage.waitForTimeout(MAPS_DETAIL_POLL_MS);
+  }
+
+  return bestSnapshot;
+}
+
+function extractMapsDetailFromSnapshot(
+  raw: MapsDetailSnapshot,
+  place: MapsListing,
+  fallbackTitle: string,
+  listingFallback: Omit<CollectedMapsTarget, "detailMode">,
+): CollectedMapsTarget {
   const bodyText = raw.bodyText.replace(/\r\n/g, "\n");
 
   const titleCandidate = normalizeWhitespace(raw.h1 || raw.ogTitle || raw.metaTitle || "");
@@ -692,6 +787,7 @@ async function extractMapsDetailFromPage(
 
   const phone = normalizePhoneText(
     raw.phoneDataId.replace("phone:tel:", "") ||
+      raw.phoneHref.replace(/^tel:/i, "") ||
       extractPhoneFromText(bodyText) ||
       listingFallback.phone,
   );
@@ -720,13 +816,20 @@ async function extractMapsDetailFromPage(
   return {
     address,
     category: finalCategory,
-    detailMode: "direct",
+    detailMode: scoreMapsDetailSnapshot(raw, fallbackTitle) >= 3 ? "direct" : "fallback",
     phone,
     ratingText,
     title,
     website,
   };
 }
+
+export const scrapeEngineTestInternals = {
+  extractMapsDetailFromSnapshot,
+  extractWebsiteFromBodyText,
+  normalizeWebsiteUrl,
+  scoreMapsDetailSnapshot,
+};
 
 function parseMapsRatingAndReviews(source: string): { rating: number; reviewCount: number } {
   const text = normalizeWhitespace(source);
@@ -1085,33 +1188,55 @@ async function collectTargets(
     await sendEvent({ message: "[MAPS] Infinite scroll extraction started" });
 
     let lastHeight = 0;
+    let lastListingCount = 0;
     let scrollAttempts = 0;
+    let stableScrollAttempts = 0;
     while (scrollAttempts < maxDepth) {
       if (shouldAbort?.()) {
         throw new ScrapeCanceledError("Scrape canceled during Maps extraction.");
       }
 
-      const newHeight = await page.evaluate(() => {
+      const scrollState = await page.evaluate(() => {
         const feed = document.querySelector('div[role="feed"]');
         if (feed) {
           feed.scrollBy(0, 5000);
-          return feed.scrollHeight;
+          return {
+            height: feed.scrollHeight,
+            listingCount: document.querySelectorAll("a.hfpxzc, a[href*='/maps/place/']").length,
+          };
         }
-        return 0;
+        return {
+          height: document.body?.scrollHeight || 0,
+          listingCount: document.querySelectorAll("a.hfpxzc, a[href*='/maps/place/']").length,
+        };
       });
 
-      if (newHeight === lastHeight) break;
-      lastHeight = newHeight;
+      if (scrollState.height <= lastHeight && scrollState.listingCount <= lastListingCount) {
+        stableScrollAttempts++;
+        if (stableScrollAttempts >= 2) break;
+      } else {
+        stableScrollAttempts = 0;
+      }
+
+      lastHeight = Math.max(lastHeight, scrollState.height);
+      lastListingCount = Math.max(lastListingCount, scrollState.listingCount);
       scrollAttempts++;
-      await page.waitForTimeout(800);
+      await page.waitForTimeout(MAPS_SCROLL_IDLE_MS);
       await sendEvent({ message: `[MAPS] Depth ${scrollAttempts}/${maxDepth}` });
     }
 
     let placeLinks = await collectMapsListings(page);
     if (placeLinks.length === 0) {
       await sendEvent({ message: "[MAPS] No listings on first pass, retrying once..." });
-      await page.waitForTimeout(3000);
+      await page.waitForTimeout(MAPS_NO_LISTINGS_RETRY_WAIT_MS);
       placeLinks = await collectMapsListings(page);
+    }
+
+    if (placeLinks.length === 0) {
+      placeLinks = await collectCurrentPlaceListing(page);
+      if (placeLinks.length > 0) {
+        await sendEvent({ message: "[MAPS] Search resolved to a direct place detail; extracting current place." });
+      }
     }
 
     if (placeLinks.length === 0) {
@@ -1148,25 +1273,10 @@ async function collectTargets(
               timeout: 15000,
               waitUntil: "commit",
             });
-            // Wait for the detail panel to fully render before reading.
-            // "commit" only means the navigation started — the website link,
-            // address, and phone are injected by Maps JS after that. Waiting
-            // for the address button is the most reliable signal that the
-            // panel DOM is ready; fall back to a hard 4s wait if it never
-            // appears (e.g. bot-challenged page).
-            await detailPage
-              .waitForSelector(
-                'button[data-item-id="address"], a[data-item-id="address"], button[data-tooltip*="Address"]',
-                { timeout: 8000 },
-              )
-              .catch(() => detailPage.waitForTimeout(4000));
-            // The address button appears before the website link in Maps' JS
-            // rendering order. Wait a second pass specifically for the authority
-            // anchor so we don't read the DOM before it's injected.
-            // For businesses with no website this harmlessly times out.
-            await detailPage
-              .waitForSelector('a[data-item-id="authority"]', { timeout: 3000 })
-              .catch(() => {});
+            // "commit" only means navigation started; the readiness loop
+            // below waits for Maps contact fields to settle before extraction.
+            await detailPage.waitForSelector("body", { timeout: 8000 }).catch(() => detailPage.waitForTimeout(4000));
+            await detailPage.waitForTimeout(MAPS_DETAIL_POLL_MS);
 
             return await extractMapsDetailFromPage(detailPage, place, fallbackTitle, {
               address: listingFallback.address,

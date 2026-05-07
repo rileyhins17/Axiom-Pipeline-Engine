@@ -11,6 +11,14 @@ type PageSnapshot = {
     links: ResolvedLink[];
 };
 
+const WEBSITE_DISCOVERY_CONTACT_PAGE_LIMIT = 4;
+const WEBSITE_DISCOVERY_PAGE_SETTLE_MS = 1500;
+
+async function waitForDiscoveryPageReady(page: AutomationPage): Promise<void> {
+    await page.waitForSelector("body", { timeout: 8000 }).catch(() => undefined);
+    await page.waitForTimeout(WEBSITE_DISCOVERY_PAGE_SETTLE_MS);
+}
+
 async function capturePageSnapshot(page: AutomationPage): Promise<PageSnapshot> {
     return page.evaluate(() => {
         const links = Array.from(document.querySelectorAll("a"))
@@ -52,6 +60,7 @@ export async function collectWebsiteDiscoveryPages(
 
     try {
         await homepage.goto(website, { waitUntil: "domcontentloaded", timeout: 15000 });
+        await waitForDiscoveryPageReady(homepage);
         const homepageSnapshot = await capturePageSnapshot(homepage);
 
         pages.push({
@@ -63,12 +72,13 @@ export async function collectWebsiteDiscoveryPages(
         });
         sections.push(buildDiscoverySection("Homepage", homepageSnapshot));
 
-        const contactLinks = pickRelevantContactLinks(website, homepageSnapshot.links, 2);
+        const contactLinks = pickRelevantContactLinks(website, homepageSnapshot.links, WEBSITE_DISCOVERY_CONTACT_PAGE_LIMIT);
         for (const link of contactLinks) {
             const subPage = await context.newPage();
             try {
                 await sendEvent({ message: `[EMAIL] Scanning ${link.role} page: ${link.url}` });
                 await subPage.goto(link.url, { waitUntil: "domcontentloaded", timeout: 12000 });
+                await waitForDiscoveryPageReady(subPage);
                 const snapshot = await capturePageSnapshot(subPage);
                 pages.push({
                     url: link.url,
@@ -111,6 +121,7 @@ export async function collectSearchDiscoveryPage(
         } catch {
             await searchPage.waitForSelector("body", { timeout: 8000 });
         }
+        await searchPage.waitForTimeout(WEBSITE_DISCOVERY_PAGE_SETTLE_MS);
 
         const snapshot = await capturePageSnapshot(searchPage);
         return {
