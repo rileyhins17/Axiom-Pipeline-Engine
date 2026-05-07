@@ -563,50 +563,55 @@ async function dismissGoogleMapsConsent(
 
   await sendEvent({ message: "[MAPS] Google consent gate detected; attempting dismissal" });
 
-  const consentSelectors = [
-    'button[aria-label="Reject all"]',
-    'button[aria-label="Accept all"]',
-    'button[aria-label="I agree"]',
-    'button[aria-label="Agree"]',
-    'button:has-text("Reject all")',
-    'button:has-text("Accept all")',
-    'button:has-text("I agree")',
-    'button:has-text("Agree")',
-  ];
+  const clickConsentButton = async (): Promise<string | null> =>
+    page.evaluate(() => {
+      const wantedLabels = [
+        "reject all",
+        "accept all",
+        "i agree",
+        "agree",
+        "continue",
+      ];
+      const controls = Array.from(
+        document.querySelectorAll('button, div[role="button"], input[type="submit"], input[type="button"]'),
+      ) as Array<HTMLElement & { value?: string }>;
 
-  const clickConsentButton = async (selector: string): Promise<boolean> => {
-    try {
-      // locator.click() throws if element is absent/hidden, which we catch.
-      await page.locator(selector).click();
-      return true;
-    } catch {
-      return false;
-    }
-  };
-
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    for (const selector of consentSelectors) {
-      try {
-        const clicked = await clickConsentButton(selector);
-        if (!clicked) {
+      for (const control of controls) {
+        const label = [
+          control.getAttribute("aria-label") || "",
+          control.getAttribute("data-label") || "",
+          control.innerText || "",
+          control.textContent || "",
+          control.value || "",
+        ].join(" ").replace(/\s+/g, " ").trim();
+        const normalized = label.toLowerCase();
+        if (!normalized || !wantedLabels.some((wanted) => normalized.includes(wanted))) {
           continue;
         }
 
-        await page.waitForTimeout(2500);
-        const consentBodyText = await page.evaluate(() => document.body?.innerText || "").catch(() => "");
-        if (
-          !page.url().includes("consent.google.com") &&
-          !/before you continue to google/i.test(consentBodyText)
-        ) {
-          await sendEvent({ message: "[MAPS] Google consent gate dismissed" });
-          return true;
-        }
-      } catch {
-        // Try the next consent control or the next retry window.
+        control.click();
+        return label;
+      }
+
+      return null;
+    }).catch(() => null);
+
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    const clickedLabel = await clickConsentButton();
+    if (clickedLabel) {
+      await sendEvent({ message: `[MAPS] Google consent click: ${clickedLabel.substring(0, 80)}` });
+      await page.waitForTimeout(2500);
+      const consentBodyText = await page.evaluate(() => document.body?.innerText || "").catch(() => "");
+      if (
+        !page.url().includes("consent.google.com") &&
+        !/before you continue to google/i.test(consentBodyText)
+      ) {
+        await sendEvent({ message: "[MAPS] Google consent gate dismissed" });
+        return true;
       }
     }
 
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(750);
   }
 
   await sendEvent({ message: "[MAPS] Google consent gate remained after dismissal attempts" });
