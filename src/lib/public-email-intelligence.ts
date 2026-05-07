@@ -174,7 +174,11 @@ function extractEmailsFromText(text: string): string[] {
 function extractEmailsFromHref(href: string): string[] {
     if (!href) return [];
     if (href.startsWith("mailto:")) {
-        return [canonicalizeEmail(href)];
+        try {
+            return [canonicalizeEmail(decodeURIComponent(href))];
+        } catch {
+            return [canonicalizeEmail(href)];
+        }
     }
 
     const decoded = decodeURIComponent(href);
