@@ -621,42 +621,65 @@ async function dismissGoogleMapsConsent(
 async function collectMapsListings(page: AutomationPage): Promise<MapsListing[]> {
   const listings = await page
     .locator("a.hfpxzc, a[href*='/maps/place/']")
-    .evaluateAll((anchors) =>
-      anchors
-        .map((anchor) => {
-          const element = anchor as HTMLAnchorElement;
-          const card = element.closest("div.Nv2PK") || element.closest("div[role='article']") || element.parentElement;
-          const cardAnchors = Array.from(card?.querySelectorAll("a") || []) as HTMLAnchorElement[];
-          const isExternalWebsiteHref = (href: string) =>
-            href &&
-            !/^(?:tel|mailto|javascript):/i.test(href) &&
-            !/google\.[^/]*\/maps|maps\.google\.|accounts\.google\.|support\.google\./i.test(href);
-          const websiteAnchor =
-            cardAnchors.find((candidate) => {
-              const href = candidate.href || candidate.getAttribute("href") || "";
-              if (!href || href === element.href || !isExternalWebsiteHref(href)) return false;
-              const haystack = [
-                candidate.getAttribute("aria-label") || "",
-                candidate.getAttribute("data-tooltip") || "",
-                candidate.getAttribute("data-value") || "",
-                candidate.textContent || "",
-              ].join(" ").toLowerCase();
-              return haystack.includes("website") || haystack.includes("visit ");
-            }) ||
-            cardAnchors.find((candidate) => {
-              const href = candidate.href || candidate.getAttribute("href") || "";
-              return Boolean(href && href !== element.href && isExternalWebsiteHref(href));
-            });
-          return {
-            ariaLabel: element.getAttribute("aria-label") || "",
-            cardText: (card?.textContent || "").trim().slice(0, 4000),
-            name: element.getAttribute("aria-label") || "",
-            url: element.href || element.getAttribute("href") || "",
-            websiteUrl: websiteAnchor?.href || websiteAnchor?.getAttribute("href") || "",
-          };
-        })
-        .filter((place) => place.name && place.url && !place.url.includes("/search/")),
-    );
+    .evaluateAll((anchors) => {
+      const places: Array<{
+        ariaLabel: string;
+        cardText: string;
+        name: string;
+        url: string;
+        websiteUrl: string;
+      }> = [];
+
+      for (const anchor of anchors) {
+        const element = anchor as HTMLAnchorElement;
+        const card = element.closest("div.Nv2PK") || element.closest("div[role='article']") || element.parentElement;
+        const cardAnchors = card ? Array.from(card.querySelectorAll("a")) : [];
+        const placeUrl = element.href || element.getAttribute("href") || "";
+        let websiteUrl = "";
+
+        for (const candidateNode of cardAnchors) {
+          const candidate = candidateNode as HTMLAnchorElement;
+          const href = candidate.href || candidate.getAttribute("href") || "";
+          if (
+            !href ||
+            href === placeUrl ||
+            /^(?:tel|mailto|javascript):/i.test(href) ||
+            /google\.[^/]*\/maps|maps\.google\.|accounts\.google\.|support\.google\./i.test(href)
+          ) {
+            continue;
+          }
+
+          const label = [
+            candidate.getAttribute("aria-label") || "",
+            candidate.getAttribute("data-tooltip") || "",
+            candidate.getAttribute("data-value") || "",
+            candidate.textContent || "",
+          ].join(" ").toLowerCase();
+
+          if (label.includes("website") || label.includes("visit ")) {
+            websiteUrl = href;
+            break;
+          }
+
+          if (!websiteUrl) {
+            websiteUrl = href;
+          }
+        }
+
+        const name = element.getAttribute("aria-label") || "";
+        if (name && placeUrl && !placeUrl.includes("/search/")) {
+          places.push({
+            ariaLabel: name,
+            cardText: (card ? card.textContent || "" : "").trim().slice(0, 4000),
+            name,
+            url: placeUrl,
+            websiteUrl,
+          });
+        }
+      }
+
+      return places;
+    });
 
   const seen = new Set<string>();
   return (listings as MapsListing[])
