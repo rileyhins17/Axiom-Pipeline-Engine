@@ -4,6 +4,7 @@ import { writeAuditEvent } from "@/lib/audit";
 import { getClientIp } from "@/lib/cloudflare";
 import { isValidJobId, normalizeAgentName } from "@/lib/agent-protocol";
 import { updateAutomationSettings } from "@/lib/outreach-automation";
+import { shouldPauseIntakeForScrapeQualityGate } from "@/lib/scrape-quality-pausing";
 import { appendScrapeJobEvent, failScrapeJob, getScrapeJob } from "@/lib/scrape-jobs";
 import { requireAgentAuth } from "@/lib/agent-auth";
 
@@ -45,7 +46,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     ? "Scrape failed."
     : String(body.errorMessage).slice(0, 500) || "Scrape failed.";
 
-  if (/scrape quality gate tripped/i.test(errorMessage)) {
+  if (/scrape quality gate tripped/i.test(errorMessage) && await shouldPauseIntakeForScrapeQualityGate(jobId)) {
     await updateAutomationSettings({
       intakePaused: true,
       intakePausedAt: new Date(),

@@ -6,6 +6,7 @@ import { getAutomationSettings, updateAutomationSettings } from "@/lib/outreach-
 import { getPrisma } from "@/lib/prisma";
 import { executeScrapeJob } from "@/lib/scrape-engine-worker";
 import { persistScrapeJobLead } from "@/lib/scrape-lead-persistence";
+import { shouldPauseIntakeForScrapeQualityGate } from "@/lib/scrape-quality-pausing";
 import { ScrapeQualityGateError } from "@/lib/scrape-quality";
 import {
   appendScrapeJobEvent,
@@ -255,30 +256,43 @@ async function runClaimedJob(job: ScrapeJobRecord, existingDedupeKeys: string[])
     try {
       const qualityGateError = error instanceof ScrapeQualityGateError ? error : null;
       if ((qualityGateError?.evaluation.shouldPauseIntake ?? false) || /scrape quality gate tripped/i.test(message)) {
-        const now = new Date();
-        await updateAutomationSettings({
-          intakePaused: true,
-          intakePausedAt: now,
-          intakePausedBy: "system:scrape-quality",
-        }).catch((pauseError) => {
-          console.error(`[cloud-scrape] failed to auto-pause intake after quality gate for ${job.id}:`, pauseError);
+        const shouldPauseIntake = await shouldPauseIntakeForScrapeQualityGate(job.id).catch((pauseCheckError) => {
+          console.error(`[cloud-scrape] failed to check recent scrape quality failures for ${job.id}:`, pauseCheckError);
+          return true;
         });
-        await writeAuditEvent({
-          action: "intake.auto_paused_scrape_quality",
-          actorUserId: job.actorUserId || "system",
-          ipAddress: "cloudflare-cron",
-          targetId: job.id,
-          targetType: "scrape_job",
-          metadata: {
-            city: job.city,
-            issues: qualityGateError?.evaluation.issues.map((issue) => issue.code) ?? [],
-            metrics: qualityGateError?.evaluation.metrics ?? null,
-            niche: job.niche,
-            qualityStatus: qualityGateError?.evaluation.status ?? "critical",
-          },
-        }).catch((auditError) => {
-          console.error(`[cloud-scrape] failed to audit auto-pause for ${job.id}:`, auditError);
-        });
+
+        if (shouldPauseIntake) {
+          const now = new Date();
+          await updateAutomationSettings({
+            intakePaused: true,
+            intakePausedAt: now,
+            intakePausedBy: "system:scrape-quality",
+          }).catch((pauseError) => {
+            console.error(`[cloud-scrape] failed to auto-pause intake after quality gate for ${job.id}:`, pauseError);
+          });
+          await writeAuditEvent({
+            action: "intake.auto_paused_scrape_quality",
+            actorUserId: job.actorUserId || "system",
+            ipAddress: "cloudflare-cron",
+            targetId: job.id,
+            targetType: "scrape_job",
+            metadata: {
+              city: job.city,
+              issues: qualityGateError?.evaluation.issues.map((issue) => issue.code) ?? [],
+              metrics: qualityGateError?.evaluation.metrics ?? null,
+              niche: job.niche,
+              qualityStatus: qualityGateError?.evaluation.status ?? "critical",
+            },
+          }).catch((auditError) => {
+            console.error(`[cloud-scrape] failed to audit auto-pause for ${job.id}:`, auditError);
+          });
+        } else {
+          await appendScrapeJobEvent(job.id, "log", {
+            jobId: job.id,
+            jobStatus: "running",
+            message: "[QUALITY] Target failed quality gate; intake will continue unless another recent target also fails.",
+          }).catch(() => undefined);
+        }
       }
       await appendScrapeJobEvent(job.id, "error", {
         error: message,
