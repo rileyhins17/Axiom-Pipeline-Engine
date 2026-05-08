@@ -2532,6 +2532,38 @@ function isAutomatedSender(email: string): boolean {
   return AUTOMATED_SENDER_PATTERNS.some((pattern) => pattern.test(email));
 }
 
+/**
+ * DNS-over-HTTPS MX pre-flight check via Cloudflare's resolver.
+ * Returns false only when the domain provably cannot receive email
+ * (NXDOMAIN, or NOERROR with no MX answers). Returns null on any
+ * resolver error so transient DNS failures never block a send.
+ */
+async function domainHasMxRecord(domain: string): Promise<boolean | null> {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+    const response = await fetch(
+      `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(domain)}&type=MX`,
+      {
+        headers: { Accept: "application/dns-json" },
+        signal: controller.signal,
+      },
+    ).finally(() => clearTimeout(timeoutId));
+
+    if (!response.ok) return null;
+
+    const data = (await response.json()) as { Status?: number; Answer?: unknown[] };
+
+    if (data.Status === 3) return false;
+    if (data.Status === 0 && (!data.Answer || data.Answer.length === 0)) return false;
+
+    return true;
+  } catch {
+    return null;
+  }
+}
+
 async function detectReplyForSequence(
   prisma: PrismaLike,
   sequence: OutreachSequenceRecord,
@@ -3067,6 +3099,26 @@ async function sendScheduledStep(
   if (suppression) {
     await stopSequenceInternal(prisma, claim.sequence, "SUPPRESSED");
     throw new AutomationStoppedError("suppressed");
+  }
+
+  const mxEmailDomain = (recipientEmail.split("@")[1] || "").toLowerCase();
+  if (mxEmailDomain && !isSharedEmailProviderDomain(mxEmailDomain)) {
+    const hasMx = await domainHasMxRecord(mxEmailDomain);
+    if (hasMx === false) {
+      await prisma.outreachSuppression.create({
+        data: {
+          id: crypto.randomUUID(),
+          email: normalizeEmail(recipientEmail),
+          domain: mxEmailDomain,
+          reason: "No MX record — domain cannot receive email",
+          source: "NO_MX",
+          leadId: context.lead.id,
+          sequenceId: claim.sequence.id,
+        },
+      }).catch(() => null);
+      await stopSequenceInternal(prisma, claim.sequence, "NO_MX_RECORD");
+      throw new AutomationStoppedError("blocked_email_domain");
+    }
   }
 
   const mailboxGate = await canMailboxSend(prisma, claim.mailbox, new Date(), config, settings);
