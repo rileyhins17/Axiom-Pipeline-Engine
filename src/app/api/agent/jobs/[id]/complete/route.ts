@@ -62,6 +62,15 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     ? {
         ...(stats.avgScore === undefined ? {} : { avgScore: Number(stats.avgScore) }),
         ...(stats.leadsFound === undefined ? {} : { leadsFound: Number(stats.leadsFound) }),
+        ...(Array.isArray(stats.qualityIssues)
+          ? { qualityIssues: stats.qualityIssues.map((issue) => String(issue)).slice(0, 12) }
+          : {}),
+        ...(typeof stats.qualityStatus === "string" ? { qualityStatus: stats.qualityStatus.slice(0, 32) } : {}),
+        ...(stats.targetsFound === undefined ? {} : { targetsFound: Math.max(0, Math.floor(Number(stats.targetsFound) || 0)) }),
+        ...(stats.targetsWithCategory === undefined ? {} : { targetsWithCategory: Math.max(0, Math.floor(Number(stats.targetsWithCategory) || 0)) }),
+        ...(stats.targetsWithPhone === undefined ? {} : { targetsWithPhone: Math.max(0, Math.floor(Number(stats.targetsWithPhone) || 0)) }),
+        ...(stats.targetsWithRatingReviews === undefined ? {} : { targetsWithRatingReviews: Math.max(0, Math.floor(Number(stats.targetsWithRatingReviews) || 0)) }),
+        ...(stats.targetsWithWebsite === undefined ? {} : { targetsWithWebsite: Math.max(0, Math.floor(Number(stats.targetsWithWebsite) || 0)) }),
         ...(stats.withEmail === undefined ? {} : { withEmail: Number(stats.withEmail) }),
       }
     : null;

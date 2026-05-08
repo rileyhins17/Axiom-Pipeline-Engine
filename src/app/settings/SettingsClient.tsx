@@ -23,6 +23,24 @@ type RuntimeStatus = {
     error: string | null;
   };
   deepSeekConfigured: boolean;
+  intakePaused: boolean;
+  scrapeHealth: {
+    criticalRecent: number;
+    latest: {
+      city: string;
+      errorMessage: string | null;
+      id: string;
+      niche: string;
+      qualityStatus: string;
+      status: string;
+      targetsFound: number;
+      targetsWithCategory: number;
+      targetsWithWebsite: number;
+      updatedAt: string | null;
+      withEmail: number;
+    } | null;
+    warningRecent: number;
+  };
   scrapeConcurrencyLimit: number;
   scrapeTimeoutMs: number;
   cloudScrapeEnabled: string;
@@ -132,9 +150,11 @@ export function SettingsClient({
           <SectionTitle icon={TimerReset} title="Scrape engine" detail="Cloudflare cron runs every 60s." />
           <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
             <Limit label="Cloud scrape" value={runtimeStatus.cloudScrapeEnabled} />
+            <Limit label="Intake" value={runtimeStatus.intakePaused ? "paused" : "active"} />
             <Limit label="Concurrency" value={String(runtimeStatus.scrapeConcurrencyLimit)} />
             <Limit label="Timeout" value={`${Math.round(runtimeStatus.scrapeTimeoutMs / 1000)}s`} />
-            <Limit label="Cron" value="*/1 * * * *" />
+            <Limit label="Quality" value={formatScrapeQuality(runtimeStatus.scrapeHealth)} />
+            <Limit label="Last scrape" value={formatLastScrape(runtimeStatus.scrapeHealth.latest)} />
           </div>
         </Panel>
       </section>
@@ -153,6 +173,19 @@ export function SettingsClient({
       </section>
     </div>
   );
+}
+
+function formatScrapeQuality(scrapeHealth: RuntimeStatus["scrapeHealth"]) {
+  if (scrapeHealth.criticalRecent > 0) return `${scrapeHealth.criticalRecent} critical`;
+  if (scrapeHealth.warningRecent > 0) return `${scrapeHealth.warningRecent} warnings`;
+  return "healthy";
+}
+
+function formatLastScrape(latest: RuntimeStatus["scrapeHealth"]["latest"]) {
+  if (!latest) return "none";
+  const quality = latest.qualityStatus || latest.status;
+  const website = latest.targetsFound > 0 ? `${latest.targetsWithWebsite}/${latest.targetsFound} sites` : "0 targets";
+  return `${quality} - ${website}`;
 }
 
 function DeepSeekBalance({ balance }: { balance: RuntimeStatus["deepSeekBalance"] }) {

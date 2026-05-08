@@ -51,6 +51,12 @@ function normalizeLeadPayload(lead: Record<string, unknown>) {
     cleanText(lead.websiteDomain) ||
     (websiteUrl ? extractDomain(websiteUrl) : null);
   const resolvedWebsiteUrl = websiteUrl || (websiteDomain ? `https://${websiteDomain}` : null);
+  const requestedWebsiteStatus = cleanText(lead.websiteStatus) || "MISSING";
+  const websiteStatus = resolvedWebsiteUrl
+    ? "ACTIVE"
+    : requestedWebsiteStatus === "ACTIVE"
+      ? "MISSING"
+      : requestedWebsiteStatus;
 
   return {
     ...lead,
@@ -73,6 +79,7 @@ function normalizeLeadPayload(lead: Record<string, unknown>) {
     source: cleanText(lead.source),
     tacticalNote: cleanText(lead.tacticalNote) || "",
     websiteDomain: websiteDomain && websiteDomain.length <= 255 ? websiteDomain : null,
+    websiteStatus,
     websiteUrl: resolvedWebsiteUrl,
   };
 }
@@ -133,11 +140,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     `[agent.results] coverage job=${jobId} websiteUrl=${coverage.websiteUrl ? "1" : "0"} websiteDomain=${coverage.websiteDomain ? "1" : "0"} category=${coverage.category ? "1" : "0"} emailFlags=${coverage.emailFlags ? "1" : "0"} phoneFlags=${coverage.phoneFlags ? "1" : "0"} status=${String(leadPayload.websiteStatus || "")}`,
   );
 
-  if (leadPayload.websiteStatus === "ACTIVE" && !coverage.websiteUrl) {
+  if (leadPayload.websiteStatus === "ACTIVE" && normalizedLead.websiteStatus !== "ACTIVE") {
     await appendScrapeJobEvent(jobId, "log", {
       jobId,
       jobStatus: currentJob.status,
-      message: `[LEAD] Active website status but URL was blank after normalization for ${String(leadPayload.businessName || "unknown")}.`,
+      message: `[LEAD] Downgraded ACTIVE website status because URL/domain was blank after normalization for ${String(leadPayload.businessName || "unknown")}.`,
     });
   }
 

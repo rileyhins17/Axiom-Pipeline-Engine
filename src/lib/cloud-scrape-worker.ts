@@ -2,10 +2,11 @@ import { writeAuditEvent } from "@/lib/audit";
 import { getCloudflareBindings } from "@/lib/cloudflare";
 import { generateDedupeKey } from "@/lib/dedupe";
 import { getServerEnv } from "@/lib/env";
-import { getAutomationSettings } from "@/lib/outreach-automation";
+import { getAutomationSettings, updateAutomationSettings } from "@/lib/outreach-automation";
 import { getPrisma } from "@/lib/prisma";
 import { executeScrapeJob } from "@/lib/scrape-engine-worker";
 import { persistScrapeJobLead } from "@/lib/scrape-lead-persistence";
+import { ScrapeQualityGateError } from "@/lib/scrape-quality";
 import {
   appendScrapeJobEvent,
   claimNextScrapeJob,
@@ -63,6 +64,21 @@ function eventTypeForPayload(payload: ScrapeJobEventPayload) {
   if (payload.error) return "error";
   if (typeof payload.progress === "number") return "progress";
   return "log";
+}
+
+function buildScrapeJobStats(result: Awaited<ReturnType<typeof executeScrapeJob>>) {
+  return {
+    avgScore: result.avgScore,
+    leadsFound: result.leadsFound,
+    qualityIssues: result.qualityIssues ?? [],
+    qualityStatus: result.qualityStatus ?? "healthy",
+    targetsFound: result.targetsFound ?? 0,
+    targetsWithCategory: result.targetsWithCategory ?? 0,
+    targetsWithPhone: result.targetsWithPhone ?? 0,
+    targetsWithRatingReviews: result.targetsWithRatingReviews ?? 0,
+    targetsWithWebsite: result.targetsWithWebsite ?? 0,
+    withEmail: result.withEmail,
+  };
 }
 
 async function getExistingDedupeKeys() {
@@ -208,19 +224,11 @@ async function runClaimedJob(job: ScrapeJobRecord, existingDedupeKeys: string[])
       jobId: job.id,
       jobStatus: "completed",
       _done: true,
-      stats: {
-        avgScore: result.avgScore,
-        leadsFound: result.leadsFound,
-        withEmail: result.withEmail,
-      },
+      stats: buildScrapeJobStats(result),
     });
 
     await completeScrapeJob(job.id, {
-      stats: {
-        avgScore: result.avgScore,
-        leadsFound: result.leadsFound,
-        withEmail: result.withEmail,
-      },
+      stats: buildScrapeJobStats(result),
     });
     await markScrapeTargetCompleted(job.id, result.leadsFound).catch((error) => {
       console.warn(`[cloud-scrape] failed to update target yield for ${job.id}:`, error);
@@ -245,6 +253,33 @@ async function runClaimedJob(job: ScrapeJobRecord, existingDedupeKeys: string[])
     console.error(`[cloud-scrape] failed ${job.id}:`, error);
 
     try {
+      const qualityGateError = error instanceof ScrapeQualityGateError ? error : null;
+      if ((qualityGateError?.evaluation.shouldPauseIntake ?? false) || /scrape quality gate tripped/i.test(message)) {
+        const now = new Date();
+        await updateAutomationSettings({
+          intakePaused: true,
+          intakePausedAt: now,
+          intakePausedBy: "system:scrape-quality",
+        }).catch((pauseError) => {
+          console.error(`[cloud-scrape] failed to auto-pause intake after quality gate for ${job.id}:`, pauseError);
+        });
+        await writeAuditEvent({
+          action: "intake.auto_paused_scrape_quality",
+          actorUserId: job.actorUserId || "system",
+          ipAddress: "cloudflare-cron",
+          targetId: job.id,
+          targetType: "scrape_job",
+          metadata: {
+            city: job.city,
+            issues: qualityGateError?.evaluation.issues.map((issue) => issue.code) ?? [],
+            metrics: qualityGateError?.evaluation.metrics ?? null,
+            niche: job.niche,
+            qualityStatus: qualityGateError?.evaluation.status ?? "critical",
+          },
+        }).catch((auditError) => {
+          console.error(`[cloud-scrape] failed to audit auto-pause for ${job.id}:`, auditError);
+        });
+      }
       await appendScrapeJobEvent(job.id, "error", {
         error: message,
         jobId: job.id,

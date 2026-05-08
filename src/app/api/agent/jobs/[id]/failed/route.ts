@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { writeAuditEvent } from "@/lib/audit";
 import { getClientIp } from "@/lib/cloudflare";
 import { isValidJobId, normalizeAgentName } from "@/lib/agent-protocol";
+import { updateAutomationSettings } from "@/lib/outreach-automation";
 import { appendScrapeJobEvent, failScrapeJob, getScrapeJob } from "@/lib/scrape-jobs";
 import { requireAgentAuth } from "@/lib/agent-auth";
 
@@ -43,6 +44,14 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const errorMessage = body.errorMessage === undefined || body.errorMessage === null
     ? "Scrape failed."
     : String(body.errorMessage).slice(0, 500) || "Scrape failed.";
+
+  if (/scrape quality gate tripped/i.test(errorMessage)) {
+    await updateAutomationSettings({
+      intakePaused: true,
+      intakePausedAt: new Date(),
+      intakePausedBy: "system:scrape-quality",
+    });
+  }
 
   await appendScrapeJobEvent(jobId, "error", {
     error: errorMessage,

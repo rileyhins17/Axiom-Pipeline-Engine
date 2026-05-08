@@ -29,6 +29,12 @@ import type {
   ScrapeJobEventPayload,
   ScrapeLeadWriteInput,
 } from "@/lib/scrape-jobs";
+import {
+  evaluateScrapeExtractionQuality,
+  ScrapeQualityGateError,
+  type ScrapeQualityEvaluation,
+  type ScrapeQualityStatus,
+} from "@/lib/scrape-quality";
 
 class ScrapeCanceledError extends Error {}
 
@@ -76,6 +82,13 @@ export interface ExecuteScrapeJobResult {
   aborted: boolean;
   avgScore: number;
   leadsFound: number;
+  qualityIssues?: string[];
+  qualityStatus?: ScrapeQualityStatus;
+  targetsFound?: number;
+  targetsWithCategory?: number;
+  targetsWithPhone?: number;
+  targetsWithRatingReviews?: number;
+  targetsWithWebsite?: number;
   withEmail: number;
 }
 
@@ -1702,6 +1715,21 @@ export async function executeScrapeJob(input: ExecuteScrapeJobInput): Promise<Ex
   let emailFlagsCoverage = 0;
   let phoneFlagsCoverage = 0;
   let activeWebsiteWithoutUrlCount = 0;
+  let extractionQuality: ScrapeQualityEvaluation | null = null;
+
+  const buildResult = (abortedResult: boolean): ExecuteScrapeJobResult => ({
+    aborted: abortedResult,
+    avgScore: leadsFound > 0 ? Math.round(totalScore / leadsFound) : 0,
+    leadsFound,
+    qualityIssues: extractionQuality?.issues.map((issue) => issue.code),
+    qualityStatus: extractionQuality?.status,
+    targetsFound: extractionQuality?.metrics.targetsFound,
+    targetsWithCategory: extractionQuality?.metrics.targetsWithCategory,
+    targetsWithPhone: extractionQuality?.metrics.targetsWithPhone,
+    targetsWithRatingReviews: extractionQuality?.metrics.targetsWithRatingReviews,
+    targetsWithWebsite: extractionQuality?.metrics.targetsWithWebsite,
+    withEmail,
+  });
 
   const shouldAbort = () => {
     if (aborted) return true;
@@ -1734,7 +1762,42 @@ export async function executeScrapeJob(input: ExecuteScrapeJobInput): Promise<Ex
     );
 
     if (shouldAbort()) {
-      return { aborted: true, avgScore: 0, leadsFound, withEmail };
+      return buildResult(true);
+    }
+
+    extractionQuality = evaluateScrapeExtractionQuality({
+      targetsFound: targets.length,
+      targetsWithCategory: targets.filter((target) => Boolean(normalizeCategory(target.category, input.niche, target.businessName))).length,
+      targetsWithPhone: targets.filter((target) => Boolean(target.phone)).length,
+      targetsWithRatingReviews: targets.filter((target) => target.rating > 0 || target.reviewCount > 0).length,
+      targetsWithWebsite: targets.filter((target) => Boolean(target.website)).length,
+    });
+
+    await input.sendEvent({
+      message:
+        `[QUALITY] scrape=${extractionQuality.status} ` +
+        `website=${extractionQuality.metrics.targetsWithWebsite}/${extractionQuality.metrics.targetsFound} ` +
+        `category=${extractionQuality.metrics.targetsWithCategory}/${extractionQuality.metrics.targetsFound} ` +
+        `phone=${extractionQuality.metrics.targetsWithPhone}/${extractionQuality.metrics.targetsFound}`,
+      stats: {
+        qualityIssues: extractionQuality.issues.map((issue) => issue.code),
+        qualityStatus: extractionQuality.status,
+        targetsFound: extractionQuality.metrics.targetsFound,
+        targetsWithCategory: extractionQuality.metrics.targetsWithCategory,
+        targetsWithPhone: extractionQuality.metrics.targetsWithPhone,
+        targetsWithRatingReviews: extractionQuality.metrics.targetsWithRatingReviews,
+        targetsWithWebsite: extractionQuality.metrics.targetsWithWebsite,
+      },
+    });
+
+    for (const issue of extractionQuality.issues) {
+      await input.sendEvent({
+        message: `[QUALITY] ${issue.severity.toUpperCase()} ${issue.code}: ${issue.detail}`,
+      });
+    }
+
+    if (extractionQuality.shouldFailJob) {
+      throw new ScrapeQualityGateError(extractionQuality);
     }
 
     await input.sendEvent({
@@ -2056,12 +2119,7 @@ export async function executeScrapeJob(input: ExecuteScrapeJobInput): Promise<Ex
     }
 
     if (shouldAbort()) {
-      return {
-        aborted: true,
-        avgScore: leadsFound > 0 ? Math.round(totalScore / leadsFound) : 0,
-        leadsFound,
-        withEmail,
-      };
+      return buildResult(true);
     }
 
     const qualifiedCount = leadsFound - disqualifiedCount;
@@ -2086,23 +2144,39 @@ export async function executeScrapeJob(input: ExecuteScrapeJobInput): Promise<Ex
     await input.sendEvent({
       message: "[DONE] Export the protected results from Vault or /api/leads/export.",
     });
-    await input.sendEvent({ _done: true, stats: { avgScore, leadsFound, withEmail } });
+    await input.sendEvent({
+      _done: true,
+      stats: {
+        avgScore,
+        leadsFound,
+        qualityIssues: extractionQuality?.issues.map((issue) => issue.code) ?? [],
+        qualityStatus: extractionQuality?.status ?? "healthy",
+        targetsFound: extractionQuality?.metrics.targetsFound ?? targets.length,
+        targetsWithCategory: extractionQuality?.metrics.targetsWithCategory ?? 0,
+        targetsWithPhone: extractionQuality?.metrics.targetsWithPhone ?? 0,
+        targetsWithRatingReviews: extractionQuality?.metrics.targetsWithRatingReviews ?? 0,
+        targetsWithWebsite: extractionQuality?.metrics.targetsWithWebsite ?? 0,
+        withEmail,
+      },
+    });
 
     return {
       aborted: false,
       avgScore,
       leadsFound,
+      qualityIssues: extractionQuality?.issues.map((issue) => issue.code) ?? [],
+      qualityStatus: extractionQuality?.status ?? "healthy",
+      targetsFound: extractionQuality?.metrics.targetsFound ?? targets.length,
+      targetsWithCategory: extractionQuality?.metrics.targetsWithCategory ?? 0,
+      targetsWithPhone: extractionQuality?.metrics.targetsWithPhone ?? 0,
+      targetsWithRatingReviews: extractionQuality?.metrics.targetsWithRatingReviews ?? 0,
+      targetsWithWebsite: extractionQuality?.metrics.targetsWithWebsite ?? 0,
       withEmail,
     };
   } catch (error) {
     if (error instanceof ScrapeCanceledError) {
       aborted = true;
-      return {
-        aborted: true,
-        avgScore: leadsFound > 0 ? Math.round(totalScore / leadsFound) : 0,
-        leadsFound,
-        withEmail,
-      };
+      return buildResult(true);
     }
 
     throw error;

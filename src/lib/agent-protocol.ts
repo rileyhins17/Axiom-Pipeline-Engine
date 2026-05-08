@@ -105,6 +105,13 @@ const progressPayloadSchema = z.object({
     .object({
       avgScore: z.number().finite().optional(),
       leadsFound: z.number().int().nonnegative().optional(),
+      qualityIssues: z.array(z.string().min(1).max(80)).optional(),
+      qualityStatus: z.string().min(1).max(32).optional(),
+      targetsFound: z.number().int().nonnegative().optional(),
+      targetsWithCategory: z.number().int().nonnegative().optional(),
+      targetsWithPhone: z.number().int().nonnegative().optional(),
+      targetsWithRatingReviews: z.number().int().nonnegative().optional(),
+      targetsWithWebsite: z.number().int().nonnegative().optional(),
       withEmail: z.number().int().nonnegative().optional(),
     })
     .passthrough()

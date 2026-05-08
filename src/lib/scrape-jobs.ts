@@ -33,6 +33,13 @@ export type ScrapeJobEventPayload = Record<string, unknown> & {
   stats?: {
     avgScore?: number;
     leadsFound?: number;
+    qualityIssues?: string[];
+    qualityStatus?: string;
+    targetsFound?: number;
+    targetsWithCategory?: number;
+    targetsWithPhone?: number;
+    targetsWithRatingReviews?: number;
+    targetsWithWebsite?: number;
     withEmail?: number;
     [key: string]: unknown;
   };
