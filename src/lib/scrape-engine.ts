@@ -669,10 +669,9 @@ async function collectMapsListings(page: AutomationPage): Promise<MapsListing[]>
         websiteUrl: string;
       }> = [];
       const extractWebsiteFromText = (value: string) => {
-        const matches = value.matchAll(
-          /\b(?:https?:\/\/)?(?:www\.)?[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+(?:\/[^\s<>"')\]]*)?/gi,
-        );
-        for (const match of matches) {
+        const pattern = /\b(?:https?:\/\/)?(?:www\.)?[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+(?:\/[^\s<>"')\]]*)?/gi;
+        let match: RegExpExecArray | null;
+        while ((match = pattern.exec(value)) !== null) {
           const index = match.index ?? 0;
           const previousChar = value[index - 1] || "";
           const candidate = match[0].replace(/[),.;:]+$/g, "");
@@ -830,10 +829,9 @@ async function readMapsDetailSnapshot(detailPage: AutomationPage): Promise<MapsD
       return el ? (el.getAttribute(a) || "") : "";
     };
     const extractWebsiteFromText = (value: string) => {
-      const matches = value.matchAll(
-        /\b(?:https?:\/\/)?(?:www\.)?[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+(?:\/[^\s<>"')\]]*)?/gi,
-      );
-      for (const match of matches) {
+      const pattern = /\b(?:https?:\/\/)?(?:www\.)?[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+(?:\/[^\s<>"')\]]*)?/gi;
+      let match: RegExpExecArray | null;
+      while ((match = pattern.exec(value)) !== null) {
         const index = match.index ?? 0;
         const previousChar = value[index - 1] || "";
         const candidate = match[0].replace(/[),.;:]+$/g, "");
