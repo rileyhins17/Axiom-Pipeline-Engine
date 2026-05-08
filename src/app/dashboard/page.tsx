@@ -7,6 +7,7 @@ import {
   Clock,
   Clock3,
   DollarSign,
+  Mail,
   MailCheck,
   Radar,
   Reply,
@@ -355,6 +356,7 @@ export default async function DashboardPage() {
     crmStats,
     followUps,
     connectedRows,
+    totalSentAllTime,
   ] = await Promise.all([
     listAutomationOverview().catch(() => emptyAutomationOverview()),
     listScrapeJobs(8).catch(() => []),
@@ -387,6 +389,11 @@ export default async function DashboardPage() {
       .all<{ gmailAddress: string }>()
       .then((r) => r.results ?? [])
       .catch(() => [] as Array<{ gmailAddress: string }>),
+    getDatabase()
+      .prepare(`SELECT COUNT(*) AS c FROM "OutreachEmail" WHERE "status" = 'sent'`)
+      .first<{ c: number | string }>()
+      .then((r) => Number(r?.c ?? 0))
+      .catch(() => 0),
   ]);
 
   const activeScrape = scrapeJobs.find((j) => j.status === "running" || j.status === "claimed") ?? null;
@@ -513,6 +520,7 @@ export default async function DashboardPage() {
           <MailboxBar email="aidan@getaxiom.ca" sent={aidanSends} cap={MAILBOX_DAILY_SEND_TARGET} pct={aidanPct} connected={aidanConnected} />
           <MailboxBar email="riley@getaxiom.ca" sent={rileySends} cap={MAILBOX_DAILY_SEND_TARGET} pct={rileyPct} connected={rileyConnected} />
           <Divider />
+          <KvRow icon={<Mail className="size-3.5" />} label="Total sent (all-time)" value={totalSentAllTime.toLocaleString()} />
           <KvRow icon={<MailCheck className="size-3.5" />} label="Reply rate" value={`${replyRate.toFixed(1)}%`} />
           <KvRow icon={<Reply className="size-3.5" />} label="Replies (all-time)" value={repliedCount.toLocaleString()} />
           <KvRow icon={<Bot className="size-3.5" />} label="Engine" value={automation.engine.mode} />
