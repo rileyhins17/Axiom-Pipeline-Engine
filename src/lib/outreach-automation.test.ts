@@ -7,6 +7,11 @@ import {
   orderDueStepsForClaiming,
   selectAutomationReadyLeads,
 } from "./outreach-automation";
+import {
+  AUTONOMOUS_DAILY_LEAD_INTAKE_CAP,
+  AUTONOMOUS_FOLLOW_UP_DAILY_SEND_CAP,
+  MAILBOX_DAILY_SEND_TARGET,
+} from "./automation-policy";
 import type { LeadRecord, OutreachSequenceStepRecord } from "./prisma";
 
 function makeLead(overrides: Partial<LeadRecord> & Pick<LeadRecord, "id">): LeadRecord {
@@ -215,6 +220,15 @@ test("scheduler claim ordering keeps initial outreach ahead of overdue follow-up
     "follow-up-oldest",
     "follow-up-newer",
   ]);
+});
+
+test("automation capacity policy reserves daily sends for initial outreach", () => {
+  const totalDailyCapacity = MAILBOX_DAILY_SEND_TARGET * 2;
+  const reservedInitialCapacity = totalDailyCapacity - AUTONOMOUS_FOLLOW_UP_DAILY_SEND_CAP;
+
+  assert.equal(totalDailyCapacity, 80);
+  assert(AUTONOMOUS_FOLLOW_UP_DAILY_SEND_CAP <= totalDailyCapacity * 0.25);
+  assert(AUTONOMOUS_DAILY_LEAD_INTAKE_CAP <= reservedInitialCapacity);
 });
 
 test("automation sequence timeline includes initial plus three periodic follow-ups", () => {

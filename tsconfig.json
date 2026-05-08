@@ -37,6 +37,8 @@
     "**/*.mts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "axiom-pipeline-engine",
+    ".playwright-mcp"
   ]
 }

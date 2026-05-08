@@ -69,3 +69,9 @@ data/
 # Scratch Test Files
 test_maps.js
 verify.js
+
+# Local scratch workspaces and audit captures
+/.playwright-mcp/
+/axiom-pipeline-engine/
+/axiom-signin-*.png
+/ui-audit-*.png

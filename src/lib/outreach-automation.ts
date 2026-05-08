@@ -240,6 +240,7 @@ type AutomationBlockerReason =
   | "blocked_email_domain"
   | "hard_disqualified"
   | "domain_cooldown_active"
+  | "follow_up_daily_cap_reached"
   | "global_daily_cap_reached";
 
 const AUTOMATION_BLOCKER_REASONS = [
@@ -267,6 +268,7 @@ const AUTOMATION_BLOCKER_REASONS = [
   "blocked_email_domain",
   "hard_disqualified",
   "domain_cooldown_active",
+  "follow_up_daily_cap_reached",
   "global_daily_cap_reached",
 ] as const satisfies readonly AutomationBlockerReason[];
 
@@ -285,6 +287,7 @@ const REQUEUEABLE_STALE_STOP_REASONS = new Set([
   "mailbox_cooldown",
   "hourly_cap_reached",
   "daily_cap_reached",
+  "follow_up_daily_cap_reached",
   "global_daily_cap_reached",
   "domain_cooldown_active",
 ]);
@@ -637,6 +640,11 @@ function getBlockerMeta(reason: AutomationBlockerReason) {
         label: "Domain cooldown",
         detail: "Another contact at this domain was recently emailed.",
       };
+    case "follow_up_daily_cap_reached":
+      return {
+        label: "Follow-up cap reached",
+        detail: "Today's follow-up send budget is used, reserving remaining capacity for new initial outreach.",
+      };
     case "global_daily_cap_reached":
       return {
         label: "Daily send cap reached",
@@ -670,6 +678,7 @@ const BLOCKER_PRECEDENCE: AutomationBlockerReason[] = [
   "blocked_email_domain",
   "hard_disqualified",
   "domain_cooldown_active",
+  "follow_up_daily_cap_reached",
   "global_daily_cap_reached",
 ];
 
@@ -704,6 +713,7 @@ function getBlockedRecheckDelayMinutes(reason: AutomationBlockerReason, mailbox?
     case "hourly_cap_reached":
       return 60;
     case "daily_cap_reached":
+    case "follow_up_daily_cap_reached":
     case "domain_cooldown_active":
     case "global_daily_cap_reached":
     case "below_send_min_score":
@@ -752,7 +762,11 @@ async function getRateLimitRecheckAt(
 ) {
   let baseRecheckAt: Date;
 
-  if (reason === "global_daily_cap_reached" || reason === "daily_cap_reached") {
+  if (
+    reason === "global_daily_cap_reached" ||
+    reason === "daily_cap_reached" ||
+    reason === "follow_up_daily_cap_reached"
+  ) {
     baseRecheckAt = addSeconds(startOfNextUtcDay(now), 5);
   } else if (reason === "hourly_cap_reached") {
     baseRecheckAt = await getMailboxHourlyCapResetAt(prisma, claim.mailbox.id, now);
@@ -1133,6 +1147,23 @@ async function getMailboxLoad(prisma: PrismaLike, mailboxId: string, now: Date) 
   ]);
 
   return { sentToday, sentThisHour };
+}
+
+async function countFollowUpSendsToday(now: Date) {
+  const { getDatabase } = await import("@/lib/cloudflare");
+  const row = await getDatabase()
+    .prepare(
+      `SELECT COUNT(*) AS count
+       FROM "OutreachEmail" e
+       JOIN "OutreachSequenceStep" s ON s."id" = e."sequenceStepId"
+       WHERE e."status" = 'sent'
+         AND datetime(e."sentAt") >= datetime(?)
+         AND s."stepNumber" > 1`,
+    )
+    .bind(startOfDay(now).toISOString())
+    .first<{ count: number | string }>();
+
+  return Number(row?.count || 0);
 }
 
 async function allocateMailbox(
@@ -2457,7 +2488,17 @@ async function canMailboxSend(prisma: PrismaLike, mailbox: OutreachMailboxRecord
     return { allowed: false, reason: "outside_send_window" as AutomationBlockerReason };
   }
 
-  void _stepNumber;
+  if ((_stepNumber || 0) > 1) {
+    const { getServerEnv } = await import("@/lib/env");
+    const followUpDailyCap = getServerEnv().AUTONOMOUS_MAX_FOLLOW_UP_SENDS_PER_DAY;
+    if (followUpDailyCap > 0) {
+      const followUpsSentToday = await countFollowUpSendsToday(now);
+      if (followUpsSentToday >= followUpDailyCap) {
+        return { allowed: false, reason: "follow_up_daily_cap_reached" as AutomationBlockerReason };
+      }
+    }
+  }
+
   const { sentToday, sentThisHour } = await getMailboxLoad(prisma, mailbox.id, now);
   if (sentToday >= mailbox.dailyLimit) {
     return { allowed: false, reason: "daily_cap_reached" as AutomationBlockerReason };
@@ -3121,7 +3162,7 @@ async function sendScheduledStep(
     }
   }
 
-  const mailboxGate = await canMailboxSend(prisma, claim.mailbox, new Date(), config, settings);
+  const mailboxGate = await canMailboxSend(prisma, claim.mailbox, new Date(), config, settings, claim.step.stepNumber);
   if (!mailboxGate.allowed) {
     const now = new Date();
     const nextAttempt = await getRateLimitRecheckAt(prisma, claim, mailboxGate.reason, liveConfig, now);
@@ -3726,6 +3767,7 @@ async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: numbe
         mailboxGate.reason === "mailbox_cooldown" ||
         mailboxGate.reason === "hourly_cap_reached" ||
         mailboxGate.reason === "daily_cap_reached" ||
+        mailboxGate.reason === "follow_up_daily_cap_reached" ||
         mailboxGate.reason === "global_daily_cap_reached" ||
         mailboxGate.reason === "outside_send_window";
       await prisma.outreachSequence.update({

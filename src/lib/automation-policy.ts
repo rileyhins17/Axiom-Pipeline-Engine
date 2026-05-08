@@ -34,6 +34,10 @@ export const AUTONOMOUS_QUEUE_BATCH_SIZE = 50;
  *  mailboxes at 40/day each (= 80 sends/day), this keeps a healthy
  *  intake-to-send ratio without manual gating. */
 export const AUTONOMOUS_DAILY_LEAD_INTAKE_CAP = 50;
+/** Follow-ups are useful, but first-touch volume is the primary growth lever.
+ *  Cap follow-ups at 25% of the 80/day global send budget so aged sequences
+ *  cannot take over daily mailbox capacity. */
+export const AUTONOMOUS_FOLLOW_UP_DAILY_SEND_CAP = 20;
 export const FOLLOW_UP_3_DELAY_DAYS = 4;
 
 export function isAdequateAutonomousLead(lead: {

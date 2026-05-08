@@ -17,10 +17,9 @@ import {
 
 import {
   AUTOMATION_SETTINGS_DEFAULTS,
-  AUTONOMOUS_DAILY_LEAD_INTAKE_CAP,
   MAILBOX_DAILY_SEND_TARGET,
 } from "@/lib/automation-policy";
-import { countAdequateLeadsToday } from "@/lib/autonomous-intake";
+import { countAdequateLeadsToday, getAutonomousDailyLeadCap } from "@/lib/autonomous-intake";
 import { getDatabase } from "@/lib/cloudflare";
 import { listAutomationOverview } from "@/lib/outreach-automation";
 import { getPrisma } from "@/lib/prisma";
@@ -193,7 +192,6 @@ async function get7DaySeries(): Promise<{
     return dayKeys.map((k) => map.get(k) ?? 0);
   };
 
-  /* eslint-disable no-useless-escape */
   const [leadsFoundRows, enrichedRows, queuedRows, sentRows, repliedRows] = await Promise.all([
     db
       .prepare(`SELECT date(datetime("createdAt", '${tzMod}')) AS d, COUNT(*) AS c FROM "Lead" WHERE "createdAt" >= ? GROUP BY 1`)
@@ -216,8 +214,6 @@ async function get7DaySeries(): Promise<{
       .bind(start7)
       .all<{ d: string; c: number | string }>(),
   ]);
-  /* eslint-enable no-useless-escape */
-
   return {
     leadsFound: toSeries(leadsFoundRows.results ?? []),
     enriched: toSeries(enrichedRows.results ?? []),
@@ -398,16 +394,17 @@ export default async function DashboardPage() {
 
   const activeScrape = scrapeJobs.find((j) => j.status === "running" || j.status === "claimed") ?? null;
   const replyRate = contactedCount > 0 ? (repliedCount / contactedCount) * 100 : 0;
+  const intakeCap = getAutonomousDailyLeadCap();
 
   const aidanSends = sendsToday.perSender["aidan@getaxiom.ca"] || 0;
   const rileySends = sendsToday.perSender["riley@getaxiom.ca"] || 0;
 
-  const intakePct = Math.min(100, (adequateToday / AUTONOMOUS_DAILY_LEAD_INTAKE_CAP) * 100);
+  const intakePct = Math.min(100, (adequateToday / intakeCap) * 100);
   const sendPct = Math.min(100, (sendsToday.total / TARGET_DAILY_SEND) * 100);
   const aidanPct = Math.min(100, (aidanSends / MAILBOX_DAILY_SEND_TARGET) * 100);
   const rileyPct = Math.min(100, (rileySends / MAILBOX_DAILY_SEND_TARGET) * 100);
 
-  const intakeTone: ToneKey = adequateToday >= AUTONOMOUS_DAILY_LEAD_INTAKE_CAP ? "amber" : "emerald";
+  const intakeTone: ToneKey = adequateToday >= intakeCap ? "amber" : "emerald";
   const sendTone: ToneKey = sendsToday.total >= TARGET_DAILY_SEND ? "amber" : "cyan";
 
   const connectedSet = new Set(connectedRows.map((r) => (r.gmailAddress || "").toLowerCase()));
@@ -474,7 +471,7 @@ export default async function DashboardPage() {
           <RatioMeter
             label="Adequate leads"
             value={adequateToday}
-            cap={AUTONOMOUS_DAILY_LEAD_INTAKE_CAP}
+            cap={intakeCap}
             pct={intakePct}
             tone={intakeTone}
             footnote="axiom score ≥ 45, non-D, non-generic email"
@@ -586,13 +583,12 @@ export default async function DashboardPage() {
 
 // ---------- Follow-Ups Panel ----------
 
-function FollowUpItemRow({ item, overdue = false }: { item: FollowUpItem; overdue?: boolean }) {
+function FollowUpItemRow({ item, nowMs, overdue = false }: { item: FollowUpItem; nowMs: number; overdue?: boolean }) {
   const dueLabel = item.nextActionDueAt
     ? (() => {
         const d = new Date(item.nextActionDueAt);
         if (isNaN(d.getTime())) return null;
-        const now = Date.now();
-        const diff = Math.ceil((d.getTime() - now) / 86_400_000);
+        const diff = Math.ceil((d.getTime() - nowMs) / 86_400_000);
         if (diff < 0) return `${Math.abs(diff)}d ago`;
         if (diff === 0) return "Today";
         if (diff === 1) return "Tomorrow";
@@ -627,12 +623,14 @@ function FollowUpGroup({
   title,
   items,
   emptyLabel,
+  nowMs,
   overdue = false,
 }: {
   icon: ReactNode;
   title: string;
   items: FollowUpItem[];
   emptyLabel: string;
+  nowMs: number;
   overdue?: boolean;
 }) {
   return (
@@ -655,7 +653,7 @@ function FollowUpGroup({
       ) : (
         <div>
           {items.slice(0, 5).map((item) => (
-            <FollowUpItemRow key={item.id} item={item} overdue={overdue} />
+            <FollowUpItemRow key={item.id} item={item} nowMs={nowMs} overdue={overdue} />
           ))}
           {items.length > 5 && (
             <div className="text-[10px] text-zinc-600 pt-1.5">+{items.length - 5} more</div>
@@ -666,8 +664,9 @@ function FollowUpGroup({
   );
 }
 
-function FollowUpsPanel({ data }: { data: { overdue: FollowUpItem[]; dueToday: FollowUpItem[]; stale: FollowUpItem[]; risky: FollowUpItem[] } }) {
+function FollowUpsPanel({ data }: { data: { overdue: FollowUpItem[]; dueToday: FollowUpItem[]; stale: FollowUpItem[]; risky: FollowUpItem[]; now: string } }) {
   const hasAny = data.overdue.length > 0 || data.dueToday.length > 0 || data.stale.length > 0 || data.risky.length > 0;
+  const nowMs = Date.parse(data.now);
 
   return (
     <div className="v2-card overflow-hidden">
@@ -692,6 +691,7 @@ function FollowUpsPanel({ data }: { data: { overdue: FollowUpItem[]; dueToday: F
           title="Overdue"
           items={data.overdue}
           emptyLabel="No overdue actions"
+          nowMs={nowMs}
           overdue
         />
         <FollowUpGroup
@@ -699,18 +699,21 @@ function FollowUpsPanel({ data }: { data: { overdue: FollowUpItem[]; dueToday: F
           title="Due Today"
           items={data.dueToday}
           emptyLabel="Nothing due today"
+          nowMs={nowMs}
         />
         <FollowUpGroup
           icon={<Users className="size-3.5" />}
           title="Stale Deals"
           items={data.stale}
           emptyLabel="No stale deals"
+          nowMs={nowMs}
         />
         <FollowUpGroup
           icon={<AlertTriangle className="size-3.5" />}
           title="Risky Proposals"
           items={data.risky}
           emptyLabel="No risky proposals"
+          nowMs={nowMs}
         />
       </div>
     </div>

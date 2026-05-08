@@ -11,6 +11,8 @@ const eslintConfig = defineConfig([
     ".next/**",
     ".open-next/**",
     ".wrangler/**",
+    ".playwright-mcp/**",
+    "axiom-pipeline-engine/**",
     "out/**",
     "build/**",
     "next-env.d.ts",

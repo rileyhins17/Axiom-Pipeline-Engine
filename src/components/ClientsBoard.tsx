@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   AlertCircle,
   Building2,
@@ -268,16 +268,16 @@ function DealDrawer({
   const [signedAt, setSignedAt] = useState<string>(toInputDate(lead.signedAt));
   const [projectNotes, setProjectNotes] = useState<string>(lead.projectNotes ?? "");
 
-  // Auto-set date fields when stage first moves to relevant stage
-  useEffect(() => {
+  const handleDealStageChange = (nextStage: string) => {
     const today = new Date().toISOString().slice(0, 10);
-    if (dealStage === "PROPOSAL_SENT" && !proposalSentAt) {
+    setDealStage(nextStage);
+    if (nextStage === "PROPOSAL_SENT" && !proposalSentAt) {
       setProposalSentAt(today);
     }
-    if (dealStage === "SIGNED" && !signedAt) {
+    if (nextStage === "SIGNED" && !signedAt) {
       setSignedAt(today);
     }
-  }, [dealStage]); // eslint-disable-line react-hooks/exhaustive-deps
+  };
 
   const handleSave = async () => {
     await onSave(lead.id, {
@@ -356,7 +356,7 @@ function DealDrawer({
               </label>
               <select
                 value={dealStage}
-                onChange={(e) => setDealStage(e.target.value)}
+                onChange={(e) => handleDealStageChange(e.target.value)}
                 className="w-full rounded-lg border border-white/[0.09] bg-white/[0.03] px-2.5 py-2 text-sm text-white focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20 cursor-pointer"
               >
                 <option value="">— None —</option>

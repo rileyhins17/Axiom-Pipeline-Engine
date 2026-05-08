@@ -2,6 +2,8 @@
   "extends": "./tsconfig.json",
   "exclude": [
     "node_modules",
+    "axiom-pipeline-engine",
+    ".playwright-mcp",
     "tests/axiom-engine.test.ts"
   ]
 }
