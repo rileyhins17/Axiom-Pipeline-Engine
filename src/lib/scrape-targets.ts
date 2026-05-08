@@ -1,6 +1,7 @@
 import { getDatabase } from "@/lib/cloudflare";
 
 const FAILED_SCRAPE_TARGET_COOLDOWN_MS = 6 * 60 * 60 * 1000;
+const RECENT_SCRAPE_TARGET_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 
 export interface ScrapeTargetRecord {
   id: string;
@@ -130,11 +131,19 @@ function hasRecentTargetFailure(candidate: Pick<ScrapeTargetCandidate, "lastJobS
   return Boolean(lastRunAt && Date.now() - lastRunAt < FAILED_SCRAPE_TARGET_COOLDOWN_MS);
 }
 
+function hasRecentTargetRun(candidate: Pick<ScrapeTargetCandidate, "lastRunAt" | "totalRuns">) {
+  if (!candidate.totalRuns) return false;
+
+  const lastRunAt = candidate.lastRunAt?.getTime();
+  return Boolean(lastRunAt && Date.now() - lastRunAt < RECENT_SCRAPE_TARGET_COOLDOWN_MS);
+}
+
 export function getScrapeTargetPriorityBand(candidate: Pick<
   ScrapeTargetCandidate,
   "adequateLeadCount" | "lastJobLeadsFound" | "lastJobStatus" | "lastJobWithEmail" | "lastRunAt" | "totalLeadsFound" | "totalRuns"
 >) {
   if (hasRecentTargetFailure(candidate)) return 7;
+  if (hasRecentTargetRun(candidate)) return 6;
   if (candidate.adequateLeadCount > 0) return 0;
   if (!candidate.lastRunAt || candidate.totalRuns === 0) return 1;
   if (candidate.lastJobWithEmail > 0) return 2;

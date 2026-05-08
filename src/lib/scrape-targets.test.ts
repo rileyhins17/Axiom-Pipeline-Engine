@@ -114,3 +114,29 @@ test("scrape target selection rotates proven targets before repeating the highes
 
   assert.equal(ordered[0].id, neverRunProvenTarget.id);
 });
+
+test("scrape target selection cools down recently run proven targets", () => {
+  const recentlyRunProven = makeCandidate({
+    id: "recently-run-proven",
+    niche: "Plumbing",
+    city: "Cambridge",
+    adequateLeadCount: 20,
+    lastJobLeadsFound: 4,
+    lastJobWithEmail: 1,
+    lastRunAt: new Date(),
+    totalRuns: 12,
+    totalLeadsFound: 60,
+  });
+  const staleUntestedTarget = makeCandidate({
+    id: "stale-untested-target",
+    niche: "HVAC",
+    city: "Kitchener",
+    lastRunAt: null,
+    totalRuns: 0,
+  });
+
+  const ordered = [recentlyRunProven, staleUntestedTarget].sort(compareScrapeTargetCandidates);
+
+  assert.equal(getScrapeTargetPriorityBand(recentlyRunProven), 6);
+  assert.equal(ordered[0].id, staleUntestedTarget.id);
+});
