@@ -65,6 +65,52 @@ test("body-text website fallback uses the final Maps domain line", () => {
   assert.equal(website, "https://niagara.closetsbydesign.com/");
 });
 
+test("body-text website fallback handles Website label text", () => {
+  const website = scrapeEngineTestInternals.extractWebsiteFromBodyText([
+    "North Medical Spa",
+    "Website: northmedicalspa.com",
+    "Directions",
+  ].join("\n"));
+
+  assert.equal(website, "https://northmedicalspa.com/");
+});
+
+test("maps detail extraction normalizes a bare authority website", () => {
+  const result = scrapeEngineTestInternals.extractMapsDetailFromSnapshot(
+    {
+      addressText: "",
+      bodyText: "North Medical Spa\nMedical spa\nWebsite\nnorthmedicalspa.com",
+      categoryText: "Medical spa",
+      h1: "North Medical Spa",
+      metaTitle: "",
+      ogTitle: "",
+      phoneDataId: "",
+      phoneHref: "",
+      ratingAriaLabel: "",
+      ratingText: "",
+      websiteHref: "northmedicalspa.com",
+    },
+    {
+      ariaLabel: "North Medical Spa",
+      cardText: "",
+      name: "North Medical Spa",
+      url: "https://www.google.com/maps/place/North+Medical+Spa",
+      websiteUrl: "",
+    },
+    "North Medical Spa",
+    {
+      address: "",
+      category: "",
+      phone: "",
+      ratingText: "",
+      title: "North Medical Spa",
+      website: "",
+    },
+  );
+
+  assert.equal(result.website, "https://northmedicalspa.com/");
+});
+
 test("listing-card website survives when Maps detail rendering is blank", () => {
   const fallback = scrapeEngineTestInternals.buildMapsListingFallback({
     ariaLabel: "Plumber To Your Door of Waterloo",
@@ -101,4 +147,17 @@ test("listing-card website survives when Maps detail rendering is blank", () => 
 
   assert.equal(result.website, "https://plumbertoyourdoor.ca/plumber-kitchener/");
   assert.equal(result.phone, "(519) 498-0562");
+});
+
+test("listing-card fallback recovers a visible website domain", () => {
+  const fallback = scrapeEngineTestInternals.buildMapsListingFallback({
+    ariaLabel: "M Esthetics & Body Contouring",
+    cardText: "M Esthetics & Body Contouring\n4.8\nMedical spa\nWebsite: mesthetics.ca\nDirections",
+    name: "M Esthetics & Body Contouring",
+    url: "https://www.google.com/maps/place/M+Esthetics+%26+Body+Contouring",
+    websiteUrl: "",
+  });
+
+  assert.equal(fallback.website, "https://mesthetics.ca/");
+  assert.equal(fallback.category, "Medical spa");
 });

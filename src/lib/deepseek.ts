@@ -8,10 +8,12 @@
 import { getServerEnv } from "@/lib/env";
 
 const DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions";
+const DEEPSEEK_BALANCE_URL = "https://api.deepseek.com/user/balance";
 const DEFAULT_MODEL = "deepseek-chat";
 const MAX_RETRIES = 2;
 const INITIAL_RETRY_DELAY_MS = 1000;
 const REQUEST_TIMEOUT_MS = 20000;
+const BALANCE_TIMEOUT_MS = 8000;
 
 export type ChatMessage = {
   role: "system" | "user" | "assistant";
@@ -35,6 +37,21 @@ export type DeepSeekResponse = {
   };
 };
 
+export type DeepSeekBalanceInfo = {
+  currency: string;
+  grantedBalance: string;
+  toppedUpBalance: string;
+  totalBalance: string;
+};
+
+export type DeepSeekBalanceStatus = {
+  available: boolean | null;
+  balances: DeepSeekBalanceInfo[];
+  checkedAt: string | null;
+  configured: boolean;
+  error: string | null;
+};
+
 export class DeepSeekError extends Error {
   status: number;
 
@@ -56,6 +73,75 @@ function withTimeout(ms: number) {
     signal: controller.signal,
     clear: () => clearTimeout(timeoutId),
   };
+}
+
+export async function getDeepSeekBalanceStatus(): Promise<DeepSeekBalanceStatus> {
+  const env = getServerEnv();
+
+  if (!env.DEEPSEEK_API_KEY) {
+    return {
+      available: null,
+      balances: [],
+      checkedAt: null,
+      configured: false,
+      error: "DEEPSEEK_API_KEY is not configured",
+    };
+  }
+
+  const timeout = withTimeout(BALANCE_TIMEOUT_MS);
+  try {
+    const response = await fetch(DEEPSEEK_BALANCE_URL, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${env.DEEPSEEK_API_KEY}`,
+      },
+      signal: timeout.signal,
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      return {
+        available: false,
+        balances: [],
+        checkedAt: new Date().toISOString(),
+        configured: true,
+        error: `DeepSeek balance check failed (${response.status}): ${text.slice(0, 180)}`,
+      };
+    }
+
+    const data = (await response.json()) as {
+      balance_infos?: Array<{
+        currency?: string;
+        granted_balance?: string;
+        topped_up_balance?: string;
+        total_balance?: string;
+      }>;
+      is_available?: boolean;
+    };
+
+    return {
+      available: data.is_available ?? null,
+      balances: (data.balance_infos || []).map((balance) => ({
+        currency: balance.currency || "",
+        grantedBalance: balance.granted_balance || "0",
+        toppedUpBalance: balance.topped_up_balance || "0",
+        totalBalance: balance.total_balance || "0",
+      })),
+      checkedAt: new Date().toISOString(),
+      configured: true,
+      error: null,
+    };
+  } catch (error) {
+    return {
+      available: false,
+      balances: [],
+      checkedAt: new Date().toISOString(),
+      configured: true,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  } finally {
+    timeout.clear();
+  }
 }
 
 /**

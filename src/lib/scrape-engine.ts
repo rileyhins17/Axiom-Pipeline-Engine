@@ -129,7 +129,7 @@ function normalizeWebsiteUrl(value: string): string {
   }
 
   try {
-    const url = new URL(clean.startsWith("http") ? clean : `https://${clean}`);
+    const url = new URL(/^https?:\/\//i.test(clean) ? clean : `https://${clean}`);
     // Filter any google.com URL (maps redirects, /url wrapper, etc.)
     if (url.hostname.includes("google.")) {
       return "";
@@ -141,6 +141,25 @@ function normalizeWebsiteUrl(value: string): string {
     }
     return clean;
   }
+}
+
+function extractWebsiteTokenFromText(value: string): string {
+  const matches = value.matchAll(
+    /\b(?:https?:\/\/)?(?:www\.)?[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+(?:\/[^\s<>"')\]]*)?/gi,
+  );
+
+  for (const match of matches) {
+    const index = match.index ?? 0;
+    const previousChar = value[index - 1] || "";
+    const candidate = match[0].replace(/[),.;:]+$/g, "");
+    if (previousChar === "@" || candidate.includes("@")) continue;
+    if (/google\.|maps\.|goo\.gl|gstatic\.|ggpht\./i.test(candidate)) continue;
+
+    const normalized = normalizeWebsiteUrl(/^https?:\/\//i.test(candidate) ? candidate : `https://${candidate}`);
+    if (normalized) return normalized;
+  }
+
+  return "";
 }
 
 function emptyMapsDetailSnapshot(): MapsDetailSnapshot {
@@ -172,8 +191,14 @@ function extractWebsiteFromBodyText(bodyText: string): string {
   const websiteIdx = lines.findIndex((l) => /^website$/i.test(l));
   if (websiteIdx >= 0 && websiteIdx + 1 < lines.length) {
     const candidate = lines[websiteIdx + 1];
-    if (/^[a-z0-9][a-z0-9\-.]+\.[a-z]{2,}(?:\/\S*)?$/i.test(candidate) && candidate.length < 120) {
-      return normalizeWebsiteUrl(candidate.startsWith("http") ? candidate : `https://${candidate}`);
+    const website = extractWebsiteTokenFromText(candidate);
+    if (website) return website;
+  }
+
+  for (const line of lines) {
+    if (/\b(?:website|visit website|open website)\b/i.test(line)) {
+      const website = extractWebsiteTokenFromText(line);
+      if (website) return website;
     }
   }
 
@@ -187,7 +212,7 @@ function extractWebsiteFromBodyText(bodyText: string): string {
   }
 
   const candidate = candidates.at(-1);
-  return candidate ? normalizeWebsiteUrl(candidate.startsWith("http") ? candidate : `https://${candidate}`) : "";
+  return candidate ? normalizeWebsiteUrl(/^https?:\/\//i.test(candidate) ? candidate : `https://${candidate}`) : "";
 }
 
 function normalizeCategory(category: string, niche: string, businessName?: string): string {
@@ -502,16 +527,17 @@ function buildMapsListingFallback(listing: MapsListing): {
   title: string;
   website: string;
 } {
-  const sourceText = normalizeWhitespace([listing.ariaLabel, listing.cardText].filter(Boolean).join("\n"));
+  const rawText = [listing.ariaLabel, listing.cardText].filter(Boolean).join("\n");
+  const sourceText = normalizeWhitespace(rawText);
   const title = normalizeWhitespace(listing.name || sourceText.split(" ").slice(0, 8).join(" "));
   const ratingText = sourceText;
   return {
     address: extractAddressFromMapsText(sourceText, title),
-    category: extractCategoryFromBodyText(sourceText, title) || extractMapsCategoryFromText(sourceText, title),
+    category: extractCategoryFromBodyText(rawText, title) || extractCategoryFromBodyText(sourceText, title) || extractMapsCategoryFromText(sourceText, title),
     phone: extractPhoneFromText(sourceText),
     ratingText,
     title,
-    website: normalizeWebsiteUrl(listing.websiteUrl),
+    website: normalizeWebsiteUrl(listing.websiteUrl) || extractWebsiteFromBodyText(rawText),
   };
 }
 
@@ -629,48 +655,98 @@ async function collectMapsListings(page: AutomationPage): Promise<MapsListing[]>
         url: string;
         websiteUrl: string;
       }> = [];
+      const extractWebsiteFromText = (value: string) => {
+        const matches = value.matchAll(
+          /\b(?:https?:\/\/)?(?:www\.)?[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+(?:\/[^\s<>"')\]]*)?/gi,
+        );
+        for (const match of matches) {
+          const index = match.index ?? 0;
+          const previousChar = value[index - 1] || "";
+          const candidate = match[0].replace(/[),.;:]+$/g, "");
+          if (previousChar === "@" || candidate.includes("@")) continue;
+          if (/google\.|maps\.|goo\.gl|gstatic\.|ggpht\./i.test(candidate)) continue;
+          return candidate;
+        }
+        return "";
+      };
+      const readHref = (element: Element) => {
+        if (element instanceof HTMLAnchorElement) {
+          return element.href || element.getAttribute("href") || "";
+        }
+        return (
+          element.getAttribute("href") ||
+          element.getAttribute("data-url") ||
+          element.getAttribute("data-href") ||
+          element.getAttribute("data-value") ||
+          ""
+        );
+      };
+      const readLabel = (element: Element) =>
+        [
+          element.getAttribute("aria-label") || "",
+          element.getAttribute("data-tooltip") || "",
+          element.getAttribute("data-value") || "",
+          element.getAttribute("data-item-id") || "",
+          element.textContent || "",
+        ].join(" ");
+      const usableWebsiteHref = (href: string, placeUrl: string) =>
+        href &&
+        href !== placeUrl &&
+        !/^(?:tel|mailto|javascript):/i.test(href) &&
+        !/google\.[^/]*\/maps|maps\.google\.|accounts\.google\.|support\.google\.|gstatic\.|ggpht\./i.test(href);
+      const findCard = (element: HTMLElement) => {
+        const direct = element.closest("div.Nv2PK") || element.closest("div[role='article']");
+        if (direct) return direct;
+        let current: HTMLElement | null = element.parentElement;
+        for (let depth = 0; current && depth < 6; depth++) {
+          if ((current.textContent || "").trim().length > 20) return current;
+          current = current.parentElement;
+        }
+        return element.parentElement;
+      };
 
       for (const anchor of anchors) {
         const element = anchor as HTMLAnchorElement;
-        const card = element.closest("div.Nv2PK") || element.closest("div[role='article']") || element.parentElement;
-        const cardAnchors = card ? Array.from(card.querySelectorAll("a")) : [];
+        const card = findCard(element);
+        const cardText = (card ? card.textContent || "" : "").trim().slice(0, 4000);
+        const cardWebsiteControls = card
+          ? Array.from(
+              card.querySelectorAll(
+                "a[href], [data-item-id='authority'], [aria-label*='Website'], [aria-label*='website'], [data-tooltip*='Website'], [data-tooltip*='website']",
+              ),
+            )
+          : [];
         const placeUrl = element.href || element.getAttribute("href") || "";
         let websiteUrl = "";
 
-        for (const candidateNode of cardAnchors) {
-          const candidate = candidateNode as HTMLAnchorElement;
-          const href = candidate.href || candidate.getAttribute("href") || "";
-          if (
-            !href ||
-            href === placeUrl ||
-            /^(?:tel|mailto|javascript):/i.test(href) ||
-            /google\.[^/]*\/maps|maps\.google\.|accounts\.google\.|support\.google\./i.test(href)
-          ) {
-            continue;
-          }
+        for (const candidate of cardWebsiteControls) {
+          const href = readHref(candidate);
+          const label = readLabel(candidate).toLowerCase();
 
-          const label = [
-            candidate.getAttribute("aria-label") || "",
-            candidate.getAttribute("data-tooltip") || "",
-            candidate.getAttribute("data-value") || "",
-            candidate.textContent || "",
-          ].join(" ").toLowerCase();
-
-          if (label.includes("website") || label.includes("visit ")) {
+          if (usableWebsiteHref(href, placeUrl) && (label.includes("website") || label.includes("visit ") || label.includes("authority"))) {
             websiteUrl = href;
             break;
           }
 
-          if (!websiteUrl) {
+          if (!websiteUrl && usableWebsiteHref(href, placeUrl)) {
             websiteUrl = href;
+          }
+
+          if (!websiteUrl && /\b(?:website|visit website|open website|authority)\b/i.test(label)) {
+            websiteUrl = extractWebsiteFromText(label);
+            if (websiteUrl) break;
           }
         }
 
-        const name = element.getAttribute("aria-label") || "";
+        if (!websiteUrl) {
+          websiteUrl = extractWebsiteFromText(cardText);
+        }
+
+        const name = element.getAttribute("aria-label") || card?.querySelector(".qBF1Pd")?.textContent?.trim() || "";
         if (name && placeUrl && !placeUrl.includes("/search/")) {
           places.push({
             ariaLabel: name,
-            cardText: (card ? card.textContent || "" : "").trim().slice(0, 4000),
+            cardText,
             name,
             url: placeUrl,
             websiteUrl,
@@ -685,7 +761,7 @@ async function collectMapsListings(page: AutomationPage): Promise<MapsListing[]>
   return (listings as MapsListing[])
     .map((listing) => ({
       ...listing,
-      websiteUrl: normalizeWebsiteUrl(listing.websiteUrl),
+      websiteUrl: normalizeWebsiteUrl(listing.websiteUrl) || extractWebsiteFromBodyText(listing.cardText),
     }))
     .filter((listing) => {
       const key = listing.url || listing.name;
@@ -740,25 +816,56 @@ async function readMapsDetailSnapshot(detailPage: AutomationPage): Promise<MapsD
       const el = q(sel);
       return el ? (el.getAttribute(a) || "") : "";
     };
-    const linkData = Array.from(document.querySelectorAll("a")).map((anchor) => {
-      const element = anchor as HTMLAnchorElement;
+    const extractWebsiteFromText = (value: string) => {
+      const matches = value.matchAll(
+        /\b(?:https?:\/\/)?(?:www\.)?[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+(?:\/[^\s<>"')\]]*)?/gi,
+      );
+      for (const match of matches) {
+        const index = match.index ?? 0;
+        const previousChar = value[index - 1] || "";
+        const candidate = match[0].replace(/[),.;:]+$/g, "");
+        if (previousChar === "@" || candidate.includes("@")) continue;
+        if (/google\.|maps\.|goo\.gl|gstatic\.|ggpht\./i.test(candidate)) continue;
+        return candidate;
+      }
+      return "";
+    };
+    const linkData = Array.from(
+      document.querySelectorAll(
+        "a[href], [data-item-id='authority'], [aria-label*='Website'], [aria-label*='website'], [data-tooltip*='Website'], [data-tooltip*='website']",
+      ),
+    ).map((node) => {
+      const element = node as HTMLElement;
+      const href =
+        element instanceof HTMLAnchorElement
+          ? element.href || element.getAttribute("href") || ""
+          : element.getAttribute("href") ||
+            element.getAttribute("data-url") ||
+            element.getAttribute("data-href") ||
+            element.getAttribute("data-value") ||
+            "";
       return {
         aria: element.getAttribute("aria-label") || "",
         dataItemId: element.getAttribute("data-item-id") || "",
         dataTooltip: element.getAttribute("data-tooltip") || "",
         dataValue: element.getAttribute("data-value") || "",
-        href: element.href || element.getAttribute("href") || "",
+        href,
         text: (element.textContent || "").trim(),
       };
     });
     const usableHref = (href: string) =>
       href &&
       !/^(?:tel|mailto|javascript):/i.test(href) &&
-      !/google\.[^/]*\/maps|maps\.google\./i.test(href);
+      !/google\.[^/]*\/maps|maps\.google\.|accounts\.google\.|support\.google\.|gstatic\.|ggpht\./i.test(href);
     const authorityLink = linkData.find((link) => link.dataItemId === "authority" && usableHref(link.href));
     const websiteLink = linkData.find((link) => {
       const haystack = `${link.aria} ${link.dataTooltip} ${link.dataValue} ${link.text}`.toLowerCase();
       return haystack.includes("website") && usableHref(link.href);
+    });
+    const authorityTextLink = linkData.find((link) => link.dataItemId === "authority");
+    const websiteTextLink = linkData.find((link) => {
+      const haystack = `${link.aria} ${link.dataTooltip} ${link.dataValue} ${link.text}`.toLowerCase();
+      return haystack.includes("website");
     });
     const phoneLink = linkData.find((link) => /^tel:/i.test(link.href));
 
@@ -766,7 +873,12 @@ async function readMapsDetailSnapshot(detailPage: AutomationPage): Promise<MapsD
       h1: text("h1"),
       ogTitle: attr('meta[property="og:title"]', "content"),
       metaTitle: attr('meta[name="title"]', "content"),
-      websiteHref: authorityLink?.href || websiteLink?.href || "",
+      websiteHref:
+        authorityLink?.href ||
+        websiteLink?.href ||
+        extractWebsiteFromText(`${authorityTextLink?.aria || ""} ${authorityTextLink?.dataTooltip || ""} ${authorityTextLink?.dataValue || ""} ${authorityTextLink?.text || ""}`) ||
+        extractWebsiteFromText(`${websiteTextLink?.aria || ""} ${websiteTextLink?.dataTooltip || ""} ${websiteTextLink?.dataValue || ""} ${websiteTextLink?.text || ""}`) ||
+        "",
       phoneHref: phoneLink?.href || "",
       phoneDataId: attr('button[data-item-id*="phone:tel:"]', "data-item-id"),
       addressText: text('button[data-item-id="address"], a[data-item-id="address"], button[data-tooltip*="Address"], button[aria-label^="Address:"]'),

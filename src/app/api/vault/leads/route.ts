@@ -13,11 +13,12 @@ export async function GET(request: Request) {
   const result = await db
     .prepare(
       `SELECT id, businessName, niche, city, category, address, phone, email,
-              socialLink, websiteUrl, rating, reviewCount, websiteStatus,
+              socialLink, websiteUrl, websiteDomain, rating, reviewCount, websiteStatus,
               contactName, tacticalNote, outreachStatus, outreachChannel,
               firstContactedAt, lastContactedAt, nextFollowUpDue, outreachNotes,
               createdAt
        FROM "Lead"
+       WHERE COALESCE(isArchived, 0) = 0
        ORDER BY createdAt DESC`,
     )
     .all<Record<string, unknown>>();

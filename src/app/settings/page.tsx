@@ -1,6 +1,7 @@
 import { SettingsClient } from "./SettingsClient";
 
 import { getCloudflareBindings, getDatabase } from "@/lib/cloudflare";
+import { getDeepSeekBalanceStatus } from "@/lib/deepseek";
 import { getServerEnv } from "@/lib/env";
 import { getAutomationSettings, syncMailboxesForGmailConnections } from "@/lib/outreach-automation";
 import { getPrisma } from "@/lib/prisma";
@@ -38,7 +39,7 @@ export default async function SettingsPage() {
 
   // Three independent sources, OR'd together — connection state is
   // critical and any one of them blanking shouldn't hide a real connection.
-  const [connections, syncedMailboxes, directMailboxes] = await Promise.all([
+  const [connections, syncedMailboxes, directMailboxes, deepSeekBalance] = await Promise.all([
     prisma.gmailConnection
       .findMany({ select: { gmailAddress: true } })
       .catch(() => [] as Array<{ gmailAddress: string }>),
@@ -46,6 +47,13 @@ export default async function SettingsPage() {
       () => [] as Array<{ gmailAddress: string; status: string }>,
     ),
     listConnectedMailboxes().catch(() => []),
+    getDeepSeekBalanceStatus().catch((error) => ({
+      available: false,
+      balances: [],
+      checkedAt: new Date().toISOString(),
+      configured: Boolean(env.DEEPSEEK_API_KEY),
+      error: error instanceof Error ? error.message : String(error),
+    })),
   ]);
 
   const connectedAddresses = new Set(
@@ -75,6 +83,7 @@ export default async function SettingsPage() {
         appBaseUrl: env.APP_BASE_URL,
         browserRenderingConfigured: Boolean(bindings?.BROWSER),
         databaseTarget: bindings?.DB ? "cloudflare-d1" : "binding-missing",
+        deepSeekBalance,
         deepSeekConfigured: Boolean(env.DEEPSEEK_API_KEY),
         scrapeConcurrencyLimit: env.SCRAPE_CONCURRENCY_LIMIT,
         scrapeTimeoutMs: env.SCRAPE_TIMEOUT_MS,

@@ -10,6 +10,18 @@ type RuntimeStatus = {
   appBaseUrl: string;
   browserRenderingConfigured: boolean;
   databaseTarget: "cloudflare-d1" | "binding-missing";
+  deepSeekBalance: {
+    available: boolean | null;
+    balances: Array<{
+      currency: string;
+      grantedBalance: string;
+      toppedUpBalance: string;
+      totalBalance: string;
+    }>;
+    checkedAt: string | null;
+    configured: boolean;
+    error: string | null;
+  };
   deepSeekConfigured: boolean;
   scrapeConcurrencyLimit: number;
   scrapeTimeoutMs: number;
@@ -107,6 +119,9 @@ export function SettingsClient({
                 state={runtimeStatus.deepSeekConfigured ? "ready" : "attention"}
               />
             </StatusRow>
+            <StatusRow label="DeepSeek credits">
+              <DeepSeekBalance balance={runtimeStatus.deepSeekBalance} />
+            </StatusRow>
             <StatusRow label="App base URL">
               <span className="max-w-[14rem] truncate font-mono text-xs text-muted-foreground">{runtimeStatus.appBaseUrl}</span>
             </StatusRow>
@@ -137,6 +152,27 @@ export function SettingsClient({
         </Panel>
       </section>
     </div>
+  );
+}
+
+function DeepSeekBalance({ balance }: { balance: RuntimeStatus["deepSeekBalance"] }) {
+  if (!balance.configured) {
+    return <span className="font-mono text-xs text-amber-300">not configured</span>;
+  }
+
+  if (balance.error) {
+    return <span className="max-w-[16rem] truncate font-mono text-xs text-amber-300">{balance.error}</span>;
+  }
+
+  const total = balance.balances
+    .filter((entry) => entry.totalBalance || entry.currency)
+    .map((entry) => `${entry.totalBalance} ${entry.currency}`.trim())
+    .join(", ");
+
+  return (
+    <span className={balance.available === false ? "font-mono text-xs text-amber-300" : "font-mono text-xs text-emerald-300"}>
+      {total || (balance.available ? "available" : "unavailable")}
+    </span>
   );
 }
 

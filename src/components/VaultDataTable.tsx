@@ -44,6 +44,7 @@ type Lead = {
     email: string | null;
     socialLink: string | null;
     websiteUrl?: string | null;
+    websiteDomain?: string | null;
     rating: number | null;
     reviewCount: number | null;
     websiteStatus: string | null;
@@ -76,6 +77,7 @@ const EXPORT_COLUMNS = [
     { key: "email", label: "Email", default: true },
     { key: "contactName", label: "Contact Name", default: true },
     { key: "socialLink", label: "Social Link", default: false },
+    { key: "websiteUrl", label: "Website", default: true },
     { key: "rating", label: "Rating", default: true },
     { key: "reviewCount", label: "Reviews", default: true },
     { key: "websiteStatus", label: "Website Status", default: true },
@@ -93,20 +95,25 @@ function hasText(value: string | null) {
 }
 
 function getWebsiteLabel(status: string | null) {
-    return status === "MISSING" ? "No site" : "Verified";
+    if (status === "MISSING") return "No site";
+    if (status === "ACTIVE") return "Verified";
+    return "Unknown";
 }
 
 function StatusBadge({ status }: { status: string | null }) {
     const missing = status === "MISSING";
+    const active = status === "ACTIVE";
     return (
         <span
             className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[10px] font-medium ${
                 missing
                     ? "border-red-500/20 bg-red-500/[0.07] text-red-300"
-                    : "border-emerald-500/20 bg-emerald-500/[0.07] text-emerald-300"
+                    : active
+                      ? "border-emerald-500/20 bg-emerald-500/[0.07] text-emerald-300"
+                      : "border-zinc-500/20 bg-zinc-500/[0.07] text-zinc-400"
             }`}
         >
-            {missing ? <XCircle className="h-3 w-3" /> : <CheckCircle2 className="h-3 w-3" />}
+            {missing ? <XCircle className="h-3 w-3" /> : active ? <CheckCircle2 className="h-3 w-3" /> : <Circle className="h-3 w-3" />}
             {getWebsiteLabel(status)}
         </span>
     );
@@ -159,6 +166,17 @@ function ContactIndicators({ lead }: { lead: Lead }) {
     );
 }
 
+function getLeadWebsiteHref(lead: Lead) {
+    const value = (lead.websiteUrl || lead.websiteDomain || "").trim();
+    if (!value) return "";
+    return value.startsWith("http") ? value : `https://${value}`;
+}
+
+function getLeadWebsiteDisplay(lead: Lead) {
+    const value = (lead.websiteDomain || lead.websiteUrl || "").trim();
+    return value.replace(/^https?:\/\//i, "").replace(/\/$/, "");
+}
+
 function FieldValue({ label, value, mono = false }: { label: string; value: React.ReactNode; mono?: boolean }) {
     return (
         <div className="min-w-0">
@@ -169,6 +187,9 @@ function FieldValue({ label, value, mono = false }: { label: string; value: Reac
 }
 
 function LeadDetails({ lead }: { lead: Lead }) {
+    const websiteHref = getLeadWebsiteHref(lead);
+    const websiteDisplay = getLeadWebsiteDisplay(lead);
+
     return (
         <div className="grid min-w-0 grid-cols-1 gap-5 text-xs md:grid-cols-[1fr_1fr_1.35fr]">
             <div className="min-w-0 space-y-3">
@@ -187,16 +208,16 @@ function LeadDetails({ lead }: { lead: Lead }) {
                         <span className="truncate">{lead.socialLink.replace(/https?:\/\//, "")}</span>
                     </a>
                 ) : null}
-                {lead.websiteUrl ? (
+                {websiteHref ? (
                     <div className="pt-1">
                         <a
-                            href={lead.websiteUrl.startsWith("http") ? lead.websiteUrl : `https://${lead.websiteUrl}`}
+                            href={websiteHref}
                             target="_blank"
                             rel="noreferrer"
                             className="inline-flex max-w-full items-center gap-1.5 text-xs text-emerald-300 hover:text-emerald-200"
                         >
                             <Globe className="h-3.5 w-3.5 flex-none" />
-                            <span className="truncate">{lead.websiteUrl.replace(/https?:\/\//, "")}</span>
+                            <span className="truncate">{websiteDisplay}</span>
                         </a>
                     </div>
                 ) : null}
@@ -340,6 +361,8 @@ export default function VaultDataTable({ totalCount }: { totalCount: number }) {
                     (lead.niche || "").toLowerCase().includes(query) ||
                     (lead.city || "").toLowerCase().includes(query) ||
                     (lead.email || "").toLowerCase().includes(query) ||
+                    (lead.websiteUrl || "").toLowerCase().includes(query) ||
+                    (lead.websiteDomain || "").toLowerCase().includes(query) ||
                     (lead.contactName || "").toLowerCase().includes(query) ||
                     (lead.category || "").toLowerCase().includes(query) ||
                     (lead.address || "").toLowerCase().includes(query) ||
@@ -723,7 +746,7 @@ export default function VaultDataTable({ totalCount }: { totalCount: number }) {
                                     <SortIcon active={sortKey === "reviewCount"} dir={sortDir} />
                                 </span>
                             </TableHead>
-                            <TableHead className="w-[108px] text-xs font-semibold text-zinc-500">Website</TableHead>
+                            <TableHead className="w-[160px] text-xs font-semibold text-zinc-500">Website</TableHead>
                             <TableHead className="w-[60px] text-right text-xs font-semibold text-zinc-500">·</TableHead>
                         </TableRow>
                     </TableHeader>
@@ -775,8 +798,13 @@ export default function VaultDataTable({ totalCount }: { totalCount: number }) {
                                         <TableCell>
                                             <span className="font-mono text-sm tabular-nums text-zinc-400">{lead.reviewCount ?? 0}</span>
                                         </TableCell>
-                                        <TableCell>
-                                            <StatusBadge status={lead.websiteStatus} />
+                                        <TableCell className="max-w-[160px]">
+                                            <div className="min-w-0 space-y-1">
+                                                <StatusBadge status={lead.websiteStatus} />
+                                                {getLeadWebsiteDisplay(lead) ? (
+                                                    <div className="truncate text-[10px] text-zinc-600">{getLeadWebsiteDisplay(lead)}</div>
+                                                ) : null}
+                                            </div>
                                         </TableCell>
                                         <TableCell className="text-right">
                                             <ChevronDown className={`h-4 w-4 text-zinc-700 ${expandedId === lead.id ? "rotate-180" : ""}`} />

@@ -18,25 +18,25 @@ export default async function VaultPage() {
     missingRow,
     emailRow,
   ] = await Promise.all([
-    db.prepare(`SELECT COUNT(*) AS c FROM "Lead"`).first<{ c: number }>(),
+    db.prepare(`SELECT COUNT(*) AS c FROM "Lead" WHERE COALESCE(isArchived, 0) = 0`).first<{ c: number }>(),
     db
       .prepare(
-        `SELECT COUNT(*) AS c FROM "Lead" WHERE outreachStatus = 'READY_FOR_FIRST_TOUCH' AND isArchived = 0`,
+        `SELECT COUNT(*) AS c FROM "Lead" WHERE outreachStatus = 'READY_FOR_FIRST_TOUCH' AND COALESCE(isArchived, 0) = 0`,
       )
       .first<{ c: number }>(),
     db
       .prepare(
-        `SELECT COUNT(*) AS c FROM "Lead" WHERE websiteStatus IS NOT NULL AND websiteStatus != 'MISSING' AND isArchived = 0`,
+        `SELECT COUNT(*) AS c FROM "Lead" WHERE websiteStatus IS NOT NULL AND websiteStatus != 'MISSING' AND COALESCE(isArchived, 0) = 0`,
       )
       .first<{ c: number }>(),
     db
       .prepare(
-        `SELECT COUNT(*) AS c FROM "Lead" WHERE websiteStatus = 'MISSING' AND isArchived = 0`,
+        `SELECT COUNT(*) AS c FROM "Lead" WHERE websiteStatus = 'MISSING' AND COALESCE(isArchived, 0) = 0`,
       )
       .first<{ c: number }>(),
     db
       .prepare(
-        `SELECT COUNT(*) AS c FROM "Lead" WHERE email IS NOT NULL AND email != '' AND isArchived = 0`,
+        `SELECT COUNT(*) AS c FROM "Lead" WHERE email IS NOT NULL AND email != '' AND COALESCE(isArchived, 0) = 0`,
       )
       .first<{ c: number }>(),
   ]);
@@ -48,7 +48,7 @@ export default async function VaultPage() {
   const withEmail = emailRow?.c ?? 0;
 
   const metrics = [
-    { label: "Records", value: total, detail: "all records", icon: Database, tone: "text-zinc-300" },
+    { label: "Records", value: total, detail: "active records", icon: Database, tone: "text-zinc-300" },
     { label: "Pre-send", value: readyForTouch, detail: `${readyForTouch} ready`, icon: Search, tone: "text-cyan-300" },
     { label: "Verified", value: verifiedWebsite, detail: `${missingWebsite} no site`, icon: ShieldCheck, tone: "text-emerald-300" },
     { label: "Exportable", value: withEmail, detail: `${withEmail} with email`, icon: Download, tone: "text-amber-300" },
