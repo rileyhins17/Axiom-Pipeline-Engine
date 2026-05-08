@@ -2,7 +2,13 @@ import { getCloudflareBindings } from "@/lib/cloudflare";
 
 export interface AutomationLocator {
   click(): Promise<void>;
+  count(): Promise<number>;
   evaluateAll<TResult>(pageFunction: (elements: unknown[]) => TResult): Promise<TResult>;
+  first(): AutomationLocator;
+  getAttribute(name: string): Promise<string | null>;
+  locator(selector: string): AutomationLocator;
+  nth(index: number): AutomationLocator;
+  textContent(): Promise<string | null>;
 }
 
 export interface AutomationPage {

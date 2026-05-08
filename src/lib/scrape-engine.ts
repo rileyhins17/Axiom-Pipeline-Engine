@@ -11,6 +11,7 @@ import {
   launchAutomationBrowser,
   type AutomationBrowser,
   type AutomationBrowserContext,
+  type AutomationLocator,
   type AutomationPage,
 } from "@/lib/browser-rendering";
 import { generatePersonalization } from "@/lib/lead-personalization";
@@ -554,6 +555,75 @@ function buildMapsListingFallback(listing: MapsListing): {
   };
 }
 
+async function safeLocatorCount(locator: AutomationLocator): Promise<number> {
+  try {
+    return await locator.count();
+  } catch {
+    return 0;
+  }
+}
+
+async function safeLocatorAttr(locator: AutomationLocator, name: string): Promise<string> {
+  try {
+    return (await locator.getAttribute(name)) || "";
+  } catch {
+    return "";
+  }
+}
+
+async function safeLocatorText(locator: AutomationLocator, maxLength = 4000): Promise<string> {
+  try {
+    return ((await locator.textContent()) || "").trim().slice(0, maxLength);
+  } catch {
+    return "";
+  }
+}
+
+function normalizeMapsPlaceUrl(value: string, baseUrl: string): string {
+  const clean = normalizeWhitespace(value);
+  if (!clean) return "";
+
+  try {
+    return new URL(clean, baseUrl || "https://www.google.com").toString();
+  } catch {
+    return clean;
+  }
+}
+
+function resolveMapsHrefValue(value: string, baseUrl: string): string {
+  const clean = normalizeWhitespace(value);
+  if (!clean) return "";
+  if (/^(?:https?:\/\/|tel:|mailto:|javascript:)/i.test(clean)) return clean;
+  if (clean.startsWith("/")) return normalizeMapsPlaceUrl(clean, baseUrl);
+  return clean;
+}
+
+function isUsableMapsWebsiteHref(href: string, placeUrl: string): boolean {
+  return Boolean(
+    href &&
+      href !== placeUrl &&
+      !/^(?:tel|mailto|javascript):/i.test(href) &&
+      !/google\.[^/]*\/maps|maps\.google\.|accounts\.google\.|support\.google\.|gstatic\.|ggpht\./i.test(href),
+  );
+}
+
+async function findMapsListingCard(anchor: AutomationLocator): Promise<AutomationLocator | null> {
+  const selectors = [
+    "xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' Nv2PK ')][1]",
+    "xpath=ancestor::div[@role='article'][1]",
+    "xpath=ancestor::div[string-length(normalize-space(.)) > 20][1]",
+  ];
+
+  for (const selector of selectors) {
+    const candidate = anchor.locator(selector).first();
+    if ((await safeLocatorCount(candidate)) > 0) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
 async function waitForMapsResultSurface(
   page: AutomationPage,
   sendEvent: (data: ScrapeJobEventPayload) => Promise<void>,
@@ -572,7 +642,7 @@ async function waitForMapsResultSurface(
         if (candidate.label === "place detail" && !page.url().includes("/maps/place/")) {
           continue;
         }
-        const present = await page.locator(candidate.selector).evaluateAll((elements) => elements.length > 0);
+        const present = (await safeLocatorCount(page.locator(candidate.selector))) > 0;
         if (present) {
           await sendEvent({ message: `[MAPS] Results ready via ${candidate.label}` });
           return true;
@@ -593,7 +663,7 @@ async function dismissGoogleMapsConsent(
   page: AutomationPage,
   sendEvent: (data: ScrapeJobEventPayload) => Promise<void>,
 ): Promise<boolean> {
-  const bodyText = await page.evaluate(() => document.body?.innerText || "").catch(() => "");
+  const bodyText = await safeLocatorText(page.locator("body"), 12000);
   const isConsentPage = /before you continue to google/i.test(bodyText) || page.url().includes("consent.google.com");
 
   if (!isConsentPage) {
@@ -602,45 +672,43 @@ async function dismissGoogleMapsConsent(
 
   await sendEvent({ message: "[MAPS] Google consent gate detected; attempting dismissal" });
 
-  const clickConsentButton = async (): Promise<string | null> =>
-    page.evaluate(() => {
-      const wantedLabels = [
-        "reject all",
-        "accept all",
-        "i agree",
-        "agree",
-        "continue",
-      ];
-      const controls = Array.from(
-        document.querySelectorAll('button, div[role="button"], input[type="submit"], input[type="button"]'),
-      ) as Array<HTMLElement & { value?: string }>;
+  const clickConsentButton = async (): Promise<string | null> => {
+    const wantedLabels = ["reject all", "accept all", "i agree", "agree", "continue"];
+    const controls = page.locator('button, div[role="button"], input[type="submit"], input[type="button"]');
+    const controlCount = await safeLocatorCount(controls);
 
-      for (const control of controls) {
-        const label = [
-          control.getAttribute("aria-label") || "",
-          control.getAttribute("data-label") || "",
-          control.innerText || "",
-          control.textContent || "",
-          control.value || "",
-        ].join(" ").replace(/\s+/g, " ").trim();
-        const normalized = label.toLowerCase();
-        if (!normalized || !wantedLabels.some((wanted) => normalized.includes(wanted))) {
-          continue;
-        }
-
-        control.click();
-        return label;
+    for (let i = 0; i < controlCount; i += 1) {
+      const control = controls.nth(i);
+      const label = normalizeWhitespace(
+        [
+          await safeLocatorAttr(control, "aria-label"),
+          await safeLocatorAttr(control, "data-label"),
+          await safeLocatorAttr(control, "value"),
+          await safeLocatorText(control, 300),
+        ].join(" "),
+      );
+      const normalized = label.toLowerCase();
+      if (!normalized || !wantedLabels.some((wanted) => normalized.includes(wanted))) {
+        continue;
       }
 
-      return null;
-    }).catch(() => null);
+      try {
+        await control.click();
+        return label;
+      } catch {
+        // Try the next matching control.
+      }
+    }
+
+    return null;
+  };
 
   for (let attempt = 1; attempt <= 5; attempt++) {
     const clickedLabel = await clickConsentButton();
     if (clickedLabel) {
       await sendEvent({ message: `[MAPS] Google consent click: ${clickedLabel.substring(0, 80)}` });
       await page.waitForTimeout(2500);
-      const consentBodyText = await page.evaluate(() => document.body?.innerText || "").catch(() => "");
+      const consentBodyText = await safeLocatorText(page.locator("body"), 12000);
       if (
         !page.url().includes("consent.google.com") &&
         !/before you continue to google/i.test(consentBodyText)
@@ -658,119 +726,84 @@ async function dismissGoogleMapsConsent(
 }
 
 async function collectMapsListings(page: AutomationPage): Promise<MapsListing[]> {
-  const listings = await page
-    .locator("a.hfpxzc, a[href*='/maps/place/']")
-    .evaluateAll((anchors) => {
-      const places: Array<{
-        ariaLabel: string;
-        cardText: string;
-        name: string;
-        url: string;
-        websiteUrl: string;
-      }> = [];
-      const extractWebsiteFromText = (value: string) => {
-        const pattern = /\b(?:https?:\/\/)?(?:www\.)?[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+(?:\/[^\s<>"')\]]*)?/gi;
-        let match: RegExpExecArray | null;
-        while ((match = pattern.exec(value)) !== null) {
-          const index = match.index ?? 0;
-          const previousChar = value[index - 1] || "";
-          const candidate = match[0].replace(/[),.;:]+$/g, "");
-          if (previousChar === "@" || candidate.includes("@")) continue;
-          if (/google\.|maps\.|goo\.gl|gstatic\.|ggpht\./i.test(candidate)) continue;
-          return candidate;
+  const listings: MapsListing[] = [];
+  const baseUrl = page.url();
+  const anchors = page.locator("a.hfpxzc, a[href*='/maps/place/']");
+  const anchorCount = await safeLocatorCount(anchors);
+
+  for (let i = 0; i < anchorCount; i += 1) {
+    const anchor = anchors.nth(i);
+    const placeHref = await safeLocatorAttr(anchor, "href");
+    const placeUrl = normalizeMapsPlaceUrl(placeHref, baseUrl);
+
+    if (!placeUrl || placeUrl.includes("/search/")) {
+      continue;
+    }
+
+    const card = await findMapsListingCard(anchor);
+    const titleLocator = card ? card.locator(".qBF1Pd").first() : null;
+    const titleText = titleLocator && (await safeLocatorCount(titleLocator)) > 0
+      ? await safeLocatorText(titleLocator, 200)
+      : "";
+    const name = normalizeWhitespace((await safeLocatorAttr(anchor, "aria-label")) || titleText);
+
+    if (!name) {
+      continue;
+    }
+
+    const cardText = card ? await safeLocatorText(card, 4000) : "";
+    let websiteUrl = "";
+
+    if (card) {
+      const controls = card.locator(
+        "a[href], [data-item-id='authority'], [aria-label*='Website'], [aria-label*='website'], [data-tooltip*='Website'], [data-tooltip*='website']",
+      );
+      const controlCount = await safeLocatorCount(controls);
+
+      for (let j = 0; j < controlCount; j += 1) {
+        const candidate = controls.nth(j);
+        const rawHref =
+          (await safeLocatorAttr(candidate, "href")) ||
+          (await safeLocatorAttr(candidate, "data-url")) ||
+          (await safeLocatorAttr(candidate, "data-href")) ||
+          (await safeLocatorAttr(candidate, "data-value"));
+        const href = resolveMapsHrefValue(rawHref, baseUrl);
+        const label = normalizeWhitespace(
+          [
+            await safeLocatorAttr(candidate, "aria-label"),
+            await safeLocatorAttr(candidate, "data-tooltip"),
+            await safeLocatorAttr(candidate, "data-value"),
+            await safeLocatorAttr(candidate, "data-item-id"),
+            await safeLocatorText(candidate, 500),
+          ].join(" "),
+        ).toLowerCase();
+
+        if (!isUsableMapsWebsiteHref(href, placeUrl)) {
+          continue;
         }
-        return "";
-      };
-      const readHref = (element: Element) => {
-        if (element instanceof HTMLAnchorElement) {
-          return element.href || element.getAttribute("href") || "";
-        }
-        return (
-          element.getAttribute("href") ||
-          element.getAttribute("data-url") ||
-          element.getAttribute("data-href") ||
-          element.getAttribute("data-value") ||
-          ""
-        );
-      };
-      const readLabel = (element: Element) =>
-        [
-          element.getAttribute("aria-label") || "",
-          element.getAttribute("data-tooltip") || "",
-          element.getAttribute("data-value") || "",
-          element.getAttribute("data-item-id") || "",
-          element.textContent || "",
-        ].join(" ");
-      const usableWebsiteHref = (href: string, placeUrl: string) =>
-        href &&
-        href !== placeUrl &&
-        !/^(?:tel|mailto|javascript):/i.test(href) &&
-        !/google\.[^/]*\/maps|maps\.google\.|accounts\.google\.|support\.google\.|gstatic\.|ggpht\./i.test(href);
-      const findCard = (element: HTMLElement) => {
-        const direct = element.closest("div.Nv2PK") || element.closest("div[role='article']");
-        if (direct) return direct;
-        let current: HTMLElement | null = element.parentElement;
-        for (let depth = 0; current && depth < 6; depth++) {
-          if ((current.textContent || "").trim().length > 20) return current;
-          current = current.parentElement;
-        }
-        return element.parentElement;
-      };
 
-      for (const anchor of anchors) {
-        const element = anchor as HTMLAnchorElement;
-        const card = findCard(element);
-        const cardText = (card ? card.textContent || "" : "").trim().slice(0, 4000);
-        const cardWebsiteControls = card
-          ? Array.from(
-              card.querySelectorAll(
-                "a[href], [data-item-id='authority'], [aria-label*='Website'], [aria-label*='website'], [data-tooltip*='Website'], [data-tooltip*='website']",
-              ),
-            )
-          : [];
-        const placeUrl = element.href || element.getAttribute("href") || "";
-        let websiteUrl = "";
-
-        for (const candidate of cardWebsiteControls) {
-          const href = readHref(candidate);
-          const label = readLabel(candidate).toLowerCase();
-
-          if (usableWebsiteHref(href, placeUrl) && (label.includes("website") || label.includes("visit ") || label.includes("authority"))) {
-            websiteUrl = href;
-            break;
-          }
-
-          if (!websiteUrl && usableWebsiteHref(href, placeUrl)) {
-            websiteUrl = href;
-          }
-
-          if (!websiteUrl && /\b(?:website|visit website|open website|authority)\b/i.test(label)) {
-            websiteUrl = extractWebsiteFromText(label);
-            if (websiteUrl) break;
-          }
+        if (label.includes("website") || label.includes("visit ") || label.includes("authority")) {
+          websiteUrl = href;
+          break;
         }
 
         if (!websiteUrl) {
-          websiteUrl = extractWebsiteFromText(cardText);
-        }
-
-        const name = element.getAttribute("aria-label") || card?.querySelector(".qBF1Pd")?.textContent?.trim() || "";
-        if (name && placeUrl && !placeUrl.includes("/search/")) {
-          places.push({
-            ariaLabel: name,
-            cardText,
-            name,
-            url: placeUrl,
-            websiteUrl,
-          });
+          websiteUrl = href;
         }
       }
+    }
 
-      return places;
+    listings.push({
+      ariaLabel: name,
+      cardText,
+      name,
+      url: placeUrl,
+      websiteUrl,
     });
+  }
 
   const seen = new Set<string>();
-  return (listings as MapsListing[])
+  return listings
     .map((listing) => ({
       ...listing,
       websiteUrl: normalizeWebsiteUrl(listing.websiteUrl) || extractWebsiteFromBodyText(listing.cardText),
@@ -788,23 +821,23 @@ async function collectCurrentPlaceListing(page: AutomationPage): Promise<MapsLis
     return [];
   }
 
-  const listing = await page.evaluate(() => {
-    const title = (document.querySelector("h1")?.textContent || "").trim();
-    const bodyText = (document.body?.innerText || "").trim().slice(0, 4000);
-    return {
-      ariaLabel: title,
-      cardText: bodyText,
-      name: title,
-      url: location.href,
-      websiteUrl: "",
-    };
-  }).catch(() => null);
+  const titleLocator = page.locator("h1").first();
+  const title = (await safeLocatorCount(titleLocator)) > 0
+    ? await safeLocatorText(titleLocator, 200)
+    : "";
+  const bodyText = await safeLocatorText(page.locator("body"), 4000);
 
-  if (!listing?.name || !listing.url) {
+  if (!title || !page.url()) {
     return [];
   }
 
-  return [listing as MapsListing];
+  return [{
+    ariaLabel: title,
+    cardText: bodyText,
+    name: title,
+    url: page.url(),
+    websiteUrl: "",
+  }];
 }
 
 async function extractMapsDetailFromPage(
@@ -818,7 +851,7 @@ async function extractMapsDetailFromPage(
 }
 
 async function readMapsDetailSnapshot(detailPage: AutomationPage): Promise<MapsDetailSnapshot> {
-  return detailPage.evaluate(() => {
+  return detailPage.evaluate(function () {
     const q = (sel: string): HTMLElement | null => document.querySelector(sel) as HTMLElement | null;
     const text = (sel: string) => {
       const el = q(sel);
@@ -828,69 +861,55 @@ async function readMapsDetailSnapshot(detailPage: AutomationPage): Promise<MapsD
       const el = q(sel);
       return el ? (el.getAttribute(a) || "") : "";
     };
-    const extractWebsiteFromText = (value: string) => {
-      const pattern = /\b(?:https?:\/\/)?(?:www\.)?[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+(?:\/[^\s<>"')\]]*)?/gi;
-      let match: RegExpExecArray | null;
-      while ((match = pattern.exec(value)) !== null) {
-        const index = match.index ?? 0;
-        const previousChar = value[index - 1] || "";
-        const candidate = match[0].replace(/[),.;:]+$/g, "");
-        if (previousChar === "@" || candidate.includes("@")) continue;
-        if (/google\.|maps\.|goo\.gl|gstatic\.|ggpht\./i.test(candidate)) continue;
-        return candidate;
-      }
-      return "";
-    };
-    const linkData = Array.from(
-      document.querySelectorAll(
-        "a[href], [data-item-id='authority'], [aria-label*='Website'], [aria-label*='website'], [data-tooltip*='Website'], [data-tooltip*='website']",
-      ),
-    ).map((node) => {
+    let authorityHref = "";
+    let websiteHref = "";
+    let phoneHref = "";
+    const linkNodes = document.querySelectorAll(
+      "a[href], [data-item-id='authority'], [aria-label*='Website'], [aria-label*='website'], [data-tooltip*='Website'], [data-tooltip*='website']",
+    );
+
+    for (let i = 0; i < linkNodes.length; i += 1) {
+      const node = linkNodes[i];
       const element = node as HTMLElement;
       const href =
-        element instanceof HTMLAnchorElement
-          ? element.href || element.getAttribute("href") || ""
-          : element.getAttribute("href") ||
-            element.getAttribute("data-url") ||
-            element.getAttribute("data-href") ||
-            element.getAttribute("data-value") ||
-            "";
-      return {
-        aria: element.getAttribute("aria-label") || "",
-        dataItemId: element.getAttribute("data-item-id") || "",
-        dataTooltip: element.getAttribute("data-tooltip") || "",
-        dataValue: element.getAttribute("data-value") || "",
-        href,
-        text: (element.textContent || "").trim(),
-      };
-    });
-    const usableHref = (href: string) =>
-      href &&
-      !/^(?:tel|mailto|javascript):/i.test(href) &&
-      !/google\.[^/]*\/maps|maps\.google\.|accounts\.google\.|support\.google\.|gstatic\.|ggpht\./i.test(href);
-    const authorityLink = linkData.find((link) => link.dataItemId === "authority" && usableHref(link.href));
-    const websiteLink = linkData.find((link) => {
-      const haystack = `${link.aria} ${link.dataTooltip} ${link.dataValue} ${link.text}`.toLowerCase();
-      return haystack.includes("website") && usableHref(link.href);
-    });
-    const authorityTextLink = linkData.find((link) => link.dataItemId === "authority");
-    const websiteTextLink = linkData.find((link) => {
-      const haystack = `${link.aria} ${link.dataTooltip} ${link.dataValue} ${link.text}`.toLowerCase();
-      return haystack.includes("website");
-    });
-    const phoneLink = linkData.find((link) => /^tel:/i.test(link.href));
+        (element as HTMLAnchorElement).href ||
+        element.getAttribute("href") ||
+        element.getAttribute("data-url") ||
+        element.getAttribute("data-href") ||
+        element.getAttribute("data-value") ||
+        "";
+      const dataItemId = element.getAttribute("data-item-id") || "";
+      const haystack = [
+        element.getAttribute("aria-label") || "",
+        element.getAttribute("data-tooltip") || "",
+        element.getAttribute("data-value") || "",
+        dataItemId,
+        element.textContent || "",
+      ]
+        .join(" ")
+        .toLowerCase();
+      const usableHref =
+        href &&
+        !/^(?:tel|mailto|javascript):/i.test(href) &&
+        !/google\.[^/]*\/maps|maps\.google\.|accounts\.google\.|support\.google\.|gstatic\.|ggpht\./i.test(href);
+
+      if (!phoneHref && /^tel:/i.test(href)) {
+        phoneHref = href;
+      }
+      if (usableHref && !authorityHref && dataItemId === "authority") {
+        authorityHref = href;
+      }
+      if (usableHref && !websiteHref && haystack.indexOf("website") >= 0) {
+        websiteHref = href;
+      }
+    }
 
     return {
       h1: text("h1"),
       ogTitle: attr('meta[property="og:title"]', "content"),
       metaTitle: attr('meta[name="title"]', "content"),
-      websiteHref:
-        authorityLink?.href ||
-        websiteLink?.href ||
-        extractWebsiteFromText(`${authorityTextLink?.aria || ""} ${authorityTextLink?.dataTooltip || ""} ${authorityTextLink?.dataValue || ""} ${authorityTextLink?.text || ""}`) ||
-        extractWebsiteFromText(`${websiteTextLink?.aria || ""} ${websiteTextLink?.dataTooltip || ""} ${websiteTextLink?.dataValue || ""} ${websiteTextLink?.text || ""}`) ||
-        "",
-      phoneHref: phoneLink?.href || "",
+      websiteHref: authorityHref || websiteHref || "",
+      phoneHref,
       phoneDataId: attr('button[data-item-id*="phone:tel:"]', "data-item-id"),
       addressText: text('button[data-item-id="address"], a[data-item-id="address"], button[data-tooltip*="Address"], button[aria-label^="Address:"]'),
       categoryText: text(
@@ -898,7 +917,7 @@ async function readMapsDetailSnapshot(detailPage: AutomationPage): Promise<MapsD
       ),
       ratingAriaLabel: attr('div[jsaction="pane.rating.moreReviews"]', "aria-label"),
       ratingText: text('div[jsaction="pane.rating.moreReviews"]'),
-      bodyText: (document.body?.innerText || "").trim(),
+      bodyText: (document.body ? document.body.innerText || "" : "").trim(),
     };
   }).catch(() => emptyMapsDetailSnapshot());
 }
@@ -1377,7 +1396,7 @@ async function collectTargets(
         throw new ScrapeCanceledError("Scrape canceled during Maps extraction.");
       }
 
-      const scrollState = await page.evaluate(() => {
+      const scrollState = await page.evaluate(function () {
         const feed = document.querySelector('div[role="feed"]');
         if (feed) {
           feed.scrollBy(0, 5000);
@@ -1386,8 +1405,9 @@ async function collectTargets(
             listingCount: document.querySelectorAll("a.hfpxzc, a[href*='/maps/place/']").length,
           };
         }
+        const body = document.body;
         return {
-          height: document.body?.scrollHeight || 0,
+          height: body ? body.scrollHeight : 0,
           listingCount: document.querySelectorAll("a.hfpxzc, a[href*='/maps/place/']").length,
         };
       });

@@ -11,8 +11,26 @@ type Snapshot = {
 
 class FakeLocator implements AutomationLocator {
   async click() {}
+  async count(): Promise<number> {
+    return 0;
+  }
   async evaluateAll<TResult>(): Promise<TResult> {
     return [] as TResult;
+  }
+  first(): AutomationLocator {
+    return this;
+  }
+  async getAttribute(): Promise<string | null> {
+    return null;
+  }
+  locator(): AutomationLocator {
+    return this;
+  }
+  nth(): AutomationLocator {
+    return this;
+  }
+  async textContent(): Promise<string | null> {
+    return null;
   }
 }
 
