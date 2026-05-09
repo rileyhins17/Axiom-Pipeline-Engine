@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import Link from "next/link";
 import {
   Activity,
   AlertTriangle,
@@ -565,13 +566,13 @@ export default async function DashboardPage() {
           />
           <KvRow icon={<Reply className="size-3.5" />} label="Lost deals" value={crmStats.lostDeals.toLocaleString()} />
           <Divider />
-          <a
+          <Link
             href="/clients"
             className="inline-flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300 transition-colors font-medium"
           >
             <Users className="size-3.5" />
             Open client board →
-          </a>
+          </Link>
         </Panel>
       </section>
 
@@ -677,13 +678,13 @@ function FollowUpsPanel({ data }: { data: { overdue: FollowUpItem[]; dueToday: F
             {hasAny ? "Items requiring attention" : "All clear"}
           </div>
         </div>
-        <a
+        <Link
           href="/clients"
           className="text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors font-medium flex items-center gap-1"
         >
           Board
           <span className="text-[10px]">→</span>
-        </a>
+        </Link>
       </header>
       <div className="grid grid-cols-2 xl:grid-cols-4 divide-x divide-y xl:divide-y-0 divide-white/[0.05]">
         <FollowUpGroup

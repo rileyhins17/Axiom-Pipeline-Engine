@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useCallback, useMemo, useState } from "react";
+import Link from "next/link";
+import type { Route } from "next";
 import {
   AlertCircle,
   Building2,
@@ -60,6 +62,18 @@ function formatDueDate(d: Date | string | null | undefined): string {
   if (days === 1) return "Tomorrow";
   if (days <= 7) return `${days}d`;
   return date.toLocaleDateString("en-CA", { month: "short", day: "numeric" });
+}
+
+function formatCompactMoney(value: number) {
+  if (value >= 1000) return `$${(value / 1000).toFixed(value % 1000 === 0 ? 0 : 1)}k`;
+  return `$${value.toLocaleString()}`;
+}
+
+function defaultDueDate(days: number) {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  date.setHours(17, 0, 0, 0);
+  return date.toISOString();
 }
 
 function toInputDate(d: Date | string | null | undefined) {
@@ -560,8 +574,17 @@ function DealDrawer({
 
         {/* Footer */}
         <div className="sticky bottom-0 flex items-center justify-between gap-3 px-6 py-4 border-t border-white/[0.06] bg-[#070d14]">
-          <div className="text-[10.5px] text-zinc-600">
-            {lead.firstContactedAt ? `First contact ${formatDate(lead.firstContactedAt)}` : "Not yet contacted"}
+          <div className="flex flex-col gap-1">
+            <div className="text-[10.5px] text-zinc-600">
+              {lead.firstContactedAt ? `First contact ${formatDate(lead.firstContactedAt)}` : "Not yet contacted"}
+            </div>
+            <Link
+              href={`/clients/${lead.id}` as Route}
+              className="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-400 transition-colors hover:text-emerald-300"
+            >
+              Open full profile
+              <ExternalLink className="size-3" />
+            </Link>
           </div>
           <button
             type="button"
@@ -583,9 +606,13 @@ function DealDrawer({
 function InboxSection({
   leads,
   onEdit,
+  onQuickUpdate,
+  saving,
 }: {
   leads: CrmLead[];
   onEdit: (lead: CrmLead) => void;
+  onQuickUpdate: (leadId: number, update: Record<string, unknown>) => Promise<void>;
+  saving: boolean;
 }) {
   if (leads.length === 0) return null;
 
@@ -599,23 +626,97 @@ function InboxSection({
         </span>
         <span className="text-xs text-zinc-500">Replied or interested — move to a stage to track</span>
       </div>
-      <div className="flex flex-wrap gap-2">
+      <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
         {leads.map((lead) => (
-          <button
+          <div
             key={lead.id}
-            type="button"
-            onClick={() => onEdit(lead)}
-            className="group flex items-center gap-2.5 rounded-lg border border-cyan-500/20 bg-cyan-500/5 hover:bg-cyan-500/10 hover:border-cyan-500/30 px-3 py-2 transition-all cursor-pointer"
+            className="rounded-lg border border-cyan-500/20 bg-cyan-500/5 px-3 py-3 transition-all hover:border-cyan-500/30 hover:bg-cyan-500/10"
           >
-            <Building2 className="size-3.5 text-cyan-400/70" />
-            <div className="text-left">
-              <div className="text-xs font-medium text-white">{lead.businessName}</div>
-              <div className="text-[10px] text-zinc-500">{lead.city}</div>
+            <button
+              type="button"
+              onClick={() => onEdit(lead)}
+              className="group flex w-full items-start gap-2.5 text-left cursor-pointer"
+            >
+              <Building2 className="mt-0.5 size-3.5 shrink-0 text-cyan-400/70" />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-xs font-medium text-white">{lead.businessName}</div>
+                <div className="mt-0.5 truncate text-[10px] text-zinc-500">{lead.city} / {lead.niche}</div>
+              </div>
+              <ChevronRight className="size-3.5 shrink-0 text-zinc-600 transition-colors group-hover:text-zinc-400" />
+            </button>
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() =>
+                  void onQuickUpdate(lead.id, {
+                    dealStage: "NEGOTIATING",
+                    nextAction: "Schedule 30-minute discovery call",
+                    nextActionDueAt: defaultDueDate(1),
+                  })
+                }
+                className="rounded-md border border-white/[0.08] bg-black/20 px-2 py-1 text-[10.5px] font-medium text-zinc-400 transition hover:border-orange-500/30 hover:text-orange-300 disabled:pointer-events-none disabled:opacity-50"
+              >
+                Discovery
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => void onQuickUpdate(lead.id, { dealStage: "PROPOSAL_SENT" })}
+                className="rounded-md border border-white/[0.08] bg-black/20 px-2 py-1 text-[10.5px] font-medium text-zinc-400 transition hover:border-amber-500/30 hover:text-amber-300 disabled:pointer-events-none disabled:opacity-50"
+              >
+                Proposal
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() =>
+                  void onQuickUpdate(lead.id, {
+                    dealStage: "LOST",
+                    dealLostReason: "Not qualified from CRM inbox",
+                  })
+                }
+                className="rounded-md border border-white/[0.08] bg-black/20 px-2 py-1 text-[10.5px] font-medium text-zinc-500 transition hover:border-red-500/30 hover:text-red-300 disabled:pointer-events-none disabled:opacity-50"
+              >
+                Lost
+              </button>
             </div>
-            <ChevronRight className="size-3.5 text-zinc-600 group-hover:text-zinc-400 transition-colors" />
-          </button>
+          </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function StatTile({
+  icon,
+  label,
+  value,
+  detail,
+  tone = "zinc",
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: React.ReactNode;
+  detail: string;
+  tone?: "emerald" | "amber" | "cyan" | "red" | "zinc";
+}) {
+  const toneClasses = {
+    emerald: "text-emerald-300",
+    amber: "text-amber-300",
+    cyan: "text-cyan-300",
+    red: "text-red-300",
+    zinc: "text-zinc-200",
+  }[tone];
+
+  return (
+    <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
+      <div className="mb-2 flex items-center gap-2 text-[10px] uppercase tracking-[0.15em] text-zinc-500">
+        {icon}
+        {label}
+      </div>
+      <div className={cn("font-mono text-lg font-semibold tabular-nums", toneClasses)}>{value}</div>
+      <div className="mt-0.5 text-[11px] text-zinc-600">{detail}</div>
     </div>
   );
 }
@@ -669,10 +770,27 @@ export function ClientsBoard({ initialLeads }: { initialLeads: CrmLead[] }) {
     }
   }, []);
 
-  const totalMrr = useMemo(
+  const activeMrr = useMemo(
     () => leads
       .filter((l) => l.dealStage === "ACTIVE" || l.dealStage === "RETAINED")
       .reduce((s, l) => s + (l.monthlyValue ?? 0), 0),
+    [leads],
+  );
+
+  const openPipelineValue = useMemo(
+    () => leads
+      .filter((l) => l.dealStage === "PROPOSAL_SENT" || l.dealStage === "NEGOTIATING" || l.dealStage === "SIGNED")
+      .reduce((s, l) => s + (l.monthlyValue ?? 0), 0),
+    [leads],
+  );
+
+  const proposalCount = useMemo(
+    () => leads.filter((l) => l.dealStage === "PROPOSAL_SENT").length,
+    [leads],
+  );
+
+  const actionDueCount = useMemo(
+    () => leads.filter((l) => l.dealStage && l.dealStage !== "LOST" && isActionOverdue(l.nextActionDueAt)).length,
     [leads],
   );
 
@@ -687,30 +805,43 @@ export function ClientsBoard({ initialLeads }: { initialLeads: CrmLead[] }) {
   return (
     <div className="flex flex-col gap-6">
       {/* Stats bar */}
-      {totalMrr > 0 || renewalsSoon.length > 0 ? (
-        <div className="flex items-center gap-6 rounded-xl border border-white/[0.06] bg-white/[0.02] px-5 py-3.5">
-          {totalMrr > 0 && (
-            <div className="flex items-center gap-2.5">
-              <DollarSign className="size-4 text-emerald-400" />
-              <div>
-                <div className="text-[10px] uppercase tracking-[0.15em] text-zinc-500">Monthly Recurring</div>
-                <div className="text-sm font-semibold font-mono text-emerald-300">${totalMrr.toLocaleString()}/mo</div>
-              </div>
-            </div>
-          )}
-          {renewalsSoon.length > 0 && (
-            <div className="flex items-center gap-2.5">
-              <AlertCircle className="size-4 text-amber-400" />
-              <div>
-                <div className="text-[10px] uppercase tracking-[0.15em] text-zinc-500">Renewals Due Soon</div>
-                <div className="text-sm font-semibold text-amber-300">
-                  {renewalsSoon.length} client{renewalsSoon.length !== 1 ? "s" : ""} within 30 days
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      ) : null}
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        <StatTile
+          icon={<MessageSquare className="size-3.5" />}
+          label="Review Inbox"
+          value={inboxLeads.length}
+          detail="replied or interested"
+          tone={inboxLeads.length > 0 ? "cyan" : "zinc"}
+        />
+        <StatTile
+          icon={<DollarSign className="size-3.5" />}
+          label="Open Pipeline"
+          value={formatCompactMoney(openPipelineValue)}
+          detail={`${proposalCount} proposal${proposalCount === 1 ? "" : "s"} pending`}
+          tone={openPipelineValue > 0 ? "amber" : "zinc"}
+        />
+        <StatTile
+          icon={<DollarSign className="size-3.5" />}
+          label="Active MRR"
+          value={`${formatCompactMoney(activeMrr)}/mo`}
+          detail="active and retained"
+          tone={activeMrr > 0 ? "emerald" : "zinc"}
+        />
+        <StatTile
+          icon={<Clock className="size-3.5" />}
+          label="Due Actions"
+          value={actionDueCount}
+          detail="overdue follow-ups"
+          tone={actionDueCount > 0 ? "red" : "zinc"}
+        />
+        <StatTile
+          icon={<RefreshCw className="size-3.5" />}
+          label="Renewals"
+          value={renewalsSoon.length}
+          detail="within 30 days"
+          tone={renewalsSoon.length > 0 ? "amber" : "zinc"}
+        />
+      </div>
 
       {error && (
         <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300 flex items-center gap-2">
@@ -719,7 +850,7 @@ export function ClientsBoard({ initialLeads }: { initialLeads: CrmLead[] }) {
         </div>
       )}
 
-      <InboxSection leads={inboxLeads} onEdit={setEditing} />
+      <InboxSection leads={inboxLeads} onEdit={setEditing} onQuickUpdate={handleSave} saving={saving} />
 
       {/* Kanban board */}
       <div className="flex gap-4 overflow-x-auto pb-4">

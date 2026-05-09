@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { buildDealUpdateActivities, getDefaultNextActionForStage } from "@/lib/crm-activity";
 import { isClientPriority, isDealStage, isEngagementType } from "@/lib/crm";
 import { getPrisma } from "@/lib/prisma";
 import { requireApiSession } from "@/lib/session";
@@ -24,6 +25,14 @@ export async function PATCH(
     return NextResponse.json({ error: "Invalid lead id" }, { status: 400 });
   }
 
+  const prisma = getPrisma();
+  const previousLead = await prisma.lead.findUnique({
+    where: { id: leadId },
+  });
+  if (!previousLead || previousLead.isArchived) {
+    return NextResponse.json({ error: "Lead not found" }, { status: 404 });
+  }
+
   let body: Record<string, unknown>;
   try {
     body = await request.json();
@@ -40,13 +49,23 @@ export async function PATCH(
     }
     update.dealStage = v ?? null;
 
-    // Auto-set proposalSentAt when stage first moves to PROPOSAL_SENT (client can override)
-    if (v === "PROPOSAL_SENT" && !("proposalSentAt" in body)) {
+    // Auto-set milestone dates and action defaults only when the CRM stage changes.
+    if (v === "PROPOSAL_SENT" && !("proposalSentAt" in body) && !previousLead.proposalSentAt) {
       update.proposalSentAt = new Date();
     }
-    // Auto-set signedAt when stage first moves to SIGNED (client can override)
-    if (v === "SIGNED" && !("signedAt" in body)) {
+    if (v === "SIGNED" && !("signedAt" in body) && !previousLead.signedAt) {
       update.signedAt = new Date();
+    }
+    if (isDealStage(v) && v !== previousLead.dealStage) {
+      const defaultAction = getDefaultNextActionForStage(v);
+      if (defaultAction) {
+        if (!("nextAction" in body) && !previousLead.nextAction) {
+          update.nextAction = defaultAction.nextAction;
+        }
+        if (!("nextActionDueAt" in body) && !previousLead.nextActionDueAt) {
+          update.nextActionDueAt = defaultAction.nextActionDueAt;
+        }
+      }
     }
   }
 
@@ -96,11 +115,30 @@ export async function PATCH(
     return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
   }
 
-  const prisma = getPrisma();
   const lead = await prisma.lead.update({
     where: { id: leadId },
     data: update,
   });
+
+  const activityDrafts = buildDealUpdateActivities(previousLead, lead);
+  if (activityDrafts.length > 0) {
+    await Promise.all(
+      activityDrafts.map((activity) =>
+        prisma.crmActivity.create({
+          data: {
+            leadId,
+            actorUserId: authResult.session.user.id,
+            type: activity.type,
+            title: activity.title,
+            body: activity.body ?? null,
+            metadata: activity.metadata ? JSON.stringify(activity.metadata) : null,
+          },
+        }),
+      ),
+    ).catch((error) => {
+      console.error(`[crm] Failed to write activity for lead ${leadId}:`, error);
+    });
+  }
 
   return NextResponse.json(lead);
 }

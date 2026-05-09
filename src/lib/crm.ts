@@ -20,14 +20,29 @@ export const CLIENT_PRIORITY_OPTIONS = [
   { value: "LOW", label: "Low", classes: "border-zinc-600/20 bg-zinc-600/5 text-zinc-500" },
 ] as const;
 
+export const CRM_ACTIVITY_TYPE_OPTIONS = [
+  { value: "NOTE", label: "Note" },
+  { value: "EMAIL", label: "Email" },
+  { value: "CALL", label: "Call" },
+  { value: "MEETING", label: "Meeting" },
+  { value: "STAGE_CHANGE", label: "Stage Change" },
+  { value: "PROPOSAL_SENT", label: "Proposal Sent" },
+  { value: "SIGNED", label: "Signed" },
+  { value: "LOST", label: "Lost" },
+  { value: "RENEWAL", label: "Renewal" },
+  { value: "SYSTEM", label: "System" },
+] as const;
+
 export type DealStage = (typeof DEAL_STAGE_OPTIONS)[number]["value"];
 export type EngagementType = (typeof ENGAGEMENT_TYPE_OPTIONS)[number]["value"];
 export type ClientPriority = (typeof CLIENT_PRIORITY_OPTIONS)[number]["value"];
 export type DealHealth = "HOT" | "WARM" | "STALE" | "RISKY" | "WON" | "LOST";
+export type CrmActivityType = (typeof CRM_ACTIVITY_TYPE_OPTIONS)[number]["value"];
 
 const dealStageSet = new Set<string>(DEAL_STAGE_OPTIONS.map((o) => o.value));
 const engagementTypeSet = new Set<string>(ENGAGEMENT_TYPE_OPTIONS.map((o) => o.value));
 const clientPrioritySet = new Set<string>(CLIENT_PRIORITY_OPTIONS.map((o) => o.value));
+const crmActivityTypeSet = new Set<string>(CRM_ACTIVITY_TYPE_OPTIONS.map((o) => o.value));
 
 export function isDealStage(value: unknown): value is DealStage {
   return typeof value === "string" && dealStageSet.has(value);
@@ -41,12 +56,24 @@ export function isClientPriority(value: unknown): value is ClientPriority {
   return typeof value === "string" && clientPrioritySet.has(value);
 }
 
+export function isCrmActivityType(value: unknown): value is CrmActivityType {
+  return typeof value === "string" && crmActivityTypeSet.has(value);
+}
+
 export function getDealStageMeta(stage: string | null | undefined) {
   return DEAL_STAGE_OPTIONS.find((o) => o.value === stage) ?? null;
 }
 
+export function getDealStageLabel(stage: string | null | undefined) {
+  return DEAL_STAGE_OPTIONS.find((o) => o.value === stage)?.label ?? "Inbox";
+}
+
 export function getEngagementTypeLabel(type: string | null | undefined) {
   return ENGAGEMENT_TYPE_OPTIONS.find((o) => o.value === type)?.label ?? "—";
+}
+
+export function getCrmActivityTypeLabel(type: string | null | undefined) {
+  return CRM_ACTIVITY_TYPE_OPTIONS.find((o) => o.value === type)?.label ?? "Activity";
 }
 
 export function getClientPriorityMeta(priority: string | null | undefined) {
@@ -73,6 +100,7 @@ export const DEAL_KANBAN_COLUMNS: { stage: DealStage; label: string; description
   { stage: "ACTIVE", label: "Active", description: "Build in progress" },
   { stage: "DELIVERED", label: "Delivered", description: "Site live" },
   { stage: "RETAINED", label: "Retained", description: "Ongoing retainer" },
+  { stage: "LOST", label: "Lost", description: "Closed out" },
 ];
 
 export const DEAL_HEALTH_META: Record<DealHealth, { label: string; dotClass: string; pillClasses: string }> = {

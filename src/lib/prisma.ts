@@ -287,6 +287,17 @@ export type OutreachRunRecord = {
   metadata: string | null;
 };
 
+export type CrmActivityRecord = {
+  id: string;
+  leadId: number;
+  actorUserId: string | null;
+  type: string;
+  title: string;
+  body: string | null;
+  metadata: string | null;
+  createdAt: Date;
+};
+
 type TableSpec<T extends Record<string, unknown>> = {
   autoIncrementId?: boolean;
   booleanFields: Set<keyof T>;
@@ -320,6 +331,19 @@ type PrismaLike = {
       args: FindUniqueArgs<LeadRecord, S>,
     ): Promise<Selected<LeadRecord, S> | null>;
     update(args: MutationArgs): Promise<LeadRecord>;
+  };
+  crmActivity: {
+    count(args?: CountArgs): Promise<number>;
+    create(args: CreateArgs): Promise<CrmActivityRecord>;
+    findFirst<S extends SelectMap<CrmActivityRecord> | undefined = undefined>(
+      args?: FindManyArgs<CrmActivityRecord, S>,
+    ): Promise<Selected<CrmActivityRecord, S> | null>;
+    findMany<S extends SelectMap<CrmActivityRecord> | undefined = undefined>(
+      args?: FindManyArgs<CrmActivityRecord, S>,
+    ): Promise<Array<Selected<CrmActivityRecord, S>>>;
+    findUnique<S extends SelectMap<CrmActivityRecord> | undefined = undefined>(
+      args: FindUniqueArgs<CrmActivityRecord, S>,
+    ): Promise<Selected<CrmActivityRecord, S> | null>;
   };
   rateLimitWindow: {
     create(args: CreateArgs): Promise<RateLimitWindowRecord>;
@@ -463,6 +487,7 @@ const globalForPrisma = globalThis as {
 
 const tableColumnsCache = new Map<string, string[]>();
 let leadSchemaEnsurePromise: Promise<void> | null = null;
+let crmActivitySchemaEnsurePromise: Promise<void> | null = null;
 
 const leadTable: TableSpec<LeadRecord> = {
   autoIncrementId: true,
@@ -585,6 +610,16 @@ const auditEventTable: TableSpec<AuditEventRecord> = {
   integerFields: new Set(),
   stringFields: new Set(),
   tableName: "AuditEvent",
+};
+
+const crmActivityTable: TableSpec<CrmActivityRecord> = {
+  booleanFields: new Set(),
+  columns: ["id", "leadId", "actorUserId", "type", "title", "body", "metadata", "createdAt"],
+  dateFields: new Set(["createdAt"]),
+  idField: "id",
+  integerFields: new Set(["leadId"]),
+  stringFields: new Set(["id", "actorUserId", "type", "title", "body", "metadata"]),
+  tableName: "CrmActivity",
 };
 
 const rateLimitWindowTable: TableSpec<RateLimitWindowRecord> = {
@@ -959,6 +994,44 @@ async function ensureLeadQualityColumns() {
   await leadSchemaEnsurePromise;
 }
 
+async function ensureCrmActivityTable() {
+  if (!crmActivitySchemaEnsurePromise) {
+    crmActivitySchemaEnsurePromise = (async () => {
+      await runStatement(`
+        CREATE TABLE IF NOT EXISTS "CrmActivity" (
+          "id" TEXT NOT NULL PRIMARY KEY,
+          "leadId" INTEGER NOT NULL,
+          "actorUserId" TEXT,
+          "type" TEXT NOT NULL,
+          "title" TEXT NOT NULL,
+          "body" TEXT,
+          "metadata" TEXT,
+          "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "CrmActivity_leadId_fkey" FOREIGN KEY ("leadId") REFERENCES "Lead" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+          CONSTRAINT "CrmActivity_actorUserId_fkey" FOREIGN KEY ("actorUserId") REFERENCES "User" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+        )
+      `);
+      await runStatement(`CREATE INDEX IF NOT EXISTS "CrmActivity_leadId_createdAt_idx" ON "CrmActivity"("leadId", "createdAt")`);
+      await runStatement(`CREATE INDEX IF NOT EXISTS "CrmActivity_type_createdAt_idx" ON "CrmActivity"("type", "createdAt")`);
+      tableColumnsCache.delete("CrmActivity");
+    })().catch((error) => {
+      crmActivitySchemaEnsurePromise = null;
+      throw error;
+    });
+  }
+
+  await crmActivitySchemaEnsurePromise;
+}
+
+async function ensureTableSchema<T extends Record<string, unknown>>(spec: TableSpec<T>) {
+  if (spec.tableName === "Lead") {
+    await ensureLeadQualityColumns();
+  }
+  if (spec.tableName === "CrmActivity") {
+    await ensureCrmActivityTable();
+  }
+}
+
 function generateId() {
   return crypto.randomUUID();
 }
@@ -1212,9 +1285,7 @@ async function runStatement(query: string, params: unknown[] = []) {
 function createModel<T extends Record<string, unknown>>(spec: TableSpec<T>) {
   return {
     async count(args?: CountArgs) {
-      if (spec.tableName === "Lead") {
-        await ensureLeadQualityColumns();
-      }
+      await ensureTableSchema(spec);
       const params: unknown[] = [];
       const whereClause = buildWhereClause(args?.where, params);
       const query = `SELECT COUNT(*) as count FROM ${quoteIdentifier(spec.tableName)}${whereClause ? ` WHERE ${whereClause}` : ""}`;
@@ -1223,9 +1294,7 @@ function createModel<T extends Record<string, unknown>>(spec: TableSpec<T>) {
     },
 
     async create(args: CreateArgs) {
-      if (spec.tableName === "Lead") {
-        await ensureLeadQualityColumns();
-      }
+      await ensureTableSchema(spec);
       const now = new Date();
       const data = { ...args.data } as Record<string, unknown>;
       const existingColumns = new Set(await getExistingTableColumns(spec.tableName));
@@ -1276,9 +1345,7 @@ function createModel<T extends Record<string, unknown>>(spec: TableSpec<T>) {
     },
 
     async findFirst<S extends SelectMap<T> | undefined = undefined>(args?: FindManyArgs<T, S>) {
-      if (spec.tableName === "Lead") {
-        await ensureLeadQualityColumns();
-      }
+      await ensureTableSchema(spec);
       const rows = await this.findMany({
         ...args,
         take: 1,
@@ -1287,9 +1354,7 @@ function createModel<T extends Record<string, unknown>>(spec: TableSpec<T>) {
     },
 
     async findMany<S extends SelectMap<T> | undefined = undefined>(args?: FindManyArgs<T, S>) {
-      if (spec.tableName === "Lead") {
-        await ensureLeadQualityColumns();
-      }
+      await ensureTableSchema(spec);
       const params: unknown[] = [];
       const whereClause = buildWhereClause(args?.where, params);
       const availableColumns = (await getExistingTableColumns(spec.tableName)) as Array<keyof T>;
@@ -1312,9 +1377,7 @@ function createModel<T extends Record<string, unknown>>(spec: TableSpec<T>) {
     },
 
     async findUnique<S extends SelectMap<T> | undefined = undefined>(args: FindUniqueArgs<T, S>) {
-      if (spec.tableName === "Lead") {
-        await ensureLeadQualityColumns();
-      }
+      await ensureTableSchema(spec);
       const params: unknown[] = [];
       const whereClause = buildWhereClause(args.where, params);
       if (!whereClause) {
@@ -1329,9 +1392,7 @@ function createModel<T extends Record<string, unknown>>(spec: TableSpec<T>) {
     },
 
     async update(args: MutationArgs) {
-      if (spec.tableName === "Lead") {
-        await ensureLeadQualityColumns();
-      }
+      await ensureTableSchema(spec);
       const params: unknown[] = [];
       const existingColumns = new Set(await getExistingTableColumns(spec.tableName));
       const filteredData = Object.fromEntries(
@@ -1357,9 +1418,7 @@ function createModel<T extends Record<string, unknown>>(spec: TableSpec<T>) {
     },
 
     async updateMany(args: UpdateManyArgs) {
-      if (spec.tableName === "Lead") {
-        await ensureLeadQualityColumns();
-      }
+      await ensureTableSchema(spec);
       const params: unknown[] = [];
       const existingColumns = new Set(await getExistingTableColumns(spec.tableName));
       const filteredData = Object.fromEntries(
@@ -1387,6 +1446,7 @@ function createPrismaLike(): PrismaLike {
   return {
     auditEvent: createModel(auditEventTable),
     lead: createModel(leadTable),
+    crmActivity: createModel(crmActivityTable),
     rateLimitWindow: createModel(rateLimitWindowTable),
     scrapeRun: createModel(scrapeRunTable),
     user: createModel(userTable),

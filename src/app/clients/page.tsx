@@ -32,7 +32,7 @@ export default async function ClientsPage() {
             <h1 className="text-xl font-semibold text-white">Clients</h1>
           </div>
           <p className="text-sm text-zinc-400">
-            Deal pipeline — from first reply through active retainer.
+            CRM command center from first reply through active retainer.
           </p>
         </div>
         <div className="flex items-center gap-3 text-xs text-zinc-500 font-mono">
