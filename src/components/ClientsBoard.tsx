@@ -10,6 +10,7 @@ import {
   ChevronRight,
   Clock,
   DollarSign,
+  Download,
   ExternalLink,
   Globe,
   Mail,
@@ -85,7 +86,17 @@ function toInputDate(d: Date | string | null | undefined) {
 
 // ---------- Deal Card ----------
 
-function DealCard({ lead, onEdit }: { lead: CrmLead; onEdit: (lead: CrmLead) => void }) {
+function DealCard({
+  lead,
+  onEdit,
+  onDragStart,
+  onDragEnd,
+}: {
+  lead: CrmLead;
+  onEdit: (lead: CrmLead) => void;
+  onDragStart?: (e: React.DragEvent, leadId: number) => void;
+  onDragEnd?: () => void;
+}) {
   const stageMeta = getDealStageMeta(lead.dealStage);
   const daysUntilRenewal = getDaysUntilRenewal(lead.renewalDate);
   const renewalWarning = daysUntilRenewal !== null && daysUntilRenewal <= 30;
@@ -96,8 +107,11 @@ function DealCard({ lead, onEdit }: { lead: CrmLead; onEdit: (lead: CrmLead) => 
   return (
     <button
       type="button"
+      draggable
+      onDragStart={(e) => onDragStart?.(e, lead.id)}
+      onDragEnd={() => onDragEnd?.()}
       onClick={() => onEdit(lead)}
-      className="group w-full text-left rounded-xl border border-white/[0.08] bg-white/[0.025] hover:bg-white/[0.05] hover:border-white/[0.14] transition-all p-3.5 cursor-pointer"
+      className="group w-full text-left rounded-xl border border-white/[0.08] bg-white/[0.025] hover:bg-white/[0.05] hover:border-white/[0.14] transition-all p-3.5 cursor-grab active:cursor-grabbing"
     >
       <div className="flex items-start justify-between gap-2 mb-2.5">
         <div className="min-w-0 flex-1">
@@ -195,6 +209,12 @@ function KanbanColumn({
   leads,
   onEdit,
   onAddFromInbox,
+  onDragStart,
+  onDragEnd,
+  onDrop,
+  isDragOver,
+  onDragOver,
+  onDragLeave,
 }: {
   stage: DealStage;
   label: string;
@@ -202,6 +222,12 @@ function KanbanColumn({
   leads: CrmLead[];
   onEdit: (lead: CrmLead) => void;
   onAddFromInbox?: () => void;
+  onDragStart?: (e: React.DragEvent, leadId: number) => void;
+  onDragEnd?: () => void;
+  onDrop?: (e: React.DragEvent, stage: DealStage) => void;
+  isDragOver?: boolean;
+  onDragOver?: (e: React.DragEvent, stage: DealStage) => void;
+  onDragLeave?: () => void;
 }) {
   const stageMeta = getDealStageMeta(stage);
   const columnMrr = leads.reduce((s, l) => s + (l.monthlyValue ?? 0), 0);
@@ -228,20 +254,30 @@ function KanbanColumn({
       </div>
 
       <div
+        onDragOver={(e) => { e.preventDefault(); onDragOver?.(e, stage); }}
+        onDragLeave={() => onDragLeave?.()}
+        onDrop={(e) => { e.preventDefault(); onDrop?.(e, stage); }}
         className={cn(
-          "flex-1 rounded-xl border p-2.5 flex flex-col gap-2 min-h-[120px]",
-          stageMeta ? `${stageMeta.classes.split(" ").find((c) => c.startsWith("border-")) ?? "border-white/[0.06]"} bg-black/20` : "border-white/[0.06] bg-black/20",
+          "flex-1 rounded-xl border p-2.5 flex flex-col gap-2 min-h-[120px] transition-colors",
+          isDragOver
+            ? "border-emerald-500/40 bg-emerald-500/5"
+            : stageMeta ? `${stageMeta.classes.split(" ").find((c) => c.startsWith("border-")) ?? "border-white/[0.06]"} bg-black/20` : "border-white/[0.06] bg-black/20",
         )}
       >
         {leads.map((lead) => (
-          <DealCard key={lead.id} lead={lead} onEdit={onEdit} />
+          <DealCard key={lead.id} lead={lead} onEdit={onEdit} onDragStart={onDragStart} onDragEnd={onDragEnd} />
         ))}
-        {leads.length === 0 && (
+        {leads.length === 0 && !isDragOver && (
           <div className="flex-1 flex items-center justify-center">
             <span className="text-[11px] text-zinc-700">Empty</span>
           </div>
         )}
-        {onAddFromInbox && leads.length === 0 && (
+        {isDragOver && (
+          <div className="flex-1 flex items-center justify-center border-2 border-dashed border-emerald-500/30 rounded-lg">
+            <span className="text-[11px] text-emerald-400 font-medium">Drop here</span>
+          </div>
+        )}
+        {onAddFromInbox && leads.length === 0 && !isDragOver && (
           <button
             type="button"
             onClick={onAddFromInbox}
@@ -723,11 +759,46 @@ function StatTile({
 
 // ---------- Main Board ----------
 
+function exportClientsCsv(leads: CrmLead[]) {
+  const headers = [
+    "Business Name", "City", "Niche", "Stage", "Engagement", "Monthly Value",
+    "Priority", "Contact", "Email", "Phone", "Website", "Next Action",
+    "Due Date", "Health", "Proposal Sent", "Signed", "Project Start",
+    "Renewal", "Notes",
+  ];
+  const escCsv = (v: string | null | undefined) => {
+    if (!v) return "";
+    const s = String(v);
+    return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const rows = leads.map((l) => [
+    l.businessName, l.city, l.niche, l.dealStage ?? "", l.engagementType ?? "",
+    l.monthlyValue ?? "", l.clientPriority ?? "", l.contactName ?? "",
+    l.email ?? "", l.phone ?? "", l.websiteUrl ?? "", l.nextAction ?? "",
+    l.nextActionDueAt ? new Date(l.nextActionDueAt as string).toISOString().slice(0, 10) : "",
+    l.dealStage ? computeDealHealth(l) : "",
+    l.proposalSentAt ? new Date(l.proposalSentAt as string).toISOString().slice(0, 10) : "",
+    l.signedAt ? new Date(l.signedAt as string).toISOString().slice(0, 10) : "",
+    l.projectStartDate ? new Date(l.projectStartDate as string).toISOString().slice(0, 10) : "",
+    l.renewalDate ? new Date(l.renewalDate as string).toISOString().slice(0, 10) : "",
+    l.projectNotes ?? "",
+  ].map((v) => escCsv(String(v ?? ""))).join(","));
+  const csv = [headers.join(","), ...rows].join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `axiom-clients-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 export function ClientsBoard({ initialLeads }: { initialLeads: CrmLead[] }) {
   const [leads, setLeads] = useState<CrmLead[]>(initialLeads);
   const [editing, setEditing] = useState<CrmLead | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [draggedLeadId, setDraggedLeadId] = useState<number | null>(null);
+  const [dragOverStage, setDragOverStage] = useState<DealStage | null>(null);
 
   const inboxLeads = useMemo(
     () => leads.filter((l) => !l.dealStage && (l.outreachStatus === "REPLIED" || l.outreachStatus === "INTERESTED")),
@@ -770,6 +841,30 @@ export function ClientsBoard({ initialLeads }: { initialLeads: CrmLead[] }) {
     }
   }, []);
 
+  const handleDragStart = useCallback((e: React.DragEvent, leadId: number) => {
+    setDraggedLeadId(leadId);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", String(leadId));
+  }, []);
+
+  const handleDragEnd = useCallback(() => {
+    setDraggedLeadId(null);
+    setDragOverStage(null);
+  }, []);
+
+  const handleColumnDrop = useCallback(async (_e: React.DragEvent, stage: DealStage) => {
+    if (!draggedLeadId) return;
+    const lead = leads.find((l) => l.id === draggedLeadId);
+    if (!lead || lead.dealStage === stage) {
+      setDraggedLeadId(null);
+      setDragOverStage(null);
+      return;
+    }
+    setDragOverStage(null);
+    setDraggedLeadId(null);
+    await handleSave(lead.id, { dealStage: stage });
+  }, [draggedLeadId, leads, handleSave]);
+
   const activeMrr = useMemo(
     () => leads
       .filter((l) => l.dealStage === "ACTIVE" || l.dealStage === "RETAINED")
@@ -802,45 +897,76 @@ export function ClientsBoard({ initialLeads }: { initialLeads: CrmLead[] }) {
     [leads],
   );
 
+  const upcomingRenewals = useMemo(
+    () => leads
+      .filter((l) => {
+        const d = getDaysUntilRenewal(l.renewalDate);
+        return d !== null && d >= -7 && d <= 90;
+      })
+      .sort((a, b) => {
+        const da = new Date(a.renewalDate as string).getTime();
+        const db = new Date(b.renewalDate as string).getTime();
+        return da - db;
+      }),
+    [leads],
+  );
+
+  const clientLeads = useMemo(
+    () => leads.filter((l) => l.dealStage || l.outreachStatus === "REPLIED" || l.outreachStatus === "INTERESTED"),
+    [leads],
+  );
+
   return (
     <div className="flex flex-col gap-6">
-      {/* Stats bar */}
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-        <StatTile
-          icon={<MessageSquare className="size-3.5" />}
-          label="Review Inbox"
-          value={inboxLeads.length}
-          detail="replied or interested"
-          tone={inboxLeads.length > 0 ? "cyan" : "zinc"}
-        />
-        <StatTile
-          icon={<DollarSign className="size-3.5" />}
-          label="Open Pipeline"
-          value={formatCompactMoney(openPipelineValue)}
-          detail={`${proposalCount} proposal${proposalCount === 1 ? "" : "s"} pending`}
-          tone={openPipelineValue > 0 ? "amber" : "zinc"}
-        />
-        <StatTile
-          icon={<DollarSign className="size-3.5" />}
-          label="Active MRR"
-          value={`${formatCompactMoney(activeMrr)}/mo`}
-          detail="active and retained"
-          tone={activeMrr > 0 ? "emerald" : "zinc"}
-        />
-        <StatTile
-          icon={<Clock className="size-3.5" />}
-          label="Due Actions"
-          value={actionDueCount}
-          detail="overdue follow-ups"
-          tone={actionDueCount > 0 ? "red" : "zinc"}
-        />
-        <StatTile
-          icon={<RefreshCw className="size-3.5" />}
-          label="Renewals"
-          value={renewalsSoon.length}
-          detail="within 30 days"
-          tone={renewalsSoon.length > 0 ? "amber" : "zinc"}
-        />
+      {/* Stats bar + export */}
+      <div className="flex items-start justify-between gap-4">
+        <div className="grid flex-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <StatTile
+            icon={<MessageSquare className="size-3.5" />}
+            label="Review Inbox"
+            value={inboxLeads.length}
+            detail="replied or interested"
+            tone={inboxLeads.length > 0 ? "cyan" : "zinc"}
+          />
+          <StatTile
+            icon={<DollarSign className="size-3.5" />}
+            label="Open Pipeline"
+            value={formatCompactMoney(openPipelineValue)}
+            detail={`${proposalCount} proposal${proposalCount === 1 ? "" : "s"} pending`}
+            tone={openPipelineValue > 0 ? "amber" : "zinc"}
+          />
+          <StatTile
+            icon={<DollarSign className="size-3.5" />}
+            label="Active MRR"
+            value={`${formatCompactMoney(activeMrr)}/mo`}
+            detail="active and retained"
+            tone={activeMrr > 0 ? "emerald" : "zinc"}
+          />
+          <StatTile
+            icon={<Clock className="size-3.5" />}
+            label="Due Actions"
+            value={actionDueCount}
+            detail="overdue follow-ups"
+            tone={actionDueCount > 0 ? "red" : "zinc"}
+          />
+          <StatTile
+            icon={<RefreshCw className="size-3.5" />}
+            label="Renewals"
+            value={renewalsSoon.length}
+            detail="within 30 days"
+            tone={renewalsSoon.length > 0 ? "amber" : "zinc"}
+          />
+        </div>
+        {clientLeads.length > 0 && (
+          <button
+            type="button"
+            onClick={() => exportClientsCsv(clientLeads)}
+            className="shrink-0 mt-1 flex items-center gap-2 rounded-lg border border-white/[0.08] bg-white/[0.025] px-3 py-2 text-xs font-medium text-zinc-400 transition hover:border-white/[0.16] hover:bg-white/[0.06] hover:text-white cursor-pointer"
+          >
+            <Download className="size-3.5" />
+            Export CSV
+          </button>
+        )}
       </div>
 
       {error && (
@@ -852,7 +978,7 @@ export function ClientsBoard({ initialLeads }: { initialLeads: CrmLead[] }) {
 
       <InboxSection leads={inboxLeads} onEdit={setEditing} onQuickUpdate={handleSave} saving={saving} />
 
-      {/* Kanban board */}
+      {/* Kanban board with drag-and-drop */}
       <div className="flex gap-4 overflow-x-auto pb-4">
         {DEAL_KANBAN_COLUMNS.map((col) => (
           <KanbanColumn
@@ -862,9 +988,67 @@ export function ClientsBoard({ initialLeads }: { initialLeads: CrmLead[] }) {
             description={col.description}
             leads={leadsByStage.get(col.stage) ?? []}
             onEdit={setEditing}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onDrop={handleColumnDrop}
+            isDragOver={dragOverStage === col.stage}
+            onDragOver={(_e, stage) => setDragOverStage(stage)}
+            onDragLeave={() => setDragOverStage(null)}
           />
         ))}
       </div>
+
+      {/* Renewal Calendar */}
+      {upcomingRenewals.length > 0 && (
+        <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+          <div className="flex items-center gap-2 mb-4">
+            <Calendar className="size-4 text-amber-400" />
+            <span className="text-sm font-semibold text-white">Renewal Calendar</span>
+            <span className="font-mono text-[10px] text-zinc-500 border border-white/[0.09] bg-black/30 rounded px-1 py-0.5">
+              {upcomingRenewals.length}
+            </span>
+          </div>
+          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+            {upcomingRenewals.map((lead) => {
+              const days = getDaysUntilRenewal(lead.renewalDate)!;
+              const isOverdue = days < 0;
+              const isUrgent = days >= 0 && days <= 7;
+              const isSoon = days > 7 && days <= 30;
+              return (
+                <Link
+                  key={lead.id}
+                  href={`/clients/${lead.id}` as Route}
+                  className={cn(
+                    "flex items-center justify-between gap-3 rounded-lg border px-3 py-2.5 transition-all hover:bg-white/[0.04]",
+                    isOverdue ? "border-red-500/20 bg-red-500/5" :
+                    isUrgent ? "border-amber-500/20 bg-amber-500/5" :
+                    isSoon ? "border-amber-500/10 bg-amber-500/[0.02]" :
+                    "border-white/[0.06]"
+                  )}
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-medium text-white truncate">{lead.businessName}</div>
+                    <div className="text-[10.5px] text-zinc-500 mt-0.5">
+                      {lead.monthlyValue ? `${formatCompactMoney(lead.monthlyValue)}/mo` : lead.niche}
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className={cn(
+                      "text-xs font-semibold",
+                      isOverdue ? "text-red-300" : isUrgent ? "text-amber-300" : isSoon ? "text-amber-400" : "text-zinc-400"
+                    )}>
+                      {isOverdue ? `${Math.abs(days)}d overdue` : days === 0 ? "Today" : `${days}d`}
+                    </div>
+                    <div className="text-[10px] text-zinc-600 mt-0.5">
+                      {formatDate(lead.renewalDate)}
+                    </div>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {leads.length === 0 && inboxLeads.length === 0 && (
         <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] py-16 text-center">

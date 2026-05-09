@@ -5,7 +5,9 @@ import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { COMMANDS, searchCommands, groupByCategory, type Command } from "@/lib/commands";
 import { usePerformance } from "@/lib/ui/performance";
-import { Search, CornerDownLeft, ArrowUp, ArrowDown } from "lucide-react";
+import { Building2, Search, CornerDownLeft, ArrowUp, ArrowDown } from "lucide-react";
+
+type LeadSearchResult = { id: number; businessName: string; city: string; niche: string };
 
 interface CommandPaletteProps {
     open: boolean;
@@ -21,15 +23,31 @@ export function CommandPalette({ open, onClose, onOpenShortcuts }: CommandPalett
     const inputRef = useRef<HTMLInputElement>(null);
     const listRef = useRef<HTMLDivElement>(null);
 
+    const [leadResults, setLeadResults] = useState<LeadSearchResult[]>([]);
+
     const results = searchCommands(query);
     const groups = groupByCategory(results);
     const flatResults = results;
+    const totalItems = flatResults.length + leadResults.length;
+
+    useEffect(() => {
+        if (!query || query.length < 2) { setLeadResults([]); return; }
+        const controller = new AbortController();
+        const timer = setTimeout(() => {
+            fetch(`/api/vault/leads?search=${encodeURIComponent(query)}&limit=5`, { signal: controller.signal })
+                .then((r) => r.json())
+                .then((data: { leads?: LeadSearchResult[] }) => setLeadResults(data.leads ?? []))
+                .catch(() => {});
+        }, 200);
+        return () => { clearTimeout(timer); controller.abort(); };
+    }, [query]);
 
     // Focus input on open
     useEffect(() => {
         if (open) {
             setQuery("");
             setSelectedIndex(0);
+            setLeadResults([]);
             setTimeout(() => inputRef.current?.focus(), 50);
         }
     }, [open]);
@@ -73,7 +91,7 @@ export function CommandPalette({ open, onClose, onOpenShortcuts }: CommandPalett
             switch (e.key) {
                 case "ArrowDown":
                     e.preventDefault();
-                    setSelectedIndex(i => Math.min(i + 1, flatResults.length - 1));
+                    setSelectedIndex(i => Math.min(i + 1, totalItems - 1));
                     break;
                 case "ArrowUp":
                     e.preventDefault();
@@ -81,8 +99,14 @@ export function CommandPalette({ open, onClose, onOpenShortcuts }: CommandPalett
                     break;
                 case "Enter":
                     e.preventDefault();
-                    if (flatResults[selectedIndex]) {
-                        executeCommand(flatResults[selectedIndex]);
+                    if (selectedIndex < flatResults.length) {
+                        if (flatResults[selectedIndex]) executeCommand(flatResults[selectedIndex]);
+                    } else {
+                        const leadIdx = selectedIndex - flatResults.length;
+                        if (leadResults[leadIdx]) {
+                            onClose();
+                            router.push(`/clients/${leadResults[leadIdx].id}` as Route);
+                        }
                     }
                     break;
                 case "Escape":
@@ -140,13 +164,14 @@ export function CommandPalette({ open, onClose, onOpenShortcuts }: CommandPalett
 
                     {/* Results */}
                     <div ref={listRef} className="max-h-[360px] overflow-y-auto py-2">
-                        {flatResults.length === 0 ? (
+                        {totalItems === 0 ? (
                             <div className="px-4 py-8 text-center">
                                 <p className="text-sm text-muted-foreground/60">No commands found</p>
                                 <p className="text-[11px] text-muted-foreground/30 mt-1">Try a different search term</p>
                             </div>
                         ) : (
-                            groups.map(group => (
+                            <>
+                            {groups.map(group => (
                                 <div key={group.category}>
                                     <div className="px-4 pt-2 pb-1">
                                         <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground/30">
@@ -194,7 +219,44 @@ export function CommandPalette({ open, onClose, onOpenShortcuts }: CommandPalett
                                         );
                                     })}
                                 </div>
-                            ))
+                            ))}
+                            {leadResults.length > 0 && (
+                                <div>
+                                    <div className="px-4 pt-2 pb-1">
+                                        <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground/30">
+                                            Leads
+                                        </span>
+                                    </div>
+                                    {leadResults.map((lead, li) => {
+                                        const idx = flatResults.length + li;
+                                        const isSelected = idx === selectedIndex;
+                                        return (
+                                            <button
+                                                key={lead.id}
+                                                data-index={idx}
+                                                onClick={() => { onClose(); router.push(`/clients/${lead.id}` as Route); }}
+                                                onMouseEnter={() => setSelectedIndex(idx)}
+                                                className={cn(
+                                                    "w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors",
+                                                    isSelected
+                                                        ? "bg-emerald-400/[0.08] text-foreground"
+                                                        : "text-muted-foreground hover:text-foreground"
+                                                )}
+                                            >
+                                                <Building2 className={cn(
+                                                    "w-4 h-4 flex-shrink-0",
+                                                    isSelected ? "text-emerald-400" : "text-muted-foreground/50"
+                                                )} />
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="text-sm font-medium truncate">{lead.businessName}</div>
+                                                    <div className="text-[11px] text-muted-foreground/40 truncate">{lead.city} · {lead.niche}</div>
+                                                </div>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                            </>
                         )}
                     </div>
 
@@ -212,7 +274,7 @@ export function CommandPalette({ open, onClose, onOpenShortcuts }: CommandPalett
                         <span className="inline-flex items-center gap-1">
                             esc close
                         </span>
-                        <span className="ml-auto">{flatResults.length} commands</span>
+                        <span className="ml-auto">{flatResults.length} commands{leadResults.length > 0 ? ` · ${leadResults.length} leads` : ""}</span>
                     </div>
                 </div>
             </div>

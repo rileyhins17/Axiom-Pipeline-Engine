@@ -2,8 +2,10 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
+    Archive,
     ArrowUpDown,
     CheckCircle2,
+    CheckSquare,
     ChevronDown,
     ChevronLeft,
     ChevronRight,
@@ -20,6 +22,7 @@ import {
     Search,
     Share2,
     SlidersHorizontal,
+    Square,
     Star,
     User,
     X,
@@ -314,6 +317,8 @@ export default function VaultDataTable({ totalCount }: { totalCount: number }) {
     const [exportColumns, setExportColumns] = useState<Record<ExportColumnKey, boolean>>(defaultExportColumns);
     const [exportFormat, setExportFormat] = useState<ExportFormat>("csv");
     const [exportScope, setExportScope] = useState<ExportScope>("filtered");
+    const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+    const [bulkActing, setBulkActing] = useState(false);
 
     const uniqueNiches = useMemo(() => [...new Set(leads.map((lead) => lead.niche).filter(Boolean))].sort(), [leads]);
     const uniqueCities = useMemo(() => [...new Set(leads.map((lead) => lead.city).filter(Boolean))].sort(), [leads]);
@@ -466,6 +471,63 @@ export default function VaultDataTable({ totalCount }: { totalCount: number }) {
         setExportColumns((prev) => ({ ...prev, [key]: !prev[key] }));
     }, []);
 
+    const toggleSelectAll = useCallback(() => {
+        setSelectedIds((prev) => {
+            const pageIds = pagedLeads.map((l) => l.id);
+            const allSelected = pageIds.every((id) => prev.has(id));
+            if (allSelected) return new Set();
+            return new Set([...prev, ...pageIds]);
+        });
+    }, [pagedLeads]);
+
+    const toggleSelectOne = useCallback((id: number) => {
+        setSelectedIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+    }, []);
+
+    const handleBulkArchive = useCallback(async () => {
+        if (selectedIds.size === 0) return;
+        setBulkActing(true);
+        try {
+            const res = await fetch("/api/vault/bulk", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action: "archive", ids: [...selectedIds] }),
+            });
+            if (res.ok) {
+                setLeads((prev) => prev.filter((l) => !selectedIds.has(l.id)));
+                setSelectedIds(new Set());
+            }
+        } catch { /* swallow */ } finally {
+            setBulkActing(false);
+        }
+    }, [selectedIds]);
+
+    const handleBulkExport = useCallback(() => {
+        const selected = leads.filter((l) => selectedIds.has(l.id));
+        if (selected.length === 0) return;
+        const separator = ",";
+        const headers = EXPORT_COLUMNS.filter((c) => exportColumns[c.key]).map((c) => c.label);
+        const rows = selected.map((lead) =>
+            EXPORT_COLUMNS.filter((c) => exportColumns[c.key]).map((column) => {
+                let value = lead[column.key];
+                if (value == null) value = "";
+                return `"${String(value).replace(/"/g, '""')}"`;
+            }),
+        );
+        const content = [headers.join(separator), ...rows.map((row) => row.join(separator))].join("\n");
+        const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `axiom-selected-${selectedIds.size}-${new Date().toISOString().slice(0, 10)}.csv`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+    }, [selectedIds, leads, exportColumns]);
+
     const selectedExportColumnCount = Object.values(exportColumns).filter(Boolean).length;
     const exportRowCount = exportScope === "all" ? leads.length : exportScope === "page" ? pagedLeads.length : processedLeads.length;
 
@@ -563,6 +625,40 @@ export default function VaultDataTable({ totalCount }: { totalCount: number }) {
                     </button>
                 ) : null}
             </div>
+
+            {selectedIds.size > 0 && (
+                <div className="flex items-center gap-3 rounded-lg border border-emerald-500/20 bg-emerald-500/[0.05] px-4 py-2.5">
+                    <span className="text-xs font-medium text-emerald-300">
+                        {selectedIds.size} selected
+                    </span>
+                    <div className="h-4 w-px bg-white/[0.08]" />
+                    <button
+                        type="button"
+                        disabled={bulkActing}
+                        onClick={handleBulkExport}
+                        className="flex items-center gap-1.5 rounded-md border border-white/[0.08] bg-black/20 px-2.5 py-1 text-[11px] font-medium text-zinc-300 transition hover:border-cyan-500/30 hover:text-cyan-200 disabled:opacity-50"
+                    >
+                        <Download className="h-3 w-3" />
+                        Export selected
+                    </button>
+                    <button
+                        type="button"
+                        disabled={bulkActing}
+                        onClick={handleBulkArchive}
+                        className="flex items-center gap-1.5 rounded-md border border-white/[0.08] bg-black/20 px-2.5 py-1 text-[11px] font-medium text-zinc-300 transition hover:border-red-500/30 hover:text-red-200 disabled:opacity-50"
+                    >
+                        <Archive className="h-3 w-3" />
+                        Archive
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setSelectedIds(new Set())}
+                        className="ml-auto text-[11px] text-zinc-500 hover:text-white"
+                    >
+                        Clear
+                    </button>
+                </div>
+            )}
 
             {showFilters ? (
                 <div className="border-y border-white/[0.06] bg-white/[0.015] py-4">
@@ -711,6 +807,17 @@ export default function VaultDataTable({ totalCount }: { totalCount: number }) {
                 <Table>
                     <TableHeader className="bg-black/40">
                         <TableRow className="border-white/[0.06] hover:bg-transparent">
+                            <TableHead className="w-[40px]">
+                                <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); toggleSelectAll(); }}
+                                    className="flex items-center justify-center text-zinc-600 hover:text-white cursor-pointer"
+                                >
+                                    {pagedLeads.length > 0 && pagedLeads.every((l) => selectedIds.has(l.id))
+                                        ? <CheckSquare className="h-4 w-4 text-emerald-400" />
+                                        : <Square className="h-4 w-4" />}
+                                </button>
+                            </TableHead>
                             {[
                                 { key: "businessName" as const, label: "Business" },
                                 { key: "niche" as const, label: "Niche" },
@@ -753,7 +860,7 @@ export default function VaultDataTable({ totalCount }: { totalCount: number }) {
                     <TableBody>
                         {pagedLeads.length === 0 ? (
                             <TableRow>
-                                <TableCell colSpan={8} className="h-40 text-center">
+                                <TableCell colSpan={9} className="h-40 text-center">
                                     <Globe className="mx-auto h-9 w-9 text-zinc-700" />
                                     <p className="mt-3 text-sm text-zinc-500">No matching leads</p>
                                     <p className="mt-1 text-[11px] text-zinc-700">
@@ -770,6 +877,17 @@ export default function VaultDataTable({ totalCount }: { totalCount: number }) {
                                             expandedId === lead.id ? "bg-white/[0.035]" : "hover:bg-white/[0.02]"
                                         }`}
                                     >
+                                        <TableCell className="w-[40px]" onClick={(e) => e.stopPropagation()}>
+                                            <button
+                                                type="button"
+                                                onClick={() => toggleSelectOne(lead.id)}
+                                                className="flex items-center justify-center text-zinc-600 hover:text-white cursor-pointer"
+                                            >
+                                                {selectedIds.has(lead.id)
+                                                    ? <CheckSquare className="h-4 w-4 text-emerald-400" />
+                                                    : <Square className="h-4 w-4" />}
+                                            </button>
+                                        </TableCell>
                                         <TableCell className="max-w-[320px]">
                                             <div className="min-w-0">
                                                 <div className="truncate text-sm font-medium text-white">{lead.businessName}</div>
@@ -812,7 +930,7 @@ export default function VaultDataTable({ totalCount }: { totalCount: number }) {
                                     </TableRow>
                                     {expandedId === lead.id ? (
                                         <TableRow className="border-white/[0.04] bg-white/[0.015]">
-                                            <TableCell colSpan={8} className="px-5 py-4 align-top">
+                                            <TableCell colSpan={9} className="px-5 py-4 align-top">
                                                 <LeadDetails lead={lead} />
                                             </TableCell>
                                         </TableRow>

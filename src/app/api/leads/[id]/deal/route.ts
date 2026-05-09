@@ -105,7 +105,7 @@ export async function PATCH(
   }
 
   // Text fields
-  for (const field of ["projectNotes", "nextAction", "dealHealth", "dealLostReason"] as const) {
+  for (const field of ["projectNotes", "nextAction", "dealHealth", "dealLostReason", "contactName", "email", "phone", "websiteUrl", "address"] as const) {
     if (field in body) {
       update[field] = body[field] ? String(body[field]) : null;
     }

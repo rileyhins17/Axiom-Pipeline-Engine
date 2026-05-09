@@ -3,16 +3,22 @@ import Link from "next/link";
 import {
   Activity,
   AlertTriangle,
+  ArrowRight,
   Bot,
   CheckCircle2,
   Clock,
   Clock3,
+  Crosshair,
   DollarSign,
+  Filter,
+  Inbox,
   Mail,
   MailCheck,
   Radar,
   Reply,
+  ScrollText,
   Target,
+  TrendingUp,
   Users,
 } from "lucide-react";
 
@@ -229,7 +235,7 @@ async function getCrmStats() {
   const now = new Date().toISOString();
   const in30 = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
-  const [mrrRow, activeCount, proposalCount, renewalCount, lostCount] = await Promise.all([
+  const [mrrRow, activeCount, proposalCount, renewalCount, lostCount, forecastRow] = await Promise.all([
     db.prepare(
       `SELECT COALESCE(SUM("monthlyValue"), 0) AS mrr FROM "Lead"
        WHERE "dealStage" IN ('ACTIVE', 'RETAINED') AND "monthlyValue" IS NOT NULL AND "isArchived" = 0`,
@@ -247,6 +253,18 @@ async function getCrmStats() {
     db.prepare(
       `SELECT COUNT(*) AS c FROM "Lead" WHERE "dealStage" = 'LOST' AND "isArchived" = 0`,
     ).first<{ c: number | string }>(),
+    db.prepare(
+      `SELECT COALESCE(SUM(
+        CASE "dealStage"
+          WHEN 'PROPOSAL_SENT' THEN "monthlyValue" * 0.2
+          WHEN 'NEGOTIATING' THEN "monthlyValue" * 0.5
+          WHEN 'SIGNED' THEN "monthlyValue" * 0.9
+          ELSE 0
+        END
+      ), 0) AS forecast FROM "Lead"
+       WHERE "dealStage" IN ('PROPOSAL_SENT', 'NEGOTIATING', 'SIGNED')
+         AND "monthlyValue" IS NOT NULL AND "isArchived" = 0`,
+    ).first<{ forecast: number | string }>(),
   ]);
 
   return {
@@ -255,6 +273,49 @@ async function getCrmStats() {
     inPipeline: Number(proposalCount?.c ?? 0),
     renewalsDue: Number(renewalCount?.c ?? 0),
     lostDeals: Number(lostCount?.c ?? 0),
+    forecast: Number(forecastRow?.forecast ?? 0),
+  };
+}
+
+type ReplyInboxItem = {
+  id: number;
+  businessName: string;
+  city: string | null;
+  niche: string | null;
+  email: string | null;
+  lastReplyAt: string | null;
+  dealStage: string | null;
+};
+
+async function getReplyInbox(): Promise<ReplyInboxItem[]> {
+  const db = getDatabase();
+  const result = await db.prepare(`
+    SELECT id, businessName, city, niche, email, lastReplyAt, dealStage
+    FROM "Lead"
+    WHERE outreachStatus = 'REPLIED' AND dealStage IS NULL AND isArchived = 0
+    ORDER BY lastReplyAt DESC
+    LIMIT 10
+  `).all<ReplyInboxItem>();
+  return result.results ?? [];
+}
+
+async function getConversionFunnel() {
+  const db = getDatabase();
+  const [totalRow, qualifiedRow, contactedRow, repliedRow, pipelineRow, wonRow] = await Promise.all([
+    db.prepare(`SELECT COUNT(*) AS c FROM "Lead" WHERE isArchived = 0`).first<{ c: number | string }>(),
+    db.prepare(`SELECT COUNT(*) AS c FROM "Lead" WHERE axiomScore >= 45 AND isArchived = 0`).first<{ c: number | string }>(),
+    db.prepare(`SELECT COUNT(*) AS c FROM "Lead" WHERE firstContactedAt IS NOT NULL`).first<{ c: number | string }>(),
+    db.prepare(`SELECT COUNT(*) AS c FROM "Lead" WHERE outreachStatus = 'REPLIED'`).first<{ c: number | string }>(),
+    db.prepare(`SELECT COUNT(*) AS c FROM "Lead" WHERE dealStage IS NOT NULL AND dealStage != 'LOST' AND isArchived = 0`).first<{ c: number | string }>(),
+    db.prepare(`SELECT COUNT(*) AS c FROM "Lead" WHERE dealStage IN ('SIGNED', 'ACTIVE', 'DELIVERED', 'RETAINED') AND isArchived = 0`).first<{ c: number | string }>(),
+  ]);
+  return {
+    total: Number(totalRow?.c ?? 0),
+    qualified: Number(qualifiedRow?.c ?? 0),
+    contacted: Number(contactedRow?.c ?? 0),
+    replied: Number(repliedRow?.c ?? 0),
+    pipeline: Number(pipelineRow?.c ?? 0),
+    won: Number(wonRow?.c ?? 0),
   };
 }
 
@@ -332,6 +393,36 @@ async function getFollowUpItems() {
   };
 }
 
+type AuditEntry = { id: string; type: string; title: string; createdAt: string; businessName: string | null; leadId: number | null };
+
+async function getAuditLog(): Promise<AuditEntry[]> {
+  const db = getDatabase();
+  const rows = await db.prepare(
+    `SELECT a."id", a."type", a."title", a."createdAt",
+            l."businessName", l."id" AS "leadId"
+     FROM "CrmActivity" a
+     LEFT JOIN "Lead" l ON a."leadId" = l."id"
+     ORDER BY datetime(a."createdAt") DESC
+     LIMIT 20`,
+  ).all<AuditEntry>().catch(() => ({ results: [] as AuditEntry[] }));
+  return rows.results ?? [];
+}
+
+type ScrapeTargetRow = { id: string; niche: string; city: string; status: string; lastScrapedAt: string | null; leadCount: number };
+
+async function getScrapeTargetList(): Promise<ScrapeTargetRow[]> {
+  const db = getDatabase();
+  const rows = await db.prepare(
+    `SELECT st."id", st."niche", st."city", st."status", st."lastScrapedAt",
+            (SELECT COUNT(*) FROM "Lead" l WHERE l."niche" = st."niche" AND l."city" = st."city" AND COALESCE(l."isArchived",0) = 0) AS "leadCount"
+     FROM "ScrapeTarget" st
+     WHERE st."status" != 'disabled'
+     ORDER BY st."lastScrapedAt" DESC
+     LIMIT 20`,
+  ).all<ScrapeTargetRow>().catch(() => ({ results: [] as ScrapeTargetRow[] }));
+  return rows.results ?? [];
+}
+
 export default async function DashboardPage() {
   await requireSession();
 
@@ -354,6 +445,10 @@ export default async function DashboardPage() {
     followUps,
     connectedRows,
     totalSentAllTime,
+    replyInbox,
+    funnel,
+    auditLog,
+    scrapeTargetList,
   ] = await Promise.all([
     listAutomationOverview().catch(() => emptyAutomationOverview()),
     listScrapeJobs(8).catch(() => []),
@@ -391,6 +486,10 @@ export default async function DashboardPage() {
       .first<{ c: number | string }>()
       .then((r) => Number(r?.c ?? 0))
       .catch(() => 0),
+    getReplyInbox().catch(() => [] as ReplyInboxItem[]),
+    getConversionFunnel().catch(() => ({ total: 0, qualified: 0, contacted: 0, replied: 0, pipeline: 0, won: 0 })),
+    getAuditLog().catch(() => [] as AuditEntry[]),
+    getScrapeTargetList().catch(() => [] as ScrapeTargetRow[]),
   ]);
 
   const activeScrape = scrapeJobs.find((j) => j.status === "running" || j.status === "claimed") ?? null;
@@ -550,6 +649,14 @@ export default async function DashboardPage() {
             </span>
             <span className="text-xs text-zinc-500">/mo MRR</span>
           </div>
+          {crmStats.forecast > 0 && (
+            <div className="flex items-center gap-2 mt-1.5">
+              <TrendingUp className="size-3 text-amber-400" />
+              <span className="text-[11px] text-amber-300 font-medium">
+                +${Math.round(crmStats.forecast).toLocaleString()}/mo weighted forecast
+              </span>
+            </div>
+          )}
           <Divider />
           <KvRow icon={<Users className="size-3.5" />} label="Active clients" value={crmStats.activeClients.toLocaleString()} />
           <KvRow icon={<DollarSign className="size-3.5" />} label="In pipeline" value={crmStats.inPipeline.toLocaleString()} />
@@ -576,6 +683,137 @@ export default async function DashboardPage() {
         </Panel>
       </section>
 
+      {/* Reply Inbox */}
+      {replyInbox.length > 0 && (
+        <div className="v2-card overflow-hidden">
+          <header className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
+            <div className="flex items-center gap-2">
+              <Inbox className="size-4 text-cyan-400" />
+              <div>
+                <div className="text-sm font-semibold text-white">Reply Inbox</div>
+                <div className="mt-0.5 text-[11px] text-zinc-500">{replyInbox.length} unhandled {replyInbox.length === 1 ? "reply" : "replies"} — respond fast</div>
+              </div>
+            </div>
+            <Link href="/clients" className="text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors font-medium flex items-center gap-1">
+              Open board <ArrowRight className="size-3" />
+            </Link>
+          </header>
+          <div className="divide-y divide-white/[0.05]">
+            {replyInbox.map((item) => {
+              const replyAge = item.lastReplyAt ? Date.now() - new Date(item.lastReplyAt).getTime() : 0;
+              const mins = Math.floor(replyAge / 60_000);
+              const hours = Math.floor(mins / 60);
+              const days = Math.floor(hours / 24);
+              const ageLabel = days > 0 ? `${days}d ago` : hours > 0 ? `${hours}h ago` : mins > 0 ? `${mins}m ago` : "just now";
+              const urgency = hours >= 4 ? "text-red-400" : hours >= 1 ? "text-amber-400" : "text-emerald-400";
+              return (
+                <Link key={item.id} href={`/clients/${item.id}`} className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-white/[0.02] transition-colors">
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-white truncate">{item.businessName}</div>
+                    <div className="text-[11px] text-zinc-500 truncate">{item.city} · {item.niche}{item.email ? ` · ${item.email}` : ""}</div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className={`font-mono text-[11px] font-medium ${urgency}`}>{ageLabel}</span>
+                    <span className={`inline-flex h-2 w-2 rounded-full ${hours >= 4 ? "bg-red-400" : hours >= 1 ? "bg-amber-400" : "bg-emerald-400"}`} />
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Conversion Funnel */}
+      <div className="v2-card overflow-hidden">
+        <header className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
+          <div>
+            <div className="text-sm font-semibold text-white">Conversion Funnel</div>
+            <div className="mt-0.5 text-[11px] text-zinc-500">Lead-to-client pipeline (all time)</div>
+          </div>
+          <Filter className="size-4 text-zinc-600" />
+        </header>
+        <div className="p-4">
+          <FunnelBar steps={[
+            { label: "Scraped", value: funnel.total, tone: "zinc" },
+            { label: "Qualified", value: funnel.qualified, tone: "cyan" },
+            { label: "Contacted", value: funnel.contacted, tone: "violet" },
+            { label: "Replied", value: funnel.replied, tone: "amber" },
+            { label: "In Pipeline", value: funnel.pipeline, tone: "emerald" },
+            { label: "Won", value: funnel.won, tone: "emerald" },
+          ]} />
+        </div>
+      </div>
+
+      {/* Audit Log & Scrape Targets */}
+      <div className="grid gap-4 xl:grid-cols-2">
+        {/* Audit Log */}
+        <div className="v2-card overflow-hidden">
+          <header className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
+            <div className="flex items-center gap-2">
+              <ScrollText className="size-4 text-zinc-500" />
+              <span className="text-sm font-semibold text-white">Audit Log</span>
+            </div>
+            <span className="font-mono text-[10px] text-zinc-600">{auditLog.length} recent</span>
+          </header>
+          <div className="divide-y divide-white/[0.05] max-h-[280px] overflow-y-auto">
+            {auditLog.length === 0 ? (
+              <div className="px-4 py-8 text-center text-[11px] text-zinc-600">No activity logged yet</div>
+            ) : (
+              auditLog.map((entry) => (
+                <div key={entry.id} className="flex items-start justify-between gap-3 px-4 py-2.5">
+                  <div className="min-w-0">
+                    <div className="text-xs font-medium text-zinc-200 truncate">{entry.title}</div>
+                    <div className="text-[10px] text-zinc-600 mt-0.5 truncate">
+                      {entry.type.replace(/_/g, " ").toLowerCase()}
+                      {entry.businessName ? ` · ${entry.businessName}` : ""}
+                    </div>
+                  </div>
+                  <span className="shrink-0 font-mono text-[10px] text-zinc-600">
+                    {relativeAgo(entry.createdAt)}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Scrape Targets */}
+        <div className="v2-card overflow-hidden">
+          <header className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
+            <div className="flex items-center gap-2">
+              <Crosshair className="size-4 text-zinc-500" />
+              <span className="text-sm font-semibold text-white">Scrape Targets</span>
+            </div>
+            <span className="font-mono text-[10px] text-zinc-600">{scrapeTargetList.length} active</span>
+          </header>
+          <div className="divide-y divide-white/[0.05] max-h-[280px] overflow-y-auto">
+            {scrapeTargetList.length === 0 ? (
+              <div className="px-4 py-8 text-center text-[11px] text-zinc-600">No scrape targets configured</div>
+            ) : (
+              scrapeTargetList.map((target) => (
+                <div key={target.id} className="flex items-center justify-between gap-3 px-4 py-2.5">
+                  <div className="min-w-0">
+                    <div className="text-xs font-medium text-zinc-200 truncate">{target.niche}</div>
+                    <div className="text-[10px] text-zinc-600 mt-0.5">{target.city}</div>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <span className="font-mono text-[10px] text-zinc-500">{Number(target.leadCount)} leads</span>
+                    <span className={`rounded border px-1.5 py-0.5 text-[9px] font-semibold uppercase ${
+                      target.status === "active" ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300" :
+                      target.status === "exhausted" ? "border-amber-500/20 bg-amber-500/10 text-amber-300" :
+                      "border-zinc-600/20 bg-zinc-600/10 text-zinc-400"
+                    }`}>
+                      {target.status}
+                    </span>
+                    <span className="font-mono text-[10px] text-zinc-600">{relativeAgo(target.lastScrapedAt)}</span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* Follow-Ups panel */}
       <FollowUpsPanel data={followUps} />
     </div>
@@ -598,7 +836,7 @@ function FollowUpItemRow({ item, nowMs, overdue = false }: { item: FollowUpItem;
     : null;
 
   return (
-    <div className="flex items-start justify-between gap-2 py-1.5 border-b border-white/[0.04] last:border-0">
+    <Link href={`/clients/${item.id}`} className="flex items-start justify-between gap-2 py-1.5 border-b border-white/[0.04] last:border-0 hover:bg-white/[0.02] -mx-1 px-1 rounded transition-colors">
       <div className="min-w-0">
         <div className={`text-xs font-medium truncate ${overdue ? "text-red-200" : "text-zinc-200"}`}>
           {item.businessName}
@@ -615,7 +853,7 @@ function FollowUpItemRow({ item, nowMs, overdue = false }: { item: FollowUpItem;
           <span className="text-[10px] font-mono text-emerald-400">${item.monthlyValue.toLocaleString()}</span>
         ) : null}
       </div>
-    </div>
+    </Link>
   );
 }
 
@@ -653,12 +891,9 @@ function FollowUpGroup({
         <p className="text-[11px] text-zinc-700">{emptyLabel}</p>
       ) : (
         <div>
-          {items.slice(0, 5).map((item) => (
+          {items.map((item) => (
             <FollowUpItemRow key={item.id} item={item} nowMs={nowMs} overdue={overdue} />
           ))}
-          {items.length > 5 && (
-            <div className="text-[10px] text-zinc-600 pt-1.5">+{items.length - 5} more</div>
-          )}
         </div>
       )}
     </div>
@@ -900,6 +1135,36 @@ function Sparkline({ label, series, tone }: { label: string; series: number[]; t
         />
         <circle cx={last * step} cy={lastY} r="2" className={`${t.ring} fill-current ${t.text}`} />
       </svg>
+    </div>
+  );
+}
+
+function FunnelBar({ steps }: { steps: Array<{ label: string; value: number; tone: ToneKey }> }) {
+  const max = Math.max(1, steps[0]?.value ?? 1);
+  return (
+    <div className="space-y-2.5">
+      {steps.map((step, i) => {
+        const pct = Math.max(2, (step.value / max) * 100);
+        const t = TONE[step.tone];
+        const prev = i > 0 ? steps[i - 1].value : null;
+        const convRate = prev && prev > 0 ? ((step.value / prev) * 100).toFixed(1) : null;
+        return (
+          <div key={step.label}>
+            <div className="flex items-center justify-between gap-3 mb-1">
+              <span className="text-[11px] font-medium text-zinc-400">{step.label}</span>
+              <div className="flex items-center gap-2">
+                {convRate && i > 0 && (
+                  <span className="text-[10px] font-mono text-zinc-600">{convRate}%</span>
+                )}
+                <span className="font-mono text-xs font-semibold tabular-nums text-zinc-200">{step.value.toLocaleString()}</span>
+              </div>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-white/[0.04]">
+              <div className={`h-full rounded-full ${t.bar} transition-[width]`} style={{ width: `${pct}%` }} />
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

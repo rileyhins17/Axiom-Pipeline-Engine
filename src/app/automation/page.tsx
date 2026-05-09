@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Bot, Clock3, Mail, Pause, Play, Reply } from "lucide-react";
+import { BarChart3, Bot, Clock3, Mail, Pause, Play, Reply, TrendingUp } from "lucide-react";
 
 import { AUTOMATION_SETTINGS_DEFAULTS, MAILBOX_DAILY_SEND_TARGET } from "@/lib/automation-policy";
 import { EmergencyControlCard } from "@/components/emergency-control-card";
@@ -32,6 +32,124 @@ function emptyOverview() {
     stats: { ready: 0, queued: 0, sending: 0, waiting: 0, blocked: 0, active: 0, paused: 0, stopped: 0, completed: 0, replied: 0, scheduledToday: 0 },
     recentRuns: [],
   };
+}
+
+type PerformanceStats = {
+  totalSent: number; delivered: number; replied: number;
+  deliveryRate: number; replyRate: number;
+};
+type NichePerf = { niche: string; sent: number; replied: number; replyRate: number };
+type CityPerf = { city: string; sent: number; replied: number; replyRate: number };
+type HourBucket = { hour: number; count: number };
+type SuppressedLead = { id: number; businessName: string; email: string; reason: string };
+type StrategyPerf = { strategy: string; sent: number; replied: number; replyRate: number };
+
+async function getPerformanceStats(db: ReturnType<typeof getDatabase>): Promise<PerformanceStats> {
+  const row = await db.prepare(
+    `SELECT
+       COUNT(*) AS totalSent,
+       SUM(CASE WHEN "status" = 'sent' THEN 1 ELSE 0 END) AS delivered,
+       0 AS replied
+     FROM "OutreachEmail"
+     WHERE "status" IN ('sent', 'delivered')`,
+  ).first<{ totalSent: number; delivered: number; replied: number }>().catch(() => null);
+  const repliedRow = await db.prepare(
+    `SELECT COUNT(DISTINCT "leadId") AS replied FROM "Lead"
+     WHERE "outreachStatus" = 'REPLIED' AND "lastReplyAt" IS NOT NULL`,
+  ).first<{ replied: number }>().catch(() => null);
+  const totalSent = Number(row?.totalSent ?? 0);
+  const delivered = Number(row?.delivered ?? 0);
+  const replied = Number(repliedRow?.replied ?? 0);
+  return {
+    totalSent,
+    delivered,
+    replied,
+    deliveryRate: totalSent > 0 ? Math.round((delivered / totalSent) * 100) : 0,
+    replyRate: totalSent > 0 ? Math.round((replied / totalSent) * 100) : 0,
+  };
+}
+
+async function getNichePerformance(db: ReturnType<typeof getDatabase>): Promise<NichePerf[]> {
+  const rows = await db.prepare(
+    `SELECT l."niche",
+            COUNT(DISTINCT e."id") AS sent,
+            SUM(CASE WHEN l."outreachStatus" = 'REPLIED' THEN 1 ELSE 0 END) AS replied
+     FROM "OutreachEmail" e
+     JOIN "Lead" l ON e."leadId" = l."id"
+     WHERE e."status" = 'sent' AND l."niche" IS NOT NULL
+     GROUP BY l."niche"
+     ORDER BY sent DESC
+     LIMIT 10`,
+  ).all<{ niche: string; sent: number; replied: number }>().catch(() => ({ results: [] as { niche: string; sent: number; replied: number }[] }));
+  return (rows.results ?? []).map((r) => ({
+    ...r, sent: Number(r.sent), replied: Number(r.replied),
+    replyRate: Number(r.sent) > 0 ? Math.round((Number(r.replied) / Number(r.sent)) * 100) : 0,
+  }));
+}
+
+async function getCityPerformance(db: ReturnType<typeof getDatabase>): Promise<CityPerf[]> {
+  const rows = await db.prepare(
+    `SELECT l."city",
+            COUNT(DISTINCT e."id") AS sent,
+            SUM(CASE WHEN l."outreachStatus" = 'REPLIED' THEN 1 ELSE 0 END) AS replied
+     FROM "OutreachEmail" e
+     JOIN "Lead" l ON e."leadId" = l."id"
+     WHERE e."status" = 'sent' AND l."city" IS NOT NULL
+     GROUP BY l."city"
+     ORDER BY sent DESC
+     LIMIT 10`,
+  ).all<{ city: string; sent: number; replied: number }>().catch(() => ({ results: [] as { city: string; sent: number; replied: number }[] }));
+  return (rows.results ?? []).map((r) => ({
+    ...r, sent: Number(r.sent), replied: Number(r.replied),
+    replyRate: Number(r.sent) > 0 ? Math.round((Number(r.replied) / Number(r.sent)) * 100) : 0,
+  }));
+}
+
+async function getSendWindowData(db: ReturnType<typeof getDatabase>): Promise<HourBucket[]> {
+  const rows = await db.prepare(
+    `SELECT CAST(strftime('%H', "sentAt") AS INTEGER) AS hour, COUNT(*) AS count
+     FROM "OutreachEmail"
+     WHERE "status" = 'sent' AND "sentAt" IS NOT NULL
+     GROUP BY hour ORDER BY hour`,
+  ).all<{ hour: number; count: number }>().catch(() => ({ results: [] as { hour: number; count: number }[] }));
+  return (rows.results ?? []).map((r) => ({ hour: Number(r.hour), count: Number(r.count) }));
+}
+
+async function getSuppressedLeads(db: ReturnType<typeof getDatabase>): Promise<SuppressedLead[]> {
+  const rows = await db.prepare(
+    `SELECT l."id", l."businessName", l."email",
+            CASE
+              WHEN l."outreachStatus" = 'BOUNCED' THEN 'Bounced'
+              WHEN l."outreachStatus" = 'OPTED_OUT' THEN 'Opted out'
+              WHEN l."outreachStatus" = 'SUPPRESSED' THEN 'Suppressed'
+              WHEN l."isArchived" = 1 THEN 'Archived'
+              ELSE 'Blocked'
+            END AS reason
+     FROM "Lead" l
+     WHERE l."outreachStatus" IN ('BOUNCED', 'OPTED_OUT', 'SUPPRESSED')
+        OR (l."isArchived" = 1 AND l."email" IS NOT NULL)
+     ORDER BY l."updatedAt" DESC
+     LIMIT 50`,
+  ).all<SuppressedLead>().catch(() => ({ results: [] as SuppressedLead[] }));
+  return rows.results ?? [];
+}
+
+async function getStrategyPerformance(db: ReturnType<typeof getDatabase>): Promise<StrategyPerf[]> {
+  const rows = await db.prepare(
+    `SELECT l."engagementType" AS strategy,
+            COUNT(DISTINCT e."id") AS sent,
+            SUM(CASE WHEN l."outreachStatus" = 'REPLIED' THEN 1 ELSE 0 END) AS replied
+     FROM "OutreachEmail" e
+     JOIN "Lead" l ON e."leadId" = l."id"
+     WHERE e."status" = 'sent'
+     GROUP BY l."engagementType"
+     ORDER BY sent DESC`,
+  ).all<{ strategy: string | null; sent: number; replied: number }>().catch(() => ({ results: [] as { strategy: string | null; sent: number; replied: number }[] }));
+  return (rows.results ?? []).map((r) => ({
+    strategy: r.strategy || "Default",
+    sent: Number(r.sent), replied: Number(r.replied),
+    replyRate: Number(r.sent) > 0 ? Math.round((Number(r.replied) / Number(r.sent)) * 100) : 0,
+  }));
 }
 
 async function listFallbackMailboxes() {
@@ -114,6 +232,16 @@ export default async function AutomationPage() {
     fallback.mailboxes = await listFallbackMailboxes().catch(() => []);
     return fallback;
   });
+
+  const db = getDatabase();
+  const [perfStats, nichePerf, cityPerf, sendWindow, suppressed, strategyPerf] = await Promise.all([
+    getPerformanceStats(db),
+    getNichePerformance(db),
+    getCityPerformance(db),
+    getSendWindowData(db),
+    getSuppressedLeads(db),
+    getStrategyPerformance(db),
+  ]);
 
   const queued = overview.sequences.filter((s) => s.state === "QUEUED");
   const waiting = overview.sequences.filter((s) => s.state === "WAITING");
@@ -239,6 +367,129 @@ export default async function AutomationPage() {
         <SequenceList title="Blocked" subtitle={`${blocked.length} need attention`} sequences={blocked} tone="amber" empty="None blocked." />
       </section>
 
+      {/* Performance Analytics */}
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Stat label="Total sent" value={perfStats.totalSent} icon={<Mail className="size-4" />} tone="cyan" />
+        <Stat label="Delivered" value={perfStats.delivered} icon={<TrendingUp className="size-4" />} tone="emerald" />
+        <Stat label="Replies" value={perfStats.replied} icon={<Reply className="size-4" />} tone="violet" />
+        <div className="v2-stat stat-card">
+          <div className="flex items-center justify-between text-zinc-500">
+            <span className="text-[11px] font-medium uppercase tracking-[0.16em]">Reply rate</span>
+            <BarChart3 className="size-4 text-emerald-300" />
+          </div>
+          <div className="mt-2 font-mono text-3xl font-semibold tabular-nums text-emerald-300">{perfStats.replyRate}%</div>
+        </div>
+      </section>
+
+      {/* Niche & City Heatmap */}
+      <section className="grid gap-4 xl:grid-cols-2">
+        <Card title="Niche performance" subtitle="Reply rates by niche">
+          <div className="space-y-2">
+            {nichePerf.length === 0 ? (
+              <Empty>No niche data yet.</Empty>
+            ) : (
+              nichePerf.map((n) => (
+                <div key={n.niche} className="flex items-center justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-white truncate">{n.niche}</span>
+                      <span className="font-mono text-[11px] text-zinc-400 shrink-0 ml-2">{n.sent} sent</span>
+                    </div>
+                    <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/[0.05]">
+                      <div className="h-full bg-cyan-400 progress-animate" style={{ width: `${n.replyRate}%` }} />
+                    </div>
+                  </div>
+                  <span className="font-mono text-sm font-semibold tabular-nums text-cyan-300 shrink-0 w-10 text-right">{n.replyRate}%</span>
+                </div>
+              ))
+            )}
+          </div>
+        </Card>
+
+        <Card title="City performance" subtitle="Reply rates by city">
+          <div className="space-y-2">
+            {cityPerf.length === 0 ? (
+              <Empty>No city data yet.</Empty>
+            ) : (
+              cityPerf.map((c) => (
+                <div key={c.city} className="flex items-center justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-white truncate">{c.city}</span>
+                      <span className="font-mono text-[11px] text-zinc-400 shrink-0 ml-2">{c.sent} sent</span>
+                    </div>
+                    <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/[0.05]">
+                      <div className="h-full bg-violet-400 progress-animate" style={{ width: `${c.replyRate}%` }} />
+                    </div>
+                  </div>
+                  <span className="font-mono text-sm font-semibold tabular-nums text-violet-300 shrink-0 w-10 text-right">{c.replyRate}%</span>
+                </div>
+              ))
+            )}
+          </div>
+        </Card>
+      </section>
+
+      {/* Send Window & Strategy */}
+      <section className="grid gap-4 xl:grid-cols-2">
+        <Card title="Send window" subtitle="Distribution by hour (UTC)">
+          {sendWindow.length === 0 ? (
+            <Empty>No send data yet.</Empty>
+          ) : (
+            <SendWindowChart data={sendWindow} />
+          )}
+        </Card>
+
+        <Card title="Strategy performance" subtitle="Reply rates by engagement approach">
+          <div className="space-y-3">
+            {strategyPerf.length === 0 ? (
+              <Empty>No strategy data yet.</Empty>
+            ) : (
+              strategyPerf.map((s) => (
+                <div key={s.strategy} className="rounded-md border border-white/[0.06] bg-black/20 p-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-white">{s.strategy}</span>
+                    <span className="font-mono text-sm font-semibold text-emerald-300">{s.replyRate}%</span>
+                  </div>
+                  <div className="mt-1.5 flex items-center gap-4 text-[11px] text-zinc-500">
+                    <span>{s.sent} sent</span>
+                    <span>{s.replied} replied</span>
+                  </div>
+                  <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/[0.05]">
+                    <div className="h-full bg-emerald-400 progress-animate" style={{ width: `${s.replyRate}%` }} />
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </Card>
+      </section>
+
+      {/* Suppression List */}
+      <Card title="Suppression list" subtitle={`${suppressed.length} suppressed contacts`}>
+        <div className="divide-y divide-white/[0.06]">
+          {suppressed.length === 0 ? (
+            <Empty>No suppressed contacts.</Empty>
+          ) : (
+            suppressed.map((s) => (
+              <div key={s.id} className="flex items-center justify-between gap-3 py-2.5">
+                <div className="min-w-0">
+                  <div className="truncate text-sm text-white">{s.businessName}</div>
+                  <div className="truncate font-mono text-[11px] text-zinc-500">{s.email || "No email"}</div>
+                </div>
+                <span className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
+                  s.reason === "Bounced" ? "border-red-500/20 bg-red-500/10 text-red-300" :
+                  s.reason === "Opted out" ? "border-amber-500/20 bg-amber-500/10 text-amber-300" :
+                  "border-zinc-600/20 bg-zinc-600/10 text-zinc-400"
+                }`}>
+                  {s.reason}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+      </Card>
+
       <footer className="rounded-md border border-white/[0.06] bg-[#0b131d] p-4 text-[11px] text-zinc-500">
         <span className="text-zinc-300">Caps:</span> {MAILBOX_DAILY_SEND_TARGET}/day per mailbox · {MAILBOX_DAILY_SEND_TARGET * 2}/day total ·
         sends only to owner/staff inboxes (no info@ / contact@ / etc.). Engine is fully autonomous; no manual queueing or sending.
@@ -360,6 +611,36 @@ function Bar({ label, pct, value, tone }: { label: string; pct: number; value: s
       <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/[0.05]">
         <div className={`h-full ${bar} progress-animate`} style={{ width: `${pct}%` }} />
       </div>
+    </div>
+  );
+}
+
+function SendWindowChart({ data }: { data: HourBucket[] }) {
+  const maxCount = Math.max(1, ...data.map((d) => d.count));
+  const hours = Array.from({ length: 24 }, (_, i) => {
+    const bucket = data.find((d) => d.hour === i);
+    return { hour: i, count: bucket?.count ?? 0 };
+  });
+
+  return (
+    <div className="flex items-end gap-[3px] h-24">
+      {hours.map((h) => {
+        const pct = (h.count / maxCount) * 100;
+        const isActive = h.hour >= 9 && h.hour <= 17;
+        return (
+          <div key={h.hour} className="flex-1 flex flex-col items-center gap-1 group relative">
+            <div
+              className={`w-full min-w-[6px] rounded-t transition-all ${
+                isActive ? "bg-cyan-400/80" : "bg-white/10"
+              }`}
+              style={{ height: `${Math.max(2, pct)}%` }}
+            />
+            {h.hour % 3 === 0 && (
+              <span className="text-[8px] text-zinc-600 font-mono">{h.hour}h</span>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
