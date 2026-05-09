@@ -84,6 +84,12 @@ function toInputDate(d: Date | string | null | undefined) {
   return date.toISOString().slice(0, 10);
 }
 
+function toTime(d: Date | string | null | undefined) {
+  if (!d) return 0;
+  const date = d instanceof Date ? d : new Date(d);
+  return isNaN(date.getTime()) ? 0 : date.getTime();
+}
+
 // ---------- Deal Card ----------
 
 function DealCard({
@@ -775,12 +781,12 @@ function exportClientsCsv(leads: CrmLead[]) {
     l.businessName, l.city, l.niche, l.dealStage ?? "", l.engagementType ?? "",
     l.monthlyValue ?? "", l.clientPriority ?? "", l.contactName ?? "",
     l.email ?? "", l.phone ?? "", l.websiteUrl ?? "", l.nextAction ?? "",
-    l.nextActionDueAt ? new Date(l.nextActionDueAt as string).toISOString().slice(0, 10) : "",
+    toInputDate(l.nextActionDueAt),
     l.dealStage ? computeDealHealth(l) : "",
-    l.proposalSentAt ? new Date(l.proposalSentAt as string).toISOString().slice(0, 10) : "",
-    l.signedAt ? new Date(l.signedAt as string).toISOString().slice(0, 10) : "",
-    l.projectStartDate ? new Date(l.projectStartDate as string).toISOString().slice(0, 10) : "",
-    l.renewalDate ? new Date(l.renewalDate as string).toISOString().slice(0, 10) : "",
+    toInputDate(l.proposalSentAt),
+    toInputDate(l.signedAt),
+    toInputDate(l.projectStartDate),
+    toInputDate(l.renewalDate),
     l.projectNotes ?? "",
   ].map((v) => escCsv(String(v ?? ""))).join(","));
   const csv = [headers.join(","), ...rows].join("\n");
@@ -904,8 +910,8 @@ export function ClientsBoard({ initialLeads }: { initialLeads: CrmLead[] }) {
         return d !== null && d >= -7 && d <= 90;
       })
       .sort((a, b) => {
-        const da = new Date(a.renewalDate as string).getTime();
-        const db = new Date(b.renewalDate as string).getTime();
+        const da = toTime(a.renewalDate);
+        const db = toTime(b.renewalDate);
         return da - db;
       }),
     [leads],

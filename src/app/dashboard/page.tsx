@@ -230,7 +230,25 @@ async function get7DaySeries(): Promise<{
   };
 }
 
-async function getCrmStats() {
+type CrmStats = {
+  mrr: number;
+  activeClients: number;
+  inPipeline: number;
+  renewalsDue: number;
+  lostDeals: number;
+  forecast: number;
+};
+
+const EMPTY_CRM_STATS: CrmStats = {
+  mrr: 0,
+  activeClients: 0,
+  inPipeline: 0,
+  renewalsDue: 0,
+  lostDeals: 0,
+  forecast: 0,
+};
+
+async function getCrmStats(): Promise<CrmStats> {
   const db = getDatabase();
   const now = new Date().toISOString();
   const in30 = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
@@ -285,6 +303,8 @@ type ReplyInboxItem = {
   email: string | null;
   lastReplyAt: string | null;
   dealStage: string | null;
+  replyAgeLabel: string;
+  replyAgeHours: number;
 };
 
 async function getReplyInbox(): Promise<ReplyInboxItem[]> {
@@ -295,8 +315,20 @@ async function getReplyInbox(): Promise<ReplyInboxItem[]> {
     WHERE outreachStatus = 'REPLIED' AND dealStage IS NULL AND isArchived = 0
     ORDER BY lastReplyAt DESC
     LIMIT 10
-  `).all<ReplyInboxItem>();
-  return result.results ?? [];
+  `).all<Omit<ReplyInboxItem, "replyAgeLabel" | "replyAgeHours">>();
+
+  const nowMs = Date.now();
+  return (result.results ?? []).map((item) => {
+    const replyAge = item.lastReplyAt ? nowMs - new Date(item.lastReplyAt).getTime() : 0;
+    const mins = Math.max(0, Math.floor(replyAge / 60_000));
+    const hours = Math.floor(mins / 60);
+    const days = Math.floor(hours / 24);
+    return {
+      ...item,
+      replyAgeLabel: days > 0 ? `${days}d ago` : hours > 0 ? `${hours}h ago` : mins > 0 ? `${mins}m ago` : "just now",
+      replyAgeHours: hours,
+    };
+  });
 }
 
 async function getConversionFunnel() {
@@ -472,7 +504,7 @@ export default async function DashboardPage() {
       sent: Array(7).fill(0),
       replied: Array(7).fill(0),
     })),
-    getCrmStats().catch(() => ({ mrr: 0, activeClients: 0, inPipeline: 0, renewalsDue: 0, lostDeals: 0 })),
+    getCrmStats().catch(() => EMPTY_CRM_STATS),
     getFollowUpItems().catch(() => emptyFollowUps),
     // Direct mailbox-table check — independent of listAutomationOverview()
     // so a broken helper doesn't make the banner falsely show "not connected".
@@ -700,12 +732,7 @@ export default async function DashboardPage() {
           </header>
           <div className="divide-y divide-white/[0.05]">
             {replyInbox.map((item) => {
-              const replyAge = item.lastReplyAt ? Date.now() - new Date(item.lastReplyAt).getTime() : 0;
-              const mins = Math.floor(replyAge / 60_000);
-              const hours = Math.floor(mins / 60);
-              const days = Math.floor(hours / 24);
-              const ageLabel = days > 0 ? `${days}d ago` : hours > 0 ? `${hours}h ago` : mins > 0 ? `${mins}m ago` : "just now";
-              const urgency = hours >= 4 ? "text-red-400" : hours >= 1 ? "text-amber-400" : "text-emerald-400";
+              const urgency = item.replyAgeHours >= 4 ? "text-red-400" : item.replyAgeHours >= 1 ? "text-amber-400" : "text-emerald-400";
               return (
                 <Link key={item.id} href={`/clients/${item.id}`} className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-white/[0.02] transition-colors">
                   <div className="min-w-0">
@@ -713,8 +740,8 @@ export default async function DashboardPage() {
                     <div className="text-[11px] text-zinc-500 truncate">{item.city} · {item.niche}{item.email ? ` · ${item.email}` : ""}</div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    <span className={`font-mono text-[11px] font-medium ${urgency}`}>{ageLabel}</span>
-                    <span className={`inline-flex h-2 w-2 rounded-full ${hours >= 4 ? "bg-red-400" : hours >= 1 ? "bg-amber-400" : "bg-emerald-400"}`} />
+                    <span className={`font-mono text-[11px] font-medium ${urgency}`}>{item.replyAgeLabel}</span>
+                    <span className={`inline-flex h-2 w-2 rounded-full ${item.replyAgeHours >= 4 ? "bg-red-400" : item.replyAgeHours >= 1 ? "bg-amber-400" : "bg-emerald-400"}`} />
                   </div>
                 </Link>
               );
@@ -956,7 +983,7 @@ function FollowUpsPanel({ data }: { data: { overdue: FollowUpItem[]; dueToday: F
   );
 }
 
-type ToneKey = "emerald" | "cyan" | "violet" | "blue" | "amber" | "red";
+type ToneKey = "emerald" | "cyan" | "violet" | "blue" | "amber" | "red" | "zinc";
 
 const TONE: Record<ToneKey, { ring: string; bar: string; text: string; bg: string; border: string }> = {
   emerald: {
@@ -971,6 +998,7 @@ const TONE: Record<ToneKey, { ring: string; bar: string; text: string; bg: strin
   blue: { ring: "stroke-blue-400", bar: "bg-blue-400", text: "text-blue-300", bg: "bg-blue-400/10", border: "border-blue-400/30" },
   amber: { ring: "stroke-amber-400", bar: "bg-amber-400", text: "text-amber-300", bg: "bg-amber-400/10", border: "border-amber-400/30" },
   red: { ring: "stroke-red-400", bar: "bg-red-400", text: "text-red-300", bg: "bg-red-400/10", border: "border-red-400/30" },
+  zinc: { ring: "stroke-zinc-500", bar: "bg-zinc-500", text: "text-zinc-300", bg: "bg-zinc-500/10", border: "border-zinc-500/30" },
 };
 
 function Panel({
