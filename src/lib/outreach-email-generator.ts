@@ -478,25 +478,46 @@ function buildPlanBasedInitialEmail(
     : niche.toLowerCase() || (city ? `local businesses in ${city}` : "");
 
   // --- Opening line: prove you looked at their specific business ---
+  const openerSeed = stableHashFromLeadId(lead.id);
   let openingLine: string;
   if (lead.websiteStatus === "MISSING") {
     openingLine = nicheCity
-      ? `I was searching for ${nicheCity} and couldn't find a clear website for ${lead.businessName}.`
+      ? [
+          `I was searching for ${nicheCity} and couldn't find a clear website for ${lead.businessName}.`,
+          `Looked up ${nicheCity} options and ${lead.businessName} didn't have a clear site to land on.`,
+          `Searching for ${nicheCity} didn't turn up a proper website for ${lead.businessName}.`,
+        ][openerSeed % 3]
       : `I came across ${lead.businessName} and couldn't find a proper website for the business.`;
   } else if (plan.strategy === "observation_based") {
     if (nicheCity && domain) {
-      openingLine = `I was looking at ${nicheCity} and clicked through ${domain}.`;
+      openingLine = [
+        `I was looking at ${nicheCity} and clicked through ${domain}.`,
+        `Came across ${domain} while browsing ${nicheCity} options.`,
+        `Had a quick look at ${domain} while going through ${nicheCity} listings.`,
+      ][openerSeed % 3];
     } else if (domain) {
-      openingLine = `I was looking through ${domain} and noticed one thing.`;
+      openingLine = [
+        `I was looking through ${domain} and noticed one thing.`,
+        `Spent a minute on ${domain} today.`,
+        `Had a quick look at ${domain} earlier.`,
+      ][openerSeed % 3];
     } else {
       openingLine = `I came across ${lead.businessName} in ${city || "your area"} and had one quick thought.`;
     }
   } else {
     // curiosity_based — domain-anchored but soft
     if (domain && nicheCity) {
-      openingLine = `I came across ${domain} while looking at ${nicheCity}.`;
+      openingLine = [
+        `I came across ${domain} while looking at ${nicheCity}.`,
+        `Ran into ${domain} while browsing ${nicheCity} options.`,
+        `Spent a minute on ${domain} while looking at ${nicheCity} listings.`,
+      ][openerSeed % 3];
     } else if (domain) {
-      openingLine = `I was looking through ${domain} and had one quick thought.`;
+      openingLine = [
+        `I was looking through ${domain} and had one quick thought.`,
+        `Spent a minute on ${domain} today.`,
+        `Had a quick look at ${domain} earlier.`,
+      ][openerSeed % 3];
     } else {
       openingLine = `I came across ${lead.businessName} in ${city || "your area"} and had one quick thought.`;
     }
@@ -516,13 +537,16 @@ function buildPlanBasedInitialEmail(
     ? cleanEmailLine(rawConsequence, "")
     : "";
 
-  // --- CTA: low-friction, varied by type ---
+  // --- CTA: low-friction, rotated across leads ---
   const ctaLine =
     plan.CTA_type === "soft_call"
       ? "Open to me walking you through what I'd fix?"
-      : plan.CTA_type === "observation_offer"
-      ? "Worth me sending over the 2 or 3 things I'd change?"
-      : "Happy to send over what I noticed if it's useful.";
+      : [
+          "Worth me sending over the 2 or 3 things I'd change?",
+          "Want me to send over what I'd fix?",
+          "Happy to send a couple of thoughts if that's useful.",
+          "Open to me sharing what I noticed?",
+        ][openerSeed % 4];
 
   const bodyParts = [greeting, "", openingLine, observationLine];
   if (consequenceLine) bodyParts.push(consequenceLine);

@@ -209,12 +209,21 @@ function getObservationFromAssessment(lead: LeadRecord, assessment: WebsiteAsses
   }
 
   const reviewCount = Number(lead.reviewCount || 0);
+  const s = Number(lead.id || 0);
 
   if (assessment.conversionRisk >= 4) {
     return {
       observedIssue: "The contact or quote path looks more complicated than it needs to be.",
-      observationHint: "The contact or quote path feels like it takes more effort than it should, especially for someone already close to reaching out.",
-      consequenceHint: "That kind of friction can slow people down right at the point where they are ready to reach out.",
+      observationHint: [
+        "Getting a quote looks like it takes more steps than most people will bother with.",
+        "The contact path has a couple of extra steps that might be losing requests.",
+        "Reaching out looks like it takes more effort than most visitors will push through.",
+      ][s % 3],
+      consequenceHint: [
+        "Even one extra step at that point makes people bounce.",
+        "Most mobile visitors won't push through more than a couple of taps.",
+        "That friction tends to cost more quote requests than most owners expect.",
+      ][s % 3],
       evidence: `Website assessment flagged conversion risk ${assessment.conversionRisk}/10.`,
       strength: 88,
       softened: assessment.conversionRisk < 6,
@@ -224,8 +233,16 @@ function getObservationFromAssessment(lead: LeadRecord, assessment: WebsiteAsses
   if (assessment.trustRisk >= 4 && reviewCount >= 8) {
     return {
       observedIssue: "The website does not fully surface the trust the business has already built.",
-      observationHint: "The site does not fully reflect the trust the business has already built elsewhere, especially for a first-time visitor.",
-      consequenceHint: "That can make a new visitor pause longer than they should before taking the next step.",
+      observationHint: [
+        "The site doesn't really show how established the business is, and the reviews don't come through clearly.",
+        "Someone arriving cold wouldn't get a strong sense of how much work the business has behind it.",
+        "The site undersells how established the business already is.",
+      ][s % 3],
+      consequenceHint: [
+        "New visitors comparing options need those signals near the top.",
+        "People deciding quickly won't dig for that context.",
+        "First-time visitors decide fast, so that context matters.",
+      ][s % 3],
       evidence: `Trust risk ${assessment.trustRisk}/10 with ${reviewCount} Google reviews.`,
       strength: 84,
       softened: assessment.trustRisk < 6,
@@ -235,8 +252,16 @@ function getObservationFromAssessment(lead: LeadRecord, assessment: WebsiteAsses
   if (assessment.speedRisk >= 4) {
     return {
       observedIssue: "The site feels slower than it needs to on first load.",
-      observationHint: "The site feels a bit slower than it should on first load, especially on mobile.",
-      consequenceHint: "That can make the site feel less clear and dependable before the main content is even seen.",
+      observationHint: [
+        "First load on mobile took a noticeable few seconds.",
+        "Load time on mobile is a bit slow, and most visitors won't wait for it.",
+        "The page is a bit slow to come up on mobile, which tends to lose people early.",
+      ][s % 3],
+      consequenceHint: [
+        "Most mobile visitors won't wait more than two seconds.",
+        "Slow loads on mobile push people back to search.",
+        "That tends to lose visitors before they even see the content.",
+      ][s % 3],
       evidence: `Speed risk ${assessment.speedRisk}/10.`,
       strength: 78,
       softened: assessment.speedRisk < 6,
@@ -246,8 +271,16 @@ function getObservationFromAssessment(lead: LeadRecord, assessment: WebsiteAsses
   if (assessment.seoRisk >= 4) {
     return {
       observedIssue: "Important service information feels harder to scan than it should be.",
-      observationHint: "Some of the service information feels thinner or harder to scan than it could be.",
-      consequenceHint: "That can make it harder for people to tell quickly whether they should reach out.",
+      observationHint: [
+        "Some of the service information feels thinner or harder to scan than it could be.",
+        "Key service details are harder to find than they probably need to be.",
+        "The service pages are a bit thin on the details people typically look for.",
+      ][s % 3],
+      consequenceHint: [
+        "People searching for specifics won't find what they need to decide.",
+        "Visitors tend to need a bit more context before they reach out.",
+        "That can make it harder for people to decide quickly whether to contact you.",
+      ][s % 3],
       evidence: `SEO/content risk ${assessment.seoRisk}/10.`,
       strength: 74,
       softened: true,
@@ -264,14 +297,23 @@ function getObservationFromPainSignals(lead: LeadRecord, painSignals: PainSignal
   }
 
   const softened = strongest.severity < 4;
+  const s = Number(lead.id || 0);
 
   switch (strongest.type) {
     case "CONVERSION":
     case "CONTACT":
       return {
         observedIssue: "The contact path may be creating more friction than it should.",
-        observationHint: "The contact path may be creating more friction than it should for someone ready to reach out.",
-        consequenceHint: "Even small bits of friction there can be enough to slow down replies or quote requests.",
+        observationHint: [
+          "Getting a quote or reaching out takes more clicks than it probably needs to.",
+          "The path to contact feels a step or two longer than it needs to be.",
+          "Reaching out looks like it takes more effort than most visitors will bother with.",
+        ][s % 3],
+        consequenceHint: [
+          "Even one extra step at that point makes people bounce.",
+          "Most people on mobile won't push through more than a couple of steps.",
+          "That friction tends to cost more quote requests than most owners expect.",
+        ][s % 3],
         evidence: strongest.evidence || "Stored pain signals suggest contact or conversion friction.",
         strength: 82,
         softened,
@@ -279,8 +321,16 @@ function getObservationFromPainSignals(lead: LeadRecord, painSignals: PainSignal
     case "TRUST":
       return {
         observedIssue: "Trust signals feel buried or not surfaced clearly enough.",
-        observationHint: "The site feels like it could bring trust signals forward much earlier.",
-        consequenceHint: "That can slow down new visitors who are trying to decide quickly.",
+        observationHint: [
+          "The site feels like it could bring trust signals forward much earlier.",
+          "The reviews and work history don't come through clearly enough from the homepage.",
+          "Someone landing cold wouldn't get a strong sense of how established the business is.",
+        ][s % 3],
+        consequenceHint: [
+          "That can slow down new visitors who are trying to decide quickly.",
+          "First-time visitors decide fast, so those signals matter near the top.",
+          "People comparing a few options won't dig for that context.",
+        ][s % 3],
         evidence: strongest.evidence || "Stored pain signals suggest trust friction.",
         strength: 79,
         softened,
@@ -288,8 +338,16 @@ function getObservationFromPainSignals(lead: LeadRecord, painSignals: PainSignal
     case "SPEED":
       return {
         observedIssue: "The site may feel slower than it should.",
-        observationHint: "The site feels like it may be carrying some speed friction.",
-        consequenceHint: "That can make the site feel less reliable before the main information is even seen.",
+        observationHint: [
+          "The site feels like it may be carrying some speed friction.",
+          "First load on mobile took a noticeable few seconds.",
+          "The page is a bit slow coming up, especially on mobile.",
+        ][s % 3],
+        consequenceHint: [
+          "Most mobile visitors won't wait more than two seconds.",
+          "Slow loads on mobile push people back to search.",
+          "That tends to lose visitors before they even see the content.",
+        ][s % 3],
         evidence: strongest.evidence || "Stored pain signals suggest speed risk.",
         strength: 76,
         softened: true,
@@ -297,8 +355,16 @@ function getObservationFromPainSignals(lead: LeadRecord, painSignals: PainSignal
     case "DESIGN":
       return {
         observedIssue: "The site does not fully reflect the quality of the business.",
-        observationHint: "The site does not fully reflect the quality of the business itself.",
-        consequenceHint: "That mismatch can make a new customer hesitate a little longer than they should.",
+        observationHint: [
+          "The site does not fully reflect the quality of the business itself.",
+          "The site looks a bit dated compared to the work you're doing.",
+          "The site doesn't quite match the level of what the business actually does.",
+        ][s % 3],
+        consequenceHint: [
+          "That mismatch can make a new customer hesitate a little longer than they should.",
+          "New customers use the site to judge the quality of the work.",
+          "People compare options fast, and the site is often the first thing they judge.",
+        ][s % 3],
         evidence: strongest.evidence || "Stored pain signals suggest visible quality issues.",
         strength: 77,
         softened: true,
@@ -306,8 +372,16 @@ function getObservationFromPainSignals(lead: LeadRecord, painSignals: PainSignal
     case "FUNCTIONALITY":
       return {
         observedIssue: "Key parts of the site experience feel less direct than they could be.",
-        observationHint: "A few parts of the site flow feel less direct than they could be.",
-        consequenceHint: "That can add friction for people trying to take the next step.",
+        observationHint: [
+          "A few parts of the site flow feel less direct than they could be.",
+          "A couple of steps in the site experience feel a bit clunky.",
+          "There are a few spots where the site flow breaks down a little.",
+        ][s % 3],
+        consequenceHint: [
+          "That can add friction for people trying to take the next step.",
+          "Friction at those points tends to stop people who were close to reaching out.",
+          "Most people won't look for a workaround, they'll just leave.",
+        ][s % 3],
         evidence: strongest.evidence || "Stored pain signals suggest functionality issues.",
         strength: 78,
         softened: true,
@@ -315,8 +389,16 @@ function getObservationFromPainSignals(lead: LeadRecord, painSignals: PainSignal
     case "NO_WEBSITE":
       return {
         observedIssue: "No clear website surfaced for the business.",
-        observationHint: "I could not find a clear website that really shows the business online.",
-        consequenceHint: "That can make it harder for new customers to understand the work or know where to start.",
+        observationHint: [
+          "I could not find a clear website that really shows the business online.",
+          "There's no clear site that explains the business for someone looking you up.",
+          "Searching for the business doesn't bring up a clear site to land on.",
+        ][s % 3],
+        consequenceHint: [
+          "That can make it harder for new customers to understand the work or know where to start.",
+          "New customers searching for the business don't have a clear place to land.",
+          "People who want to reach out have nowhere obvious to go.",
+        ][s % 3],
         evidence: strongest.evidence || "Stored pain signals indicate no website.",
         strength: 72,
         softened: true,
