@@ -649,14 +649,26 @@ function InboxSection({
   leads,
   onEdit,
   onQuickUpdate,
+  onReset,
   saving,
 }: {
   leads: CrmLead[];
   onEdit: (lead: CrmLead) => void;
   onQuickUpdate: (leadId: number, update: Record<string, unknown>) => Promise<void>;
+  onReset: () => Promise<void>;
   saving: boolean;
 }) {
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [resetting, setResetting] = useState(false);
+
   if (leads.length === 0) return null;
+
+  const handleReset = async () => {
+    setResetting(true);
+    await onReset();
+    setResetting(false);
+    setConfirmReset(false);
+  };
 
   return (
     <div className="mb-6">
@@ -667,6 +679,41 @@ function InboxSection({
           {leads.length}
         </span>
         <span className="text-xs text-zinc-500">Replied or interested — move to a stage to track</span>
+        <div className="ml-auto flex items-center gap-2">
+          {confirmReset ? (
+            <>
+              <span className="flex items-center gap-1 text-[11px] text-amber-400">
+                <AlertCircle className="size-3" />
+                Reset all {leads.length} inbox leads?
+              </span>
+              <button
+                type="button"
+                disabled={resetting}
+                onClick={() => void handleReset()}
+                className="rounded px-2 py-0.5 text-[11px] font-medium text-red-300 border border-red-500/30 hover:bg-red-500/10 transition disabled:opacity-50 cursor-pointer"
+              >
+                {resetting ? "Resetting…" : "Yes, reset"}
+              </button>
+              <button
+                type="button"
+                disabled={resetting}
+                onClick={() => setConfirmReset(false)}
+                className="rounded px-2 py-0.5 text-[11px] font-medium text-zinc-400 border border-white/[0.08] hover:bg-white/[0.04] transition disabled:opacity-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmReset(true)}
+              className="flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium text-zinc-500 border border-white/[0.06] hover:border-white/[0.12] hover:text-zinc-300 transition cursor-pointer"
+            >
+              <RefreshCw className="size-3" />
+              Reset inbox
+            </button>
+          )}
+        </div>
       </div>
       <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
         {leads.map((lead) => (
@@ -823,6 +870,14 @@ export function ClientsBoard({ initialLeads }: { initialLeads: CrmLead[] }) {
     }
     return map;
   }, [leads]);
+
+  const handleResetInbox = useCallback(async () => {
+    const res = await fetch("/api/leads/inbox/reset", { method: "POST" });
+    if (!res.ok) return;
+    setLeads((prev) =>
+      prev.filter((l) => l.dealStage !== null || (l.outreachStatus !== "REPLIED" && l.outreachStatus !== "INTERESTED")),
+    );
+  }, []);
 
   const handleSave = useCallback(async (leadId: number, update: Record<string, unknown>) => {
     setSaving(true);
@@ -982,7 +1037,7 @@ export function ClientsBoard({ initialLeads }: { initialLeads: CrmLead[] }) {
         </div>
       )}
 
-      <InboxSection leads={inboxLeads} onEdit={setEditing} onQuickUpdate={handleSave} saving={saving} />
+      <InboxSection leads={inboxLeads} onEdit={setEditing} onQuickUpdate={handleSave} onReset={handleResetInbox} saving={saving} />
 
       {/* Kanban board with drag-and-drop */}
       <div className="flex gap-4 overflow-x-auto pb-4">
