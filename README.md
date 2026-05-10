@@ -12,21 +12,27 @@ Private internal Axiom lead-finding and enrichment dashboard, prepared for deplo
 
 ## Local Development
 
-1. Copy [`.env.example`](./.env.example) to `.env` and fill in real values.
-2. Copy [`.dev.vars.example`](./.dev.vars.example) to `.dev.vars` for local Cloudflare-style runtime values.
+1. Copy [`.env.example`](./.env.example) to `.env.development` and fill in real values.
+2. Copy [`.dev.vars.example`](./.dev.vars.example) to `.dev.vars`. This selects the `.env.development` runtime for OpenNext/Wrangler local preview.
 3. Apply the local D1 schema used by Wrangler-backed local dev:
 
 ```bash
 wrangler d1 migrations apply axiom-ops-omniscient --local
 ```
 
-4. Start the dev server:
+4. Start the fast Next.js dev server:
 
 ```bash
 npm run dev
 ```
 
 5. Open [http://localhost:3000/sign-in](http://localhost:3000/sign-in).
+
+For a production-shaped local smoke test with Cloudflare bindings and local D1, run:
+
+```bash
+npm run preview
+```
 
 ## Worker Studio
 
@@ -59,7 +65,7 @@ Notes:
 - Local auth requires `BETTER_AUTH_SECRET`.
 - Sign-up is restricted to `AUTH_ALLOWED_EMAILS`.
 - Admin permissions are granted to emails listed in `AUTH_ADMIN_EMAILS`.
-- `next dev` runs with OpenNext Cloudflare bindings enabled, so `.dev.vars` and local D1 are the default runtime path.
+- `npm run dev` uses plain Next.js with webpack for fast UI work. Use `npm run preview` when you need OpenNext Cloudflare bindings and local D1.
 - Local scraping falls back to Playwright. Cloudflare deploys use the Browser Rendering binding instead.
 - The app runtime reads the Cloudflare `DB` binding directly. There is no Prisma client generation step anymore.
 - On this Windows host, OpenNext still warns that WSL/Linux is the safer environment for production-style builds, even though the validated build path now succeeds locally.

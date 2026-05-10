@@ -2,7 +2,7 @@
 
 ## 1. Create local env files
 
-- Copy [`.env.example`](./.env.example) to `.env`
+- Copy [`.env.example`](./.env.example) to `.env.development`
 - Copy [`.dev.vars.example`](./.dev.vars.example) to `.dev.vars`
 
 ## 2. Prepare the local D1 database
@@ -17,7 +17,7 @@ wrangler d1 migrations apply axiom-ops-omniscient --local
 npm run dev
 ```
 
-`next dev` runs with OpenNext's Cloudflare dev bindings enabled, so `.dev.vars` and local D1 are the default runtime path.
+`npm run dev` uses plain Next.js with webpack for fast UI work. Use `npm run preview` when you need OpenNext Cloudflare bindings and local D1.
 
 ## 4. Sign in
 

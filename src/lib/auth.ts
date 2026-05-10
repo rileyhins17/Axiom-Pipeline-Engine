@@ -6,6 +6,7 @@ import { admin } from "better-auth/plugins";
 import { writeAuditEvent } from "@/lib/audit";
 import { getClientIp, getCloudflareBindings } from "@/lib/cloudflare";
 import { getAllowedEmails, getServerEnv, getTrustedOrigins, isAdminEmail } from "@/lib/env";
+import { ensureLocalDatabaseDirectory, getLocalDatabasePath } from "@/lib/local-sqlite";
 import { getPrisma } from "@/lib/prisma";
 import { assertRateLimit } from "@/lib/rate-limit";
 
@@ -38,7 +39,8 @@ export function getAuth() {
     // better-auth accepts a better-sqlite3 Database instance directly
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const BetterSqlite3 = require("better-sqlite3");
-    const dbPath = process.env.DATABASE_PATH || "./data/omniscient.db";
+    const dbPath = getLocalDatabasePath();
+    ensureLocalDatabaseDirectory(dbPath);
     const localDb = new BetterSqlite3(dbPath);
     localDb.pragma("journal_mode = WAL");
     databaseConfig = { database: localDb };

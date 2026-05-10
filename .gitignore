@@ -38,6 +38,7 @@ preview*.cookies
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 !.env.worker.example
 !.env.pi.example
 .env.worker

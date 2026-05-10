@@ -4,7 +4,11 @@
   "account_id": "fe468a56a5b8c7f8fc5d39e265c2f791",
   "main": "worker.mjs",
   "compatibility_date": "2026-03-15",
-  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "compatibility_flags": [
+    "nodejs_compat",
+    "nodejs_compat_populate_process_env",
+    "global_fetch_strictly_public"
+  ],
   "build": {
     "command": "npm run build:cloudflare",
     "cwd": "."

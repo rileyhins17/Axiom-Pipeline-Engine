@@ -6,11 +6,18 @@
  * so the existing prisma.ts ORM layer works without changes.
  */
 import type { D1DatabaseLike, D1PreparedStatementLike } from "@/lib/cloudflare";
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 
 let cachedDb: D1DatabaseLike | null = null;
 
-function getLocalDatabasePath(): string {
+export function getLocalDatabasePath(): string {
   return process.env.DATABASE_PATH || "./data/omniscient.db";
+}
+
+export function ensureLocalDatabaseDirectory(dbPath: string): void {
+  if (dbPath === ":memory:") return;
+  mkdirSync(dirname(dbPath), { recursive: true });
 }
 
 function createBetterSqliteStatement(
@@ -64,6 +71,7 @@ export function getLocalDatabase(): D1DatabaseLike {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const BetterSqlite3 = require("better-sqlite3");
   const dbPath = getLocalDatabasePath();
+  ensureLocalDatabaseDirectory(dbPath);
   const db = new BetterSqlite3(dbPath) as import("better-sqlite3").Database;
 
   // Enable WAL mode for better concurrent read/write performance
