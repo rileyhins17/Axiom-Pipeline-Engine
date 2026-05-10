@@ -6,6 +6,7 @@ import { getServerEnv } from "@/lib/env";
 import { getAutomationSettings, syncMailboxesForGmailConnections } from "@/lib/outreach-automation";
 import { getPrisma } from "@/lib/prisma";
 import { requireAdminSession } from "@/lib/session";
+import { isSendableMailbox } from "@/lib/ui/data-accuracy";
 
 export const dynamic = "force-dynamic";
 
@@ -14,14 +15,14 @@ export const dynamic = "force-dynamic";
  * so a single heavy-helper failure doesn't blank the connect screen.
  * Used as a safety net alongside the sync helper.
  */
-async function listConnectedMailboxes(): Promise<Array<{ gmailAddress: string; status: string }>> {
+async function listConnectedMailboxes(): Promise<Array<{ gmailAddress: string; status: string | null; gmailConnectionId: string | null }>> {
   const result = await getDatabase()
     .prepare(
-      `SELECT LOWER("gmailAddress") AS gmailAddress, "status"
+      `SELECT LOWER("gmailAddress") AS gmailAddress, "status", "gmailConnectionId"
        FROM "OutreachMailbox"
        ORDER BY "updatedAt" DESC`,
     )
-    .all<{ gmailAddress: string; status: string }>();
+    .all<{ gmailAddress: string; status: string | null; gmailConnectionId: string | null }>();
   return result.results ?? [];
 }
 
@@ -89,7 +90,7 @@ export default async function SettingsPage() {
     syncMailboxesForGmailConnections().catch(
       () => [] as Array<{ gmailAddress: string; status: string }>,
     ),
-    listConnectedMailboxes().catch(() => []),
+    listConnectedMailboxes().catch(() => [] as Array<{ gmailAddress: string; status: string | null; gmailConnectionId: string | null }>),
     getDeepSeekBalanceStatus().catch((error) => ({
       available: false,
       balances: [],
@@ -119,7 +120,7 @@ export default async function SettingsPage() {
     const found = synced ?? direct;
     return {
       email,
-      connected: connectedAddresses.has(email) || Boolean(found),
+      connected: connectedAddresses.has(email) || Boolean(found && isSendableMailbox(found)),
       status: found?.status ?? null,
     };
   });
@@ -133,6 +134,8 @@ export default async function SettingsPage() {
         databaseTarget: bindings?.DB ? "cloudflare-d1" : "binding-missing",
         deepSeekBalance,
         deepSeekConfigured: Boolean(env.DEEPSEEK_API_KEY),
+        globalDailySendCap: env.AUTONOMOUS_MAX_SENDS_PER_DAY,
+        intakeDailyLeadCap: env.AUTONOMOUS_DAILY_LEAD_INTAKE_CAP,
         intakePaused: automationSettings.intakePaused,
         scrapeHealth,
         scrapeConcurrencyLimit: env.SCRAPE_CONCURRENCY_LIMIT,

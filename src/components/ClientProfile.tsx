@@ -45,6 +45,7 @@ import {
   type CrmActivityType,
 } from "@/lib/crm";
 import type { CrmActivityRecord, LeadRecord, OutreachEmailRecord } from "@/lib/prisma";
+import { getProjectMilestoneChecks } from "@/lib/ui/data-accuracy";
 import { cn } from "@/lib/utils";
 
 type ProfileOutreachEmail = Pick<
@@ -427,7 +428,12 @@ export function ClientProfile({ lead, initialActivities, outreachEmails, sequenc
             </p>
           </Section>
 
-          <MilestoneChecklist dealStage={lead.dealStage} signedAt={lead.signedAt} projectStartDate={lead.projectStartDate} />
+          <MilestoneChecklist
+            dealStage={lead.dealStage}
+            proposalSentAt={lead.proposalSentAt}
+            signedAt={lead.signedAt}
+            projectStartDate={lead.projectStartDate}
+          />
 
           {/* Outreach Sequence Status */}
           {sequence && (
@@ -632,7 +638,9 @@ export function ClientProfile({ lead, initialActivities, outreachEmails, sequenc
   );
 }
 
-const PROJECT_MILESTONES: { key: string; label: string; requiredStage?: string }[] = [
+type ProjectMilestoneKey = keyof ReturnType<typeof getProjectMilestoneChecks>;
+
+const PROJECT_MILESTONES: { key: ProjectMilestoneKey; label: string; requiredStage?: string }[] = [
   { key: "proposal", label: "Proposal sent" },
   { key: "signed", label: "Contract signed" },
   { key: "kickoff", label: "Kickoff / discovery call", requiredStage: "SIGNED" },
@@ -642,36 +650,20 @@ const PROJECT_MILESTONES: { key: string; label: string; requiredStage?: string }
   { key: "retained", label: "Retainer activated", requiredStage: "RETAINED" },
 ];
 
-const STAGE_ORDER = ["PROPOSAL_SENT", "NEGOTIATING", "SIGNED", "ACTIVE", "DELIVERED", "RETAINED", "LOST"];
-
-function stageReached(current: string | null | undefined, target: string): boolean {
-  if (!current) return false;
-  const ci = STAGE_ORDER.indexOf(current);
-  const ti = STAGE_ORDER.indexOf(target);
-  if (ci < 0 || ti < 0) return false;
-  return ci >= ti;
-}
-
 function MilestoneChecklist({
   dealStage,
+  proposalSentAt,
   signedAt,
   projectStartDate,
 }: {
   dealStage: string | null;
+  proposalSentAt: Date | string | null;
   signedAt: Date | string | null;
   projectStartDate: Date | string | null;
 }) {
   if (!dealStage) return null;
 
-  const checkMap: Record<string, boolean> = {
-    proposal: stageReached(dealStage, "PROPOSAL_SENT"),
-    signed: stageReached(dealStage, "SIGNED") || !!signedAt,
-    kickoff: stageReached(dealStage, "SIGNED"),
-    started: stageReached(dealStage, "ACTIVE") || !!projectStartDate,
-    review: stageReached(dealStage, "ACTIVE"),
-    delivered: stageReached(dealStage, "DELIVERED"),
-    retained: stageReached(dealStage, "RETAINED"),
-  };
+  const checkMap = getProjectMilestoneChecks({ dealStage, proposalSentAt, signedAt, projectStartDate });
   const completed = Object.values(checkMap).filter(Boolean).length;
 
   return (

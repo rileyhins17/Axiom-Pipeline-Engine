@@ -23,6 +23,8 @@ type RuntimeStatus = {
     error: string | null;
   };
   deepSeekConfigured: boolean;
+  globalDailySendCap: number;
+  intakeDailyLeadCap: number;
   intakePaused: boolean;
   scrapeHealth: {
     criticalRecent: number;
@@ -106,7 +108,11 @@ export function SettingsClient({
 
       <section>
         <Panel>
-          <SectionTitle icon={Mail} title="Sender mailboxes" detail="Connect once via Google OAuth. Caps at 40 sends/day each (= 80/day total)." />
+          <SectionTitle
+            icon={Mail}
+            title="Sender mailboxes"
+            detail={`Connect once via Google OAuth. Runtime cap: ${runtimeStatus.globalDailySendCap}/day total.`}
+          />
           <div className="space-y-3">
             {mailboxes.map((mailbox) => (
               <MailboxRow key={mailbox.email} mailbox={mailbox} />
@@ -163,10 +169,10 @@ export function SettingsClient({
         <Panel>
           <SectionTitle icon={Monitor} title="What runs autonomously" detail="No human input is required after Gmail OAuth." />
           <ul className="space-y-2 text-sm text-zinc-400">
-            <Bullet>Scrape intake dispatches the next due target every cron tick (capped at 50 adequate leads/day).</Bullet>
+            <Bullet>Scrape intake dispatches the next due target every cron tick (capped at {runtimeStatus.intakeDailyLeadCap} adequate leads/day UTC).</Bullet>
             <Bullet>Cloudflare Browser Rendering executes the scrape and persists leads.</Bullet>
             <Bullet>Auto-pipeline enriches, qualifies, and queues leads on a rolling basis.</Bullet>
-            <Bullet>Scheduler sends emails only to non-generic owner/staff inboxes (40/day per mailbox).</Bullet>
+            <Bullet>Scheduler sends emails only to non-generic owner/staff inboxes, capped by each mailbox and the {runtimeStatus.globalDailySendCap}/day global limit.</Bullet>
             <Bullet>Reply detection stops sequences when a recipient replies.</Bullet>
           </ul>
         </Panel>

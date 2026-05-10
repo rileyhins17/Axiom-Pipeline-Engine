@@ -23,21 +23,24 @@ import {
 } from "lucide-react";
 
 import {
+  AUTONOMOUS_INTAKE_MIN_SCORE,
   AUTOMATION_SETTINGS_DEFAULTS,
   MAILBOX_DAILY_SEND_TARGET,
 } from "@/lib/automation-policy";
 import { countAdequateLeadsToday, getAutonomousDailyLeadCap } from "@/lib/autonomous-intake";
 import { getDatabase } from "@/lib/cloudflare";
+import { getServerEnv } from "@/lib/env";
 import { listAutomationOverview } from "@/lib/outreach-automation";
 import { getPrisma } from "@/lib/prisma";
 import { listScrapeJobs } from "@/lib/scrape-jobs";
 import { listRecentScrapeTargets, pickNextScrapeTarget, countActiveScrapeTargets } from "@/lib/scrape-targets";
 import { requireSession } from "@/lib/session";
 import { formatAppDateTime } from "@/lib/time";
+import { adequateLeadWhereClause, isSendableMailbox, resolveGlobalDailySendCap, startOfUtcDay } from "@/lib/ui/data-accuracy";
 
 export const dynamic = "force-dynamic";
 
-const TARGET_DAILY_SEND = MAILBOX_DAILY_SEND_TARGET * 2; // 80 across 2 mailboxes
+const EXPECTED_MAILBOX_COUNT = 2;
 
 function emptyAutomationOverview() {
   return {
@@ -141,7 +144,7 @@ function relativeAgo(date: Date | string | null | undefined): string {
 }
 
 async function getSendsToday(): Promise<{ total: number; perSender: Record<string, number> }> {
-  const since = startOfTodayEastern().toISOString();
+  const since = startOfUtcDay().toISOString();
   const result = await getDatabase()
     .prepare(
       `SELECT "senderEmail", COUNT(*) AS count FROM "OutreachEmail"
@@ -335,9 +338,9 @@ async function getConversionFunnel() {
   const db = getDatabase();
   const [totalRow, qualifiedRow, contactedRow, repliedRow, pipelineRow, wonRow] = await Promise.all([
     db.prepare(`SELECT COUNT(*) AS c FROM "Lead" WHERE isArchived = 0`).first<{ c: number | string }>(),
-    db.prepare(`SELECT COUNT(*) AS c FROM "Lead" WHERE axiomScore >= 45 AND isArchived = 0`).first<{ c: number | string }>(),
-    db.prepare(`SELECT COUNT(*) AS c FROM "Lead" WHERE firstContactedAt IS NOT NULL`).first<{ c: number | string }>(),
-    db.prepare(`SELECT COUNT(*) AS c FROM "Lead" WHERE outreachStatus = 'REPLIED'`).first<{ c: number | string }>(),
+    db.prepare(`SELECT COUNT(*) AS c FROM "Lead" WHERE ${adequateLeadWhereClause("?")}`).bind(AUTONOMOUS_INTAKE_MIN_SCORE).first<{ c: number | string }>(),
+    db.prepare(`SELECT COUNT(*) AS c FROM "Lead" WHERE firstContactedAt IS NOT NULL AND isArchived = 0`).first<{ c: number | string }>(),
+    db.prepare(`SELECT COUNT(*) AS c FROM "Lead" WHERE outreachStatus = 'REPLIED' AND isArchived = 0`).first<{ c: number | string }>(),
     db.prepare(`SELECT COUNT(*) AS c FROM "Lead" WHERE dealStage IS NOT NULL AND dealStage != 'LOST' AND isArchived = 0`).first<{ c: number | string }>(),
     db.prepare(`SELECT COUNT(*) AS c FROM "Lead" WHERE dealStage IN ('SIGNED', 'ACTIVE', 'DELIVERED', 'RETAINED') AND isArchived = 0`).first<{ c: number | string }>(),
   ]);
@@ -485,10 +488,10 @@ export default async function DashboardPage() {
     listAutomationOverview().catch(() => emptyAutomationOverview()),
     listScrapeJobs(8).catch(() => []),
     prisma.lead.count({ where: { isArchived: false } }),
-    prisma.lead.count({ where: { outreachStatus: "REPLIED" } }),
-    prisma.lead.count({ where: { firstContactedAt: { not: null } } }).catch(async () => {
+    prisma.lead.count({ where: { outreachStatus: "REPLIED", isArchived: false } }),
+    prisma.lead.count({ where: { firstContactedAt: { not: null }, isArchived: false } }).catch(async () => {
       const r = await getDatabase()
-        .prepare(`SELECT COUNT(*) AS c FROM "Lead" WHERE "firstContactedAt" IS NOT NULL`)
+        .prepare(`SELECT COUNT(*) AS c FROM "Lead" WHERE "firstContactedAt" IS NOT NULL AND COALESCE("isArchived", 0) = 0`)
         .first<{ c: number | string }>();
       return Number(r?.c || 0);
     }),
@@ -509,10 +512,10 @@ export default async function DashboardPage() {
     // Direct mailbox-table check — independent of listAutomationOverview()
     // so a broken helper doesn't make the banner falsely show "not connected".
     getDatabase()
-      .prepare(`SELECT LOWER("gmailAddress") AS gmailAddress FROM "OutreachMailbox"`)
-      .all<{ gmailAddress: string }>()
+      .prepare(`SELECT LOWER("gmailAddress") AS gmailAddress, "status", "gmailConnectionId", "dailyLimit" FROM "OutreachMailbox"`)
+      .all<{ gmailAddress: string; status: string | null; gmailConnectionId: string | null; dailyLimit: number | string | null }>()
       .then((r) => r.results ?? [])
-      .catch(() => [] as Array<{ gmailAddress: string }>),
+      .catch(() => [] as Array<{ gmailAddress: string; status: string | null; gmailConnectionId: string | null; dailyLimit: number | string | null }>),
     getDatabase()
       .prepare(`SELECT COUNT(*) AS c FROM "OutreachEmail" WHERE "status" = 'sent'`)
       .first<{ c: number | string }>()
@@ -527,19 +530,25 @@ export default async function DashboardPage() {
   const activeScrape = scrapeJobs.find((j) => j.status === "running" || j.status === "claimed") ?? null;
   const replyRate = contactedCount > 0 ? (repliedCount / contactedCount) * 100 : 0;
   const intakeCap = getAutonomousDailyLeadCap();
+  const globalSendCap = resolveGlobalDailySendCap({
+    envCap: getServerEnv().AUTONOMOUS_MAX_SENDS_PER_DAY,
+    mailboxCaps: connectedRows.filter(isSendableMailbox).map((row) => Number(row.dailyLimit || 0)),
+    fallbackPerMailboxCap: MAILBOX_DAILY_SEND_TARGET,
+    expectedMailboxCount: EXPECTED_MAILBOX_COUNT,
+  });
 
   const aidanSends = sendsToday.perSender["aidan@getaxiom.ca"] || 0;
   const rileySends = sendsToday.perSender["riley@getaxiom.ca"] || 0;
 
   const intakePct = Math.min(100, (adequateToday / intakeCap) * 100);
-  const sendPct = Math.min(100, (sendsToday.total / TARGET_DAILY_SEND) * 100);
+  const sendPct = Math.min(100, (sendsToday.total / globalSendCap) * 100);
   const aidanPct = Math.min(100, (aidanSends / MAILBOX_DAILY_SEND_TARGET) * 100);
   const rileyPct = Math.min(100, (rileySends / MAILBOX_DAILY_SEND_TARGET) * 100);
 
   const intakeTone: ToneKey = adequateToday >= intakeCap ? "amber" : "emerald";
-  const sendTone: ToneKey = sendsToday.total >= TARGET_DAILY_SEND ? "amber" : "cyan";
+  const sendTone: ToneKey = sendsToday.total >= globalSendCap ? "amber" : "cyan";
 
-  const connectedSet = new Set(connectedRows.map((r) => (r.gmailAddress || "").toLowerCase()));
+  const connectedSet = new Set(connectedRows.filter(isSendableMailbox).map((r) => (r.gmailAddress || "").toLowerCase()));
   const aidanConnected = connectedSet.has("aidan@getaxiom.ca");
   const rileyConnected = connectedSet.has("riley@getaxiom.ca");
 
@@ -597,7 +606,7 @@ export default async function DashboardPage() {
       <section className="grid gap-4 xl:grid-cols-4">
         <Panel
           title="Autonomous Intake"
-          subtitle="Lead generation today"
+          subtitle="Lead generation today (UTC)"
           accent="emerald"
         >
           <RatioMeter
@@ -606,7 +615,7 @@ export default async function DashboardPage() {
             cap={intakeCap}
             pct={intakePct}
             tone={intakeTone}
-            footnote="axiom score ≥ 45, non-D, non-generic email"
+            footnote="score >= 45, non-D, owner/staff non-generic email"
           />
           <Divider />
           <KvRow icon={<Radar className="size-3.5" />} label="Active targets" value={activeTargets.toLocaleString()} />
@@ -634,16 +643,16 @@ export default async function DashboardPage() {
 
         <Panel
           title="Send Health"
-          subtitle="Outbound email volume"
+          subtitle="Outbound email volume today (UTC)"
           accent="cyan"
         >
           <RatioMeter
             label="Sent today"
             value={sendsToday.total}
-            cap={TARGET_DAILY_SEND}
+            cap={globalSendCap}
             pct={sendPct}
             tone={sendTone}
-            footnote={`${MAILBOX_DAILY_SEND_TARGET}/day per mailbox · 80/day total`}
+            footnote={`${MAILBOX_DAILY_SEND_TARGET}/day per mailbox · ${globalSendCap}/day configured`}
           />
           <Divider />
           <MailboxBar email="aidan@getaxiom.ca" sent={aidanSends} cap={MAILBOX_DAILY_SEND_TARGET} pct={aidanPct} connected={aidanConnected} />
@@ -811,7 +820,7 @@ export default async function DashboardPage() {
               <Crosshair className="size-4 text-zinc-500" />
               <span className="text-sm font-semibold text-white">Scrape Targets</span>
             </div>
-            <span className="font-mono text-[10px] text-zinc-600">{scrapeTargetList.length} active</span>
+            <span className="font-mono text-[10px] text-zinc-600">{scrapeTargetList.length} shown</span>
           </header>
           <div className="divide-y divide-white/[0.05] max-h-[280px] overflow-y-auto">
             {scrapeTargetList.length === 0 ? (

@@ -20,7 +20,6 @@ export default async function ClientsPage() {
       ],
     },
     orderBy: { lastUpdated: "desc" },
-    take: 500, // Hard cap — pipeline view is for active deals, not history.
   }).catch(() => []);
 
   return (

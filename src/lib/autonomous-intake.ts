@@ -11,6 +11,7 @@ import {
   markScrapeTargetDispatched,
   pickNextScrapeTarget,
 } from "@/lib/scrape-targets";
+import { adequateLeadWhereClause, sqlDateTime, startOfUtcDay } from "@/lib/ui/data-accuracy";
 
 const SYSTEM_USER_ID = "system";
 
@@ -24,45 +25,24 @@ export interface IntakeResult {
   cap?: number;
 }
 
-function sqlDateTime(date: Date): string {
-  return date.toISOString().slice(0, 19).replace("T", " ");
-}
-
 export function getAutonomousDailyLeadCap() {
   const env = getServerEnv();
   return env.AUTONOMOUS_DAILY_LEAD_INTAKE_CAP || AUTONOMOUS_DAILY_LEAD_INTAKE_CAP;
 }
 
 /**
- * Counts leads created today that pass the autonomous-queue predicate.
+ * Counts leads created during the current UTC day that pass the autonomous
+ * queue/send predicate.
  * Mirrors `shouldAutonomouslyQueueLead`: axiomScore >= 45, tier != D,
  * non-generic email, has email, not archived. SQL-side for speed.
  */
 export async function countAdequateLeadsToday(): Promise<number> {
-  const since = sqlDateTime(new Date(Date.now() - 24 * 60 * 60 * 1000));
+  const since = sqlDateTime(startOfUtcDay());
   const row = await getDatabase()
     .prepare(
       `SELECT COUNT(*) AS count FROM "Lead"
        WHERE datetime("createdAt") >= datetime(?)
-         AND "axiomScore" >= ?
-         AND COALESCE("axiomTier",'') != 'D'
-         AND LOWER(COALESCE("emailType",'')) IN ('owner', 'staff')
-         AND COALESCE("email",'') != ''
-         AND LOWER("email") NOT LIKE 'info@%'
-         AND LOWER("email") NOT LIKE 'sales@%'
-         AND LOWER("email") NOT LIKE 'hello@%'
-         AND LOWER("email") NOT LIKE 'contact@%'
-         AND LOWER("email") NOT LIKE 'admin@%'
-         AND LOWER("email") NOT LIKE 'support@%'
-         AND LOWER("email") NOT LIKE 'office@%'
-         AND LOWER("email") NOT LIKE 'marketing@%'
-         AND LOWER("email") NOT LIKE 'service@%'
-         AND LOWER("email") NOT LIKE 'enquiries@%'
-         AND LOWER("email") NOT LIKE 'enquiry@%'
-         AND LOWER("email") NOT LIKE 'booking@%'
-         AND LOWER("email") NOT LIKE 'team@%'
-         AND LOWER("email") NOT LIKE 'webmaster@%'
-         AND COALESCE("isArchived", 0) = 0`,
+         AND ${adequateLeadWhereClause("?")}`,
     )
     .bind(since, AUTONOMOUS_INTAKE_MIN_SCORE)
     .first<{ count: number | string }>();

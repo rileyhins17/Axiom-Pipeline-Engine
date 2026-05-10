@@ -8,6 +8,7 @@ import { listAutomationOverview } from "@/lib/outreach-automation";
 import { getDatabase } from "@/lib/cloudflare";
 import { requireSession } from "@/lib/session";
 import { formatAppDateTime } from "@/lib/time";
+import { calculateReplyRate } from "@/lib/ui/data-accuracy";
 
 export const dynamic = "force-dynamic";
 
@@ -54,8 +55,12 @@ async function getPerformanceStats(db: ReturnType<typeof getDatabase>): Promise<
      WHERE "status" IN ('sent', 'delivered')`,
   ).first<{ totalSent: number; delivered: number; replied: number }>().catch(() => null);
   const repliedRow = await db.prepare(
-    `SELECT COUNT(DISTINCT "leadId") AS replied FROM "Lead"
-     WHERE "outreachStatus" = 'REPLIED' AND "lastReplyAt" IS NOT NULL`,
+    `SELECT COUNT(DISTINCT l."id") AS replied
+     FROM "OutreachEmail" e
+     JOIN "Lead" l ON e."leadId" = l."id"
+     WHERE e."status" IN ('sent', 'delivered')
+       AND l."outreachStatus" = 'REPLIED'
+       AND l."lastReplyAt" IS NOT NULL`,
   ).first<{ replied: number }>().catch(() => null);
   const totalSent = Number(row?.totalSent ?? 0);
   const delivered = Number(row?.delivered ?? 0);
@@ -64,8 +69,8 @@ async function getPerformanceStats(db: ReturnType<typeof getDatabase>): Promise<
     totalSent,
     delivered,
     replied,
-    deliveryRate: totalSent > 0 ? Math.round((delivered / totalSent) * 100) : 0,
-    replyRate: totalSent > 0 ? Math.round((replied / totalSent) * 100) : 0,
+    deliveryRate: calculateReplyRate(totalSent, delivered),
+    replyRate: calculateReplyRate(totalSent, replied),
   };
 }
 
@@ -73,7 +78,7 @@ async function getNichePerformance(db: ReturnType<typeof getDatabase>): Promise<
   const rows = await db.prepare(
     `SELECT l."niche",
             COUNT(DISTINCT e."id") AS sent,
-            SUM(CASE WHEN l."outreachStatus" = 'REPLIED' THEN 1 ELSE 0 END) AS replied
+            COUNT(DISTINCT CASE WHEN l."outreachStatus" = 'REPLIED' AND l."lastReplyAt" IS NOT NULL THEN l."id" END) AS replied
      FROM "OutreachEmail" e
      JOIN "Lead" l ON e."leadId" = l."id"
      WHERE e."status" = 'sent' AND l."niche" IS NOT NULL
@@ -83,7 +88,7 @@ async function getNichePerformance(db: ReturnType<typeof getDatabase>): Promise<
   ).all<{ niche: string; sent: number; replied: number }>().catch(() => ({ results: [] as { niche: string; sent: number; replied: number }[] }));
   return (rows.results ?? []).map((r) => ({
     ...r, sent: Number(r.sent), replied: Number(r.replied),
-    replyRate: Number(r.sent) > 0 ? Math.round((Number(r.replied) / Number(r.sent)) * 100) : 0,
+    replyRate: calculateReplyRate(Number(r.sent), Number(r.replied)),
   }));
 }
 
@@ -91,7 +96,7 @@ async function getCityPerformance(db: ReturnType<typeof getDatabase>): Promise<C
   const rows = await db.prepare(
     `SELECT l."city",
             COUNT(DISTINCT e."id") AS sent,
-            SUM(CASE WHEN l."outreachStatus" = 'REPLIED' THEN 1 ELSE 0 END) AS replied
+            COUNT(DISTINCT CASE WHEN l."outreachStatus" = 'REPLIED' AND l."lastReplyAt" IS NOT NULL THEN l."id" END) AS replied
      FROM "OutreachEmail" e
      JOIN "Lead" l ON e."leadId" = l."id"
      WHERE e."status" = 'sent' AND l."city" IS NOT NULL
@@ -101,7 +106,7 @@ async function getCityPerformance(db: ReturnType<typeof getDatabase>): Promise<C
   ).all<{ city: string; sent: number; replied: number }>().catch(() => ({ results: [] as { city: string; sent: number; replied: number }[] }));
   return (rows.results ?? []).map((r) => ({
     ...r, sent: Number(r.sent), replied: Number(r.replied),
-    replyRate: Number(r.sent) > 0 ? Math.round((Number(r.replied) / Number(r.sent)) * 100) : 0,
+    replyRate: calculateReplyRate(Number(r.sent), Number(r.replied)),
   }));
 }
 
@@ -127,7 +132,6 @@ async function getSuppressedLeads(db: ReturnType<typeof getDatabase>): Promise<S
             END AS reason
      FROM "Lead" l
      WHERE l."outreachStatus" IN ('BOUNCED', 'OPTED_OUT', 'SUPPRESSED')
-        OR (l."isArchived" = 1 AND l."email" IS NOT NULL)
      ORDER BY l."updatedAt" DESC
      LIMIT 50`,
   ).all<SuppressedLead>().catch(() => ({ results: [] as SuppressedLead[] }));
@@ -138,7 +142,7 @@ async function getStrategyPerformance(db: ReturnType<typeof getDatabase>): Promi
   const rows = await db.prepare(
     `SELECT l."engagementType" AS strategy,
             COUNT(DISTINCT e."id") AS sent,
-            SUM(CASE WHEN l."outreachStatus" = 'REPLIED' THEN 1 ELSE 0 END) AS replied
+            COUNT(DISTINCT CASE WHEN l."outreachStatus" = 'REPLIED' AND l."lastReplyAt" IS NOT NULL THEN l."id" END) AS replied
      FROM "OutreachEmail" e
      JOIN "Lead" l ON e."leadId" = l."id"
      WHERE e."status" = 'sent'
@@ -148,7 +152,7 @@ async function getStrategyPerformance(db: ReturnType<typeof getDatabase>): Promi
   return (rows.results ?? []).map((r) => ({
     strategy: r.strategy || "Default",
     sent: Number(r.sent), replied: Number(r.replied),
-    replyRate: Number(r.sent) > 0 ? Math.round((Number(r.replied) / Number(r.sent)) * 100) : 0,
+    replyRate: calculateReplyRate(Number(r.sent), Number(r.replied)),
   }));
 }
 
@@ -370,11 +374,11 @@ export default async function AutomationPage() {
       {/* Performance Analytics */}
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Stat label="Total sent" value={perfStats.totalSent} icon={<Mail className="size-4" />} tone="cyan" />
-        <Stat label="Delivered" value={perfStats.delivered} icon={<TrendingUp className="size-4" />} tone="emerald" />
+        <Stat label="Sent status" value={perfStats.delivered} icon={<TrendingUp className="size-4" />} tone="emerald" />
         <Stat label="Replies" value={perfStats.replied} icon={<Reply className="size-4" />} tone="violet" />
         <div className="v2-stat stat-card">
           <div className="flex items-center justify-between text-zinc-500">
-            <span className="text-[11px] font-medium uppercase tracking-[0.16em]">Reply rate</span>
+            <span className="text-[11px] font-medium uppercase tracking-[0.16em]">Lead reply rate</span>
             <BarChart3 className="size-4 text-emerald-300" />
           </div>
           <div className="mt-2 font-mono text-3xl font-semibold tabular-nums text-emerald-300">{perfStats.replyRate}%</div>

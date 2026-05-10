@@ -26,7 +26,7 @@ export default async function VaultPage() {
       .first<{ c: number }>(),
     db
       .prepare(
-        `SELECT COUNT(*) AS c FROM "Lead" WHERE websiteStatus IS NOT NULL AND websiteStatus != 'MISSING' AND COALESCE(isArchived, 0) = 0`,
+        `SELECT COUNT(*) AS c FROM "Lead" WHERE websiteStatus = 'ACTIVE' AND COALESCE(isArchived, 0) = 0`,
       )
       .first<{ c: number }>(),
     db
