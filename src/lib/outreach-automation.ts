@@ -2,7 +2,7 @@ import {
   generateSequenceStepEmail,
   type OutreachSequenceStepType,
 } from "@/lib/outreach-email-generator";
-import { getValidAccessToken, getGmailThreadMetadata, normalizeGmailAddress, sendGmailEmail } from "@/lib/gmail";
+import { getValidAccessToken, getGmailThreadMetadata, normalizeGmailAddress, sendGmailEmail, searchGmailMessages, getGmailMessageMetadata } from "@/lib/gmail";
 import {
   AUTOMATION_SETTINGS_DEFAULTS,
   AUTONOMOUS_SEND_MIN_SCORE,
@@ -71,6 +71,7 @@ export type ReplyDetectionResult = {
   inboundMessageId?: string;
   inboundFrom?: string;
   threadId?: string;
+  isBounce?: boolean;
 };
 
 export type SchedulerClaim = {
@@ -2527,21 +2528,35 @@ async function markReplyStop(
     where: { id: sequence.leadId },
   }) as LeadRecord | null;
 
+  const stopReason = reply.isBounce ? "BOUNCED" : "REPLIED";
+
   if (lead?.email) {
     await prisma.outreachSuppression.create({
       data: {
         id: crypto.randomUUID(),
         email: normalizeEmail(lead.email),
-        domain: getAutomationBusinessDomain(lead),
-        reason: `Reply detected from ${reply.inboundFrom || lead.email}`,
-        source: "REPLY",
+        domain: reply.isBounce ? "" : getAutomationBusinessDomain(lead),
+        reason: reply.isBounce
+          ? `Hard bounce (delivery failure) for ${lead.email}`
+          : `Reply detected from ${reply.inboundFrom || lead.email}`,
+        source: reply.isBounce ? "BOUNCE" : "REPLY",
         leadId: lead.id,
         sequenceId: sequence.id,
       },
     }).catch(() => null);
   }
 
-  await stopSequenceInternal(prisma, sequence, "REPLIED", new Date());
+  if (reply.isBounce && lead) {
+    await prisma.lead.update({
+      where: { id: lead.id },
+      data: {
+        emailFlags: "bounced",
+        outreachStatus: "BOUNCED",
+      },
+    }).catch(() => null);
+  }
+
+  await stopSequenceInternal(prisma, sequence, stopReason, new Date());
 }
 
 /**
@@ -2758,6 +2773,107 @@ export async function syncAutomationReplies() {
   }
 
   return { checked, stopped };
+}
+
+export async function syncBounceNotifications() {
+  const prisma = getPrisma();
+  let suppressed = 0;
+  let scanned = 0;
+
+  const mailboxes = await prisma.outreachMailbox.findMany({
+    where: { gmailConnectionId: { not: null } },
+  }) as OutreachMailboxRecord[];
+
+  for (const mailbox of mailboxes) {
+    const connection = mailbox.gmailConnectionId
+      ? await prisma.gmailConnection.findUnique({ where: { id: mailbox.gmailConnectionId } })
+      : null;
+    if (!connection) continue;
+
+    let tokenResult;
+    try {
+      tokenResult = await getValidAccessToken(connection as { accessToken: string; refreshToken: string; tokenExpiresAt: Date });
+      if (tokenResult.updated) {
+        await prisma.gmailConnection.update({
+          where: { id: connection.id },
+          data: tokenResult.updated,
+        });
+      }
+    } catch {
+      continue;
+    }
+
+    let bounceMessages;
+    try {
+      bounceMessages = await searchGmailMessages(
+        tokenResult.accessToken,
+        "from:mailer-daemon subject:\"Delivery Status Notification\" newer_than:2d",
+        30,
+      );
+    } catch {
+      continue;
+    }
+
+    for (const msg of bounceMessages) {
+      scanned += 1;
+      let meta;
+      try {
+        meta = await getGmailMessageMetadata(tokenResult.accessToken, msg.id);
+      } catch {
+        continue;
+      }
+
+      const failedRecipient = meta.headers.xFailedRecipients?.trim().toLowerCase();
+      if (!failedRecipient || !failedRecipient.includes("@")) continue;
+
+      const existingSuppression = await prisma.outreachSuppression.findFirst({
+        where: { email: failedRecipient },
+      });
+      if (existingSuppression) continue;
+
+      const lead = await prisma.lead.findFirst({
+        where: { email: failedRecipient },
+      }) as LeadRecord | null;
+
+      await prisma.outreachSuppression.create({
+        data: {
+          id: crypto.randomUUID(),
+          email: failedRecipient,
+          domain: "",
+          reason: `Hard bounce detected from inbox scan: ${failedRecipient}`,
+          source: "BOUNCE",
+          leadId: lead?.id ?? null,
+          sequenceId: null,
+        },
+      }).catch(() => null);
+
+      if (lead) {
+        await prisma.lead.update({
+          where: { id: lead.id },
+          data: {
+            emailFlags: "bounced",
+            outreachStatus: "BOUNCED",
+          },
+        }).catch(() => null);
+
+        const activeSequences = await prisma.outreachSequence.findMany({
+          where: {
+            leadId: lead.id,
+            status: { in: ["QUEUED", "ACTIVE", "SENDING"] },
+          },
+        }) as OutreachSequenceRecord[];
+
+        for (const seq of activeSequences) {
+          await stopSequenceInternal(prisma, seq, "BOUNCED");
+        }
+      }
+
+      suppressed += 1;
+      console.log(`[bounce-sync] Suppressed bounced address: ${failedRecipient}`);
+    }
+  }
+
+  return { scanned, suppressed };
 }
 
 async function buildStepContext(
@@ -3965,6 +4081,7 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
       skipped: 0,
       pipeline: { enriched: 0, enrichFailed: 0, qualified: 0, queued: 0, queueSkipped: 0 },
       replySync: { checked: 0, stopped: 0 },
+      bounceSync: { scanned: 0, suppressed: 0 },
     };
   }
 
@@ -3980,6 +4097,7 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
       skipped: 0,
       pipeline: { enriched: 0, enrichFailed: 0, qualified: 0, queued: 0, queueSkipped: 0 },
       replySync: { checked: 0, stopped: 0 },
+      bounceSync: { scanned: 0, suppressed: 0 },
     };
   }
 
@@ -3993,6 +4111,7 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
       skipped: 0,
       pipeline: { enriched: 0, enrichFailed: 0, qualified: 0, queued: 0, queueSkipped: 0 },
       replySync: { checked: 0, stopped: 0 },
+      bounceSync: { scanned: 0, suppressed: 0 },
     };
   }
 
@@ -4059,6 +4178,13 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
 
     const replySync = await syncAutomationReplies();
 
+    let bounceSync = { scanned: 0, suppressed: 0 };
+    try {
+      bounceSync = await syncBounceNotifications();
+    } catch (bounceError) {
+      console.error("[scheduler] Bounce sync error (non-fatal):", bounceError);
+    }
+
     // Send loop is gated by AUTONOMOUS_SEND_ENABLED (default OFF). When off
     // we still run reply-sync and pipeline, but don't claim or send any
     // sequence steps.
@@ -4078,6 +4204,7 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
             reason: "send_kill_switch_off",
             pipeline,
             replySync,
+            bounceSync,
           }),
         },
       });
@@ -4089,6 +4216,7 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
         skipped: 0,
         pipeline,
         replySync,
+        bounceSync,
       };
     }
 
@@ -4104,6 +4232,7 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
             reason: "emergency_stop",
             pipeline,
             replySync,
+            bounceSync,
           }),
         },
       });
@@ -4115,6 +4244,7 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
         skipped: 0,
         pipeline,
         replySync,
+        bounceSync,
       };
     }
 
@@ -4126,7 +4256,7 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
       skippedCooldownCount: claimResult.diagnostics.skippedCooldownCount,
     };
 
-    console.log(`[scheduler] Pipeline: ${JSON.stringify(pipeline)} | Replies: checked=${replySync.checked} stopped=${replySync.stopped} | Fast-forwarded: ${fastForwardedCount} | Claims: ${claims.length}`);
+    console.log(`[scheduler] Pipeline: ${JSON.stringify(pipeline)} | Replies: checked=${replySync.checked} stopped=${replySync.stopped} | Bounces: scanned=${bounceSync.scanned} suppressed=${bounceSync.suppressed} | Fast-forwarded: ${fastForwardedCount} | Claims: ${claims.length}`);
     console.log(`[scheduler] First-touch diagnostics: ${JSON.stringify(firstTouchDiagnostics)}`);
     console.log(`[scheduler] Claim diagnostics: ${JSON.stringify(claimResult.claimDiagnostics)}`);
 
@@ -4254,6 +4384,7 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
         metadata: JSON.stringify({
           source: "scheduler",
           replySync,
+          bounceSync,
           pipeline,
           fastForwarded: fastForwardedCount,
           firstTouchDiagnostics,
@@ -4271,6 +4402,7 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
       fastForwarded: fastForwardedCount,
       pipeline,
       replySync,
+      bounceSync,
     };
   } catch (error) {
     await prisma.outreachRun.update({

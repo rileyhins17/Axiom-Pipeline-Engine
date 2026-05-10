@@ -99,6 +99,53 @@ const BLOCKED_EMAIL_DOMAINS = new Set([
     "gstatic.com",
     "google.com",
     "googleusercontent.com",
+    "website.com",
+    "godaddy.com",
+    "demolink.org",
+    "domain.com",
+    "email.com",
+    "yourwebsite.com",
+    "yourdomain.com",
+    "samplesite.com",
+    "placeholder.com",
+    "test.com",
+    "tempuri.org",
+    "wix.com",
+    "squarespace.com",
+    "wordpress.com",
+    "weebly.com",
+    "shopify.com",
+    "webflow.io",
+    "herokuapp.com",
+    "roughriderdigitalmarketing.com",
+]);
+
+const BLOCKED_LOCAL_PARTS = new Set([
+    "youremail",
+    "yourname",
+    "your-email",
+    "your-name",
+    "email",
+    "filler",
+    "test",
+    "sample",
+    "placeholder",
+    "changeme",
+    "user",
+    "username",
+    "name",
+    "yourcompany",
+    "companyname",
+    "company",
+    "noreply",
+    "no-reply",
+    "donotreply",
+    "privacy",
+    "webmaster",
+    "postmaster",
+    "hostmaster",
+    "abuse",
+    "root",
 ]);
 
 const OWNER_CONTEXT_HINTS = [
@@ -243,7 +290,12 @@ function scoreContextSnippet(snippet: string, ownerTokens: string[], businessTok
 function isBlockedCandidate(email: string): boolean {
     const domain = email.split("@")[1]?.toLowerCase();
     if (!domain) return true;
-    return BLOCKED_EMAIL_DOMAINS.has(domain);
+    if (BLOCKED_EMAIL_DOMAINS.has(domain)) return true;
+    const localPart = email.split("@")[0]?.toLowerCase();
+    if (!localPart) return true;
+    if (BLOCKED_LOCAL_PARTS.has(localPart)) return true;
+    if (/^(info|contact|hello|support|admin|office|service|mail|help|enquiry|inquiry)$/.test(localPart) && !domain.includes(".")) return true;
+    return false;
 }
 
 function dedupeLinks(links: ResolvedLink[]): ResolvedLink[] {
@@ -458,6 +510,7 @@ export function resolvePublicBusinessEmail(input: {
 
     const winner = candidates.find(
         (candidate) =>
+            candidate.confidence > 0.2 &&
             SENDABLE_EMAIL_TYPES.has(candidate.type) &&
             !candidate.flags.includes("generic_prefix") &&
             !isGenericRoleEmail(candidate.email),
