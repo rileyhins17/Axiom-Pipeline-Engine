@@ -356,6 +356,97 @@ export async function getGmailThreadMetadata(
   };
 }
 
+// ─── Message Search & Metadata ─────────────────────────────────────
+
+const GMAIL_MESSAGES_URL = "https://gmail.googleapis.com/gmail/v1/users/me/messages";
+
+export type GmailMessageMeta = {
+  id: string;
+  threadId: string;
+  internalDate?: string;
+  snippet: string;
+  headers: {
+    from: string;
+    to: string;
+    subject: string;
+    xFailedRecipients: string;
+  };
+};
+
+export async function searchGmailMessages(
+  accessToken: string,
+  query: string,
+  maxResults = 20,
+): Promise<Array<{ id: string; threadId: string }>> {
+  const params = new URLSearchParams({
+    q: query,
+    maxResults: String(maxResults),
+  });
+
+  const response = await fetch(`${GMAIL_MESSAGES_URL}?${params}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Gmail search failed (${response.status}): ${text}`);
+  }
+
+  const payload = (await response.json()) as {
+    messages?: Array<{ id?: string; threadId?: string }>;
+  };
+
+  return (payload.messages || []).map((m) => ({
+    id: m.id || "",
+    threadId: m.threadId || "",
+  }));
+}
+
+export async function getGmailMessageMetadata(
+  accessToken: string,
+  messageId: string,
+): Promise<GmailMessageMeta> {
+  const params = new URLSearchParams({
+    format: "metadata",
+    metadataHeaders: ["From", "To", "Subject", "X-Failed-Recipients"].join(","),
+  });
+
+  // Gmail API needs repeated metadataHeaders params
+  const url = `${GMAIL_MESSAGES_URL}/${encodeURIComponent(messageId)}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=X-Failed-Recipients`;
+
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Gmail message metadata failed (${response.status}): ${text}`);
+  }
+
+  const payload = (await response.json()) as {
+    id?: string;
+    threadId?: string;
+    internalDate?: string;
+    snippet?: string;
+    payload?: {
+      headers?: Array<{ name?: string; value?: string }>;
+    };
+  };
+
+  return {
+    id: payload.id || messageId,
+    threadId: payload.threadId || "",
+    internalDate: payload.internalDate,
+    snippet: payload.snippet || "",
+    headers: {
+      from: getHeaderValue(payload.payload?.headers, "From"),
+      to: getHeaderValue(payload.payload?.headers, "To"),
+      subject: getHeaderValue(payload.payload?.headers, "Subject"),
+      xFailedRecipients: getHeaderValue(payload.payload?.headers, "X-Failed-Recipients"),
+    },
+  };
+}
+
 // ─── Token Management Helpers ──────────────────────────────────────
 
 /**

@@ -2,7 +2,7 @@ import {
   generateSequenceStepEmail,
   type OutreachSequenceStepType,
 } from "@/lib/outreach-email-generator";
-import { getValidAccessToken, getGmailThreadMetadata, sendGmailEmail } from "@/lib/gmail";
+import { getValidAccessToken, getGmailThreadMetadata, sendGmailEmail, searchGmailMessages, getGmailMessageMetadata } from "@/lib/gmail";
 import {
   AUTOMATION_SETTINGS_DEFAULTS,
   MAILBOX_DAILY_SEND_TARGET,
@@ -63,6 +63,7 @@ export type ReplyDetectionResult = {
   inboundMessageId?: string;
   inboundFrom?: string;
   threadId?: string;
+  isBounce?: boolean;
 };
 
 export type SchedulerClaim = {
@@ -1317,21 +1318,35 @@ async function markReplyStop(
     where: { id: sequence.leadId },
   }) as LeadRecord | null;
 
+  const stopReason = reply.isBounce ? "BOUNCED" : "REPLIED";
+
   if (lead?.email) {
     await prisma.outreachSuppression.create({
       data: {
         id: crypto.randomUUID(),
         email: normalizeEmail(lead.email),
-        domain: getDomainFromEmail(lead.email),
-        reason: `Reply detected from ${reply.inboundFrom || lead.email}`,
-        source: "REPLY",
+        domain: reply.isBounce ? "" : getDomainFromEmail(lead.email),
+        reason: reply.isBounce
+          ? `Hard bounce (delivery failure) for ${lead.email}`
+          : `Reply detected from ${reply.inboundFrom || lead.email}`,
+        source: reply.isBounce ? "BOUNCE" : "REPLY",
         leadId: lead.id,
         sequenceId: sequence.id,
       },
     }).catch(() => null);
   }
 
-  await stopSequenceInternal(prisma, sequence, "REPLIED", new Date());
+  if (reply.isBounce && lead) {
+    await prisma.lead.update({
+      where: { id: lead.id },
+      data: {
+        emailFlags: "bounced",
+        outreachStatus: "BOUNCED",
+      },
+    }).catch(() => null);
+  }
+
+  await stopSequenceInternal(prisma, sequence, stopReason, new Date());
 }
 
 async function detectReplyForSequence(
@@ -1393,11 +1408,16 @@ async function detectReplyForSequence(
       continue;
     }
 
+    const isBounce = fromHeader.includes("mailer-daemon") || fromHeader.includes("postmaster");
+    const subject = (message.headers.subject || "").toLowerCase();
+    const isBounceSubject = subject.includes("delivery status") || subject.includes("undeliverable") || subject.includes("failure");
+
     return {
       detected: true,
       inboundMessageId: message.id,
       inboundFrom: message.headers.from,
       threadId: thread.id,
+      isBounce: isBounce || isBounceSubject,
     } satisfies ReplyDetectionResult;
   }
 
@@ -1460,6 +1480,107 @@ export async function syncAutomationReplies() {
   }
 
   return { checked, stopped };
+}
+
+export async function syncBounceNotifications() {
+  const prisma = getPrisma();
+  let suppressed = 0;
+  let scanned = 0;
+
+  const mailboxes = await prisma.outreachMailbox.findMany({
+    where: { gmailConnectionId: { not: null } },
+  }) as OutreachMailboxRecord[];
+
+  for (const mailbox of mailboxes) {
+    const connection = mailbox.gmailConnectionId
+      ? await prisma.gmailConnection.findUnique({ where: { id: mailbox.gmailConnectionId } })
+      : null;
+    if (!connection) continue;
+
+    let tokenResult;
+    try {
+      tokenResult = await getValidAccessToken(connection as { accessToken: string; refreshToken: string; tokenExpiresAt: Date });
+      if (tokenResult.updated) {
+        await prisma.gmailConnection.update({
+          where: { id: connection.id },
+          data: tokenResult.updated,
+        });
+      }
+    } catch {
+      continue;
+    }
+
+    let bounceMessages;
+    try {
+      bounceMessages = await searchGmailMessages(
+        tokenResult.accessToken,
+        "from:mailer-daemon subject:\"Delivery Status Notification\" newer_than:2d",
+        30,
+      );
+    } catch {
+      continue;
+    }
+
+    for (const msg of bounceMessages) {
+      scanned += 1;
+      let meta;
+      try {
+        meta = await getGmailMessageMetadata(tokenResult.accessToken, msg.id);
+      } catch {
+        continue;
+      }
+
+      const failedRecipient = meta.headers.xFailedRecipients?.trim().toLowerCase();
+      if (!failedRecipient || !failedRecipient.includes("@")) continue;
+
+      const existingSuppression = await prisma.outreachSuppression.findFirst({
+        where: { email: failedRecipient },
+      });
+      if (existingSuppression) continue;
+
+      const lead = await prisma.lead.findFirst({
+        where: { email: failedRecipient },
+      }) as LeadRecord | null;
+
+      await prisma.outreachSuppression.create({
+        data: {
+          id: crypto.randomUUID(),
+          email: failedRecipient,
+          domain: "",
+          reason: `Hard bounce detected from inbox scan: ${failedRecipient}`,
+          source: "BOUNCE",
+          leadId: lead?.id ?? null,
+          sequenceId: null,
+        },
+      }).catch(() => null);
+
+      if (lead) {
+        await prisma.lead.update({
+          where: { id: lead.id },
+          data: {
+            emailFlags: "bounced",
+            outreachStatus: "BOUNCED",
+          },
+        }).catch(() => null);
+
+        const activeSequences = await prisma.outreachSequence.findMany({
+          where: {
+            leadId: lead.id,
+            status: { in: ["QUEUED", "ACTIVE", "SENDING"] },
+          },
+        }) as OutreachSequenceRecord[];
+
+        for (const seq of activeSequences) {
+          await stopSequenceInternal(prisma, seq, "BOUNCED");
+        }
+      }
+
+      suppressed += 1;
+      console.log(`[bounce-sync] Suppressed bounced address: ${failedRecipient}`);
+    }
+  }
+
+  return { scanned, suppressed };
 }
 
 async function buildStepContext(
@@ -2046,9 +2167,17 @@ export async function runAutomationScheduler() {
     }
 
     const replySync = await syncAutomationReplies();
+
+    let bounceSync = { scanned: 0, suppressed: 0 };
+    try {
+      bounceSync = await syncBounceNotifications();
+    } catch (bounceError) {
+      console.error("[scheduler] Bounce sync error (non-fatal):", bounceError);
+    }
+
     const claims = await claimDueSteps(prisma, run.id, settings.schedulerClaimBatch);
 
-    console.log(`[scheduler] Pipeline: ${JSON.stringify(pipeline)} | Replies: checked=${replySync.checked} stopped=${replySync.stopped} | Claims: ${claims.length}`);
+    console.log(`[scheduler] Pipeline: ${JSON.stringify(pipeline)} | Replies: checked=${replySync.checked} stopped=${replySync.stopped} | Bounces: scanned=${bounceSync.scanned} suppressed=${bounceSync.suppressed} | Claims: ${claims.length}`);
 
     await Promise.allSettled(
       claims.map(async (claim) => {
@@ -2125,6 +2254,7 @@ export async function runAutomationScheduler() {
         metadata: JSON.stringify({
           source: "scheduler",
           replySync,
+          bounceSync,
           pipeline,
         }),
       },
@@ -2138,6 +2268,7 @@ export async function runAutomationScheduler() {
       skipped: skippedCount,
       pipeline,
       replySync,
+      bounceSync,
     };
   } catch (error) {
     await prisma.outreachRun.update({
