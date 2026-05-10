@@ -761,7 +761,7 @@ export function ClientProfile({ lead, initialActivities, outreachEmails, sequenc
               </div>
             ) : (
               <p className="text-sm text-zinc-600">No CRM activity logged yet.</p>
-            )
+            )}
           </Section>
         </div>
       </div>
