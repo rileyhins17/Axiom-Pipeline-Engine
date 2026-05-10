@@ -355,11 +355,13 @@ function DealDrawer({
   lead,
   onClose,
   onSave,
+  onRemove,
   saving,
 }: {
   lead: CrmLead;
   onClose: () => void;
   onSave: (leadId: number, update: Record<string, unknown>) => Promise<void>;
+  onRemove: (lead: CrmLead) => void;
   saving: boolean;
 }) {
   const [dealStage, setDealStage] = useState<string>(lead.dealStage ?? "");
@@ -666,27 +668,37 @@ function DealDrawer({
         </div>
 
         {/* Footer */}
-        <div className="sticky bottom-0 flex items-center justify-between gap-3 px-6 py-4 border-t border-white/[0.06] bg-[#070d14]">
-          <div className="flex flex-col gap-1">
-            <div className="text-[10.5px] text-zinc-600">
-              {lead.firstContactedAt ? `First contact ${formatDate(lead.firstContactedAt)}` : "Not yet contacted"}
+        <div className="sticky bottom-0 flex flex-col gap-2 px-6 py-4 border-t border-white/[0.06] bg-[#070d14]">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col gap-1">
+              <div className="text-[10.5px] text-zinc-600">
+                {lead.firstContactedAt ? `First contact ${formatDate(lead.firstContactedAt)}` : "Not yet contacted"}
+              </div>
+              <Link
+                href={`/clients/${lead.id}` as Route}
+                className="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-400 transition-colors hover:text-emerald-300"
+              >
+                Open full profile
+                <ExternalLink className="size-3" />
+              </Link>
             </div>
-            <Link
-              href={`/clients/${lead.id}` as Route}
-              className="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-400 transition-colors hover:text-emerald-300"
+            <button
+              type="button"
+              disabled={saving}
+              onClick={handleSave}
+              className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-200 hover:bg-emerald-500/20 hover:border-emerald-500/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
-              Open full profile
-              <ExternalLink className="size-3" />
-            </Link>
+              <Save className="size-3.5" />
+              {saving ? "Saving…" : "Save"}
+            </button>
           </div>
           <button
             type="button"
-            disabled={saving}
-            onClick={handleSave}
-            className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-200 hover:bg-emerald-500/20 hover:border-emerald-500/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+            onClick={() => { onClose(); onRemove(lead); }}
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-xs font-medium text-red-400 transition hover:border-red-500/40 hover:bg-red-500/10 cursor-pointer"
           >
-            <Save className="size-3.5" />
-            {saving ? "Saving…" : "Save"}
+            <Trash2Icon className="size-3.5" />
+            Remove from Board
           </button>
         </div>
       </div>
@@ -700,12 +712,14 @@ function InboxSection({
   leads,
   onEdit,
   onQuickUpdate,
+  onDismiss,
   onReset,
   saving,
 }: {
   leads: CrmLead[];
   onEdit: (lead: CrmLead) => void;
   onQuickUpdate: (leadId: number, update: Record<string, unknown>) => Promise<void>;
+  onDismiss: (leadId: number) => Promise<void>;
   onReset: () => Promise<void>;
   saving: boolean;
 }) {
@@ -719,6 +733,10 @@ function InboxSection({
     await onReset();
     setResetting(false);
     setConfirmReset(false);
+  };
+
+  const copyToClipboard = (text: string) => {
+    void navigator.clipboard.writeText(text);
   };
 
   return (
@@ -770,20 +788,60 @@ function InboxSection({
         {leads.map((lead) => (
           <div
             key={lead.id}
-            className="rounded-lg border border-cyan-500/20 bg-cyan-500/5 px-3 py-3 transition-all hover:border-cyan-500/30 hover:bg-cyan-500/10"
+            className="group/card rounded-lg border border-cyan-500/20 bg-cyan-500/5 px-3 py-3 transition-all hover:border-cyan-500/30 hover:bg-cyan-500/10"
           >
-            <button
-              type="button"
-              onClick={() => onEdit(lead)}
-              className="group flex w-full items-start gap-2.5 text-left cursor-pointer"
-            >
-              <Building2 className="mt-0.5 size-3.5 shrink-0 text-cyan-400/70" />
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-xs font-medium text-white">{lead.businessName}</div>
-                <div className="mt-0.5 truncate text-[10px] text-zinc-500">{lead.city} / {lead.niche}</div>
-              </div>
-              <ChevronRight className="size-3.5 shrink-0 text-zinc-600 transition-colors group-hover:text-zinc-400" />
-            </button>
+            <div className="flex items-start gap-2.5">
+              <button
+                type="button"
+                onClick={() => onEdit(lead)}
+                className="group flex min-w-0 flex-1 items-start gap-2.5 text-left cursor-pointer"
+              >
+                <Building2 className="mt-0.5 size-3.5 shrink-0 text-cyan-400/70" />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-xs font-medium text-white">{lead.businessName}</div>
+                  <div className="mt-0.5 truncate text-[10px] text-zinc-500">{lead.city} / {lead.niche}</div>
+                  {lead.email && (
+                    <div className="mt-0.5 truncate text-[10px] text-zinc-600">{lead.email}</div>
+                  )}
+                </div>
+              </button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className="shrink-0 inline-flex size-6 items-center justify-center rounded-md text-zinc-600 opacity-0 transition-all group-hover/card:opacity-100 hover:bg-white/[0.08] hover:text-zinc-300 cursor-pointer"
+                  >
+                    <MoreHorizontalIcon className="size-3.5" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => onEdit(lead)}>
+                    <Pencil className="size-3.5" />
+                    Edit Deal
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link href={`/clients/${lead.id}` as Route}>
+                      <UserIcon className="size-3.5" />
+                      View Profile
+                    </Link>
+                  </DropdownMenuItem>
+                  {lead.email && (
+                    <DropdownMenuItem onClick={() => copyToClipboard(lead.email!)}>
+                      <CopyIcon className="size-3.5" />
+                      Copy Email
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    variant="destructive"
+                    onClick={() => void onDismiss(lead.id)}
+                  >
+                    <X className="size-3.5" />
+                    Dismiss from Inbox
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
             <div className="mt-3 flex flex-wrap gap-1.5">
               <button
                 type="button"
@@ -795,17 +853,17 @@ function InboxSection({
                     nextActionDueAt: defaultDueDate(1),
                   })
                 }
-                className="rounded-md border border-white/[0.08] bg-black/20 px-2 py-1 text-[10.5px] font-medium text-zinc-400 transition hover:border-orange-500/30 hover:text-orange-300 disabled:pointer-events-none disabled:opacity-50"
+                className="rounded-md border border-white/[0.08] bg-black/20 px-2 py-1 text-[10.5px] font-medium text-zinc-400 transition hover:border-orange-500/30 hover:text-orange-300 disabled:pointer-events-none disabled:opacity-50 cursor-pointer"
               >
-                Discovery
+                → Discovery
               </button>
               <button
                 type="button"
                 disabled={saving}
                 onClick={() => void onQuickUpdate(lead.id, { dealStage: "PROPOSAL_SENT" })}
-                className="rounded-md border border-white/[0.08] bg-black/20 px-2 py-1 text-[10.5px] font-medium text-zinc-400 transition hover:border-amber-500/30 hover:text-amber-300 disabled:pointer-events-none disabled:opacity-50"
+                className="rounded-md border border-white/[0.08] bg-black/20 px-2 py-1 text-[10.5px] font-medium text-zinc-400 transition hover:border-amber-500/30 hover:text-amber-300 disabled:pointer-events-none disabled:opacity-50 cursor-pointer"
               >
-                Proposal
+                → Proposal
               </button>
               <button
                 type="button"
@@ -816,9 +874,9 @@ function InboxSection({
                     dealLostReason: "Not qualified from CRM inbox",
                   })
                 }
-                className="rounded-md border border-white/[0.08] bg-black/20 px-2 py-1 text-[10.5px] font-medium text-zinc-500 transition hover:border-red-500/30 hover:text-red-300 disabled:pointer-events-none disabled:opacity-50"
+                className="rounded-md border border-white/[0.08] bg-black/20 px-2 py-1 text-[10.5px] font-medium text-zinc-500 transition hover:border-red-500/30 hover:text-red-300 disabled:pointer-events-none disabled:opacity-50 cursor-pointer"
               >
-                Lost
+                ✕ Lost
               </button>
             </div>
           </div>
@@ -932,6 +990,22 @@ export function ClientsBoard({ initialLeads }: { initialLeads: CrmLead[] }) {
     setLeads((prev) =>
       prev.filter((l) => l.dealStage !== null || (l.outreachStatus !== "REPLIED" && l.outreachStatus !== "INTERESTED")),
     );
+  }, []);
+
+  const handleDismissInbox = useCallback(async (leadId: number) => {
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/leads/${leadId}/deal`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ outreachStatus: null }),
+      });
+      if (res.ok) {
+        setLeads((prev) => prev.map((l) => l.id === leadId ? { ...l, outreachStatus: null } : l));
+      }
+    } finally {
+      setSaving(false);
+    }
   }, []);
 
   const handleSave = useCallback(async (leadId: number, update: Record<string, unknown>) => {
@@ -1184,7 +1258,7 @@ export function ClientsBoard({ initialLeads }: { initialLeads: CrmLead[] }) {
         </div>
       )}
 
-      <InboxSection leads={filteredInbox} onEdit={setEditing} onQuickUpdate={handleSave} onReset={handleResetInbox} saving={saving} />
+      <InboxSection leads={filteredInbox} onEdit={setEditing} onQuickUpdate={handleSave} onReset={handleResetInbox} onDismiss={handleDismissInbox} saving={saving} />
 
       {/* Kanban board with drag-and-drop */}
       <div className="flex gap-4 overflow-x-auto pb-4">
@@ -1274,6 +1348,7 @@ export function ClientsBoard({ initialLeads }: { initialLeads: CrmLead[] }) {
           lead={editing}
           onClose={() => setEditing(null)}
           onSave={handleSave}
+          onRemove={(lead) => setDeleteConfirm(lead)}
           saving={saving}
         />
       )}
