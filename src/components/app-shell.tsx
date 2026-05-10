@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle2, Settings } from "lucide-react";
+import { CheckCircle2, LogOutIcon, Settings, UserIcon } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 
 import { authClient } from "@/lib/auth-client";
@@ -10,6 +10,15 @@ import { LayoutBreadcrumb } from "@/components/layout-breadcrumb";
 import { SearchTrigger } from "@/components/system/search-trigger";
 import { HotkeyProvider } from "@/components/system/hotkey-provider";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { Avatar } from "@/components/ui/avatar";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const PUBLIC_PATH_PREFIXES = ["/sign-in", "/sign-up"];
 
@@ -17,6 +26,7 @@ type ShellSession = {
   user?: {
     name?: string | null;
     email?: string | null;
+    image?: string | null;
     role?: string | null;
   } | null;
 } | null;
@@ -30,7 +40,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [session, setSession] = useState<ShellSession>(null);
   const [loading, setLoading] = useState(true);
-  const [avatarError, setAvatarError] = useState(false);
 
   useEffect(() => {
     authClient.getSession().then((result) => {
@@ -83,33 +92,59 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <Settings className="size-4" />
               </button>
             </div>
-            <div className="hidden items-center gap-3 pl-2 lg:flex">
-              <div className="text-right leading-tight">
-                <div className="text-xs font-semibold text-white">
-                  {loading ? "Loading…" : displayName || sessionEmail || "User"}
-                </div>
-                <div className="font-mono text-[10.5px] text-zinc-500">
-                  {sessionEmail || "—"}
-                </div>
-              </div>
-              <div className="relative flex size-9 items-center justify-center rounded-full border border-emerald-400/30 overflow-hidden bg-gradient-to-br from-emerald-400/20 to-cyan-400/10 text-xs font-semibold text-emerald-100">
-                {localPart && !avatarError ? (
-                  <picture>
-                    <source srcSet={`/avatars/${localPart}.webp`} type="image/webp" />
-                    <source srcSet={`/avatars/${localPart}.jpg`} type="image/jpeg" />
-                    <img
-                      src={`/avatars/${localPart}.jpg`}
-                      alt={displayName}
-                      className="size-full object-cover"
-                      onError={() => setAvatarError(true)}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="hidden items-center gap-3 pl-2 lg:flex cursor-pointer rounded-lg p-1.5 -m-1.5 transition-colors hover:bg-white/[0.04] outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/50"
+                >
+                  <div className="text-right leading-tight">
+                    <div className="text-xs font-semibold text-white">
+                      {loading ? "Loading…" : displayName || sessionEmail || "User"}
+                    </div>
+                    <div className="font-mono text-[10.5px] text-zinc-500">
+                      {sessionEmail || "—"}
+                    </div>
+                  </div>
+                  <div className="relative">
+                    <Avatar
+                      src={session?.user?.image}
+                      fallback={initials}
+                      size="lg"
                     />
-                  </picture>
-                ) : (
-                  initials
-                )}
-                <span className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border-2 border-[#06101a] bg-emerald-400" />
-              </div>
-            </div>
+                    <span className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border-2 border-[#06101a] bg-emerald-400" />
+                  </div>
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel className="font-normal">
+                  <div className="flex flex-col space-y-1 px-0.5 py-1">
+                    <p className="text-sm font-medium text-white">
+                      {displayName || sessionEmail || "User"}
+                    </p>
+                    <p className="font-mono text-xs text-zinc-500">
+                      {sessionEmail}
+                    </p>
+                  </div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => router.push("/settings")}>
+                  <UserIcon />
+                  Profile & Settings
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  variant="destructive"
+                  onClick={async () => {
+                    await authClient.signOut();
+                    router.push("/sign-in");
+                  }}
+                >
+                  <LogOutIcon />
+                  Sign Out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </header>
 

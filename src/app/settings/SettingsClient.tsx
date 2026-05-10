@@ -1,9 +1,12 @@
 "use client";
 
 import type { ComponentType, ReactNode } from "react";
-import { CheckCircle2, Mail, Monitor, ShieldCheck, TimerReset, XCircle } from "lucide-react";
+import { CheckCircle2, Mail, Monitor, ShieldCheck, TimerReset, UserIcon, UsersIcon, XCircle } from "lucide-react";
 
 import { EmergencyControlCard } from "@/components/emergency-control-card";
+import { ProfileSection } from "@/components/profile-section";
+import { UserManagement } from "@/components/settings/user-management";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 type RuntimeStatus = {
   currentUserEmail: string;
@@ -75,11 +78,23 @@ function StatusPill({ label, state }: { label: string; state: "ready" | "attenti
   );
 }
 
+type UserProfile = {
+  id: string;
+  name: string;
+  email: string;
+  image: string | null;
+  role: string | null;
+};
+
 export function SettingsClient({
+  userProfile,
+  isAdmin,
   runtimeStatus,
   mailboxes,
   emergencyControl,
 }: {
+  userProfile: UserProfile;
+  isAdmin: boolean;
   runtimeStatus: RuntimeStatus;
   mailboxes: MailboxStatus[];
   emergencyControl: EmergencyState;
@@ -90,10 +105,9 @@ export function SettingsClient({
         <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div>
             <p className="v2-eyebrow">Settings</p>
-            <h1 className="mt-2 text-[32px] font-semibold tracking-[-0.022em] text-white">Operator console</h1>
+            <h1 className="mt-2 text-[32px] font-semibold tracking-[-0.022em] text-white">Settings</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">
-              The pipeline is fully autonomous. The only human action ever required is the one-time Gmail OAuth
-              for each sender mailbox.
+              Manage your profile, mailbox connections, and system configuration.
             </p>
           </div>
           <div className="v2-pill self-start">
@@ -102,81 +116,132 @@ export function SettingsClient({
         </div>
       </header>
 
-      <section>
-        <EmergencyControlCard initialState={emergencyControl} />
-      </section>
+      <Tabs defaultValue="profile">
+        <TabsList>
+          <TabsTrigger value="profile">
+            <UserIcon className="size-3.5" />
+            Profile
+          </TabsTrigger>
+          <TabsTrigger value="mailboxes">
+            <Mail className="size-3.5" />
+            Mailboxes
+          </TabsTrigger>
+          {isAdmin && (
+            <TabsTrigger value="system">
+              <Monitor className="size-3.5" />
+              System
+            </TabsTrigger>
+          )}
+          {isAdmin && (
+            <TabsTrigger value="users">
+              <UsersIcon className="size-3.5" />
+              Users
+            </TabsTrigger>
+          )}
+          {isAdmin && (
+            <TabsTrigger value="security">
+              <ShieldCheck className="size-3.5" />
+              Security
+            </TabsTrigger>
+          )}
+        </TabsList>
 
-      <section>
-        <Panel>
-          <SectionTitle
-            icon={Mail}
-            title="Sender mailboxes"
-            detail={`Connect once via Google OAuth. Runtime cap: ${runtimeStatus.globalDailySendCap}/day total.`}
-          />
-          <div className="space-y-3">
-            {mailboxes.map((mailbox) => (
-              <MailboxRow key={mailbox.email} mailbox={mailbox} />
-            ))}
-          </div>
-        </Panel>
-      </section>
+        <TabsContent value="profile">
+          <Panel>
+            <ProfileSection user={userProfile} />
+          </Panel>
+        </TabsContent>
 
-      <section className="grid gap-4 lg:grid-cols-2">
-        <Panel>
-          <SectionTitle icon={ShieldCheck} title="Runtime posture" detail="Read-only signals from Cloudflare bindings." />
-          <div className="space-y-2 text-sm">
-            <StatusRow label="Database target">
-              <StatusPill
-                label={runtimeStatus.databaseTarget === "cloudflare-d1" ? "D1" : "Missing"}
-                state={runtimeStatus.databaseTarget === "cloudflare-d1" ? "ready" : "attention"}
-              />
-            </StatusRow>
-            <StatusRow label="Browser rendering">
-              <StatusPill
-                label={runtimeStatus.browserRenderingConfigured ? "Bound" : "Missing"}
-                state={runtimeStatus.browserRenderingConfigured ? "ready" : "attention"}
-              />
-            </StatusRow>
-            <StatusRow label="DeepSeek API key">
-              <StatusPill
-                label={runtimeStatus.deepSeekConfigured ? "Configured" : "Missing"}
-                state={runtimeStatus.deepSeekConfigured ? "ready" : "attention"}
-              />
-            </StatusRow>
-            <StatusRow label="DeepSeek credits">
-              <DeepSeekBalance balance={runtimeStatus.deepSeekBalance} />
-            </StatusRow>
-            <StatusRow label="App base URL">
-              <span className="max-w-[14rem] truncate font-mono text-xs text-muted-foreground">{runtimeStatus.appBaseUrl}</span>
-            </StatusRow>
-          </div>
-        </Panel>
+        <TabsContent value="mailboxes">
+          <Panel>
+            <SectionTitle
+              icon={Mail}
+              title="Sender mailboxes"
+              detail={`Connect once via Google OAuth. Runtime cap: ${runtimeStatus.globalDailySendCap}/day total.`}
+            />
+            <div className="space-y-3">
+              {mailboxes.map((mailbox) => (
+                <MailboxRow key={mailbox.email} mailbox={mailbox} />
+              ))}
+            </div>
+          </Panel>
+        </TabsContent>
 
-        <Panel>
-          <SectionTitle icon={TimerReset} title="Scrape engine" detail="Cloudflare cron runs every 60s." />
-          <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
-            <Limit label="Cloud scrape" value={runtimeStatus.cloudScrapeEnabled} />
-            <Limit label="Intake" value={runtimeStatus.intakePaused ? "paused" : "active"} />
-            <Limit label="Concurrency" value={String(runtimeStatus.scrapeConcurrencyLimit)} />
-            <Limit label="Timeout" value={`${Math.round(runtimeStatus.scrapeTimeoutMs / 1000)}s`} />
-            <Limit label="Quality" value={formatScrapeQuality(runtimeStatus.scrapeHealth)} />
-            <Limit label="Last scrape" value={formatLastScrape(runtimeStatus.scrapeHealth.latest)} />
-          </div>
-        </Panel>
-      </section>
+        {isAdmin && (
+          <TabsContent value="system">
+            <div className="space-y-4">
+              <section className="grid gap-4 lg:grid-cols-2">
+                <Panel>
+                  <SectionTitle icon={ShieldCheck} title="Runtime posture" detail="Read-only signals from Cloudflare bindings." />
+                  <div className="space-y-2 text-sm">
+                    <StatusRow label="Database target">
+                      <StatusPill
+                        label={runtimeStatus.databaseTarget === "cloudflare-d1" ? "D1" : "Missing"}
+                        state={runtimeStatus.databaseTarget === "cloudflare-d1" ? "ready" : "attention"}
+                      />
+                    </StatusRow>
+                    <StatusRow label="Browser rendering">
+                      <StatusPill
+                        label={runtimeStatus.browserRenderingConfigured ? "Bound" : "Missing"}
+                        state={runtimeStatus.browserRenderingConfigured ? "ready" : "attention"}
+                      />
+                    </StatusRow>
+                    <StatusRow label="DeepSeek API key">
+                      <StatusPill
+                        label={runtimeStatus.deepSeekConfigured ? "Configured" : "Missing"}
+                        state={runtimeStatus.deepSeekConfigured ? "ready" : "attention"}
+                      />
+                    </StatusRow>
+                    <StatusRow label="DeepSeek credits">
+                      <DeepSeekBalance balance={runtimeStatus.deepSeekBalance} />
+                    </StatusRow>
+                    <StatusRow label="App base URL">
+                      <span className="max-w-[14rem] truncate font-mono text-xs text-muted-foreground">{runtimeStatus.appBaseUrl}</span>
+                    </StatusRow>
+                  </div>
+                </Panel>
 
-      <section>
-        <Panel>
-          <SectionTitle icon={Monitor} title="What runs autonomously" detail="No human input is required after Gmail OAuth." />
-          <ul className="space-y-2 text-sm text-zinc-400">
-            <Bullet>Scrape intake dispatches the next due target every cron tick (capped at {runtimeStatus.intakeDailyLeadCap} adequate leads/day UTC).</Bullet>
-            <Bullet>Cloudflare Browser Rendering executes the scrape and persists leads.</Bullet>
-            <Bullet>Auto-pipeline enriches, qualifies, and queues leads on a rolling basis.</Bullet>
-            <Bullet>Scheduler sends emails only to non-generic owner/staff inboxes, capped by each mailbox and the {runtimeStatus.globalDailySendCap}/day global limit.</Bullet>
-            <Bullet>Reply detection stops sequences when a recipient replies.</Bullet>
-          </ul>
-        </Panel>
-      </section>
+                <Panel>
+                  <SectionTitle icon={TimerReset} title="Scrape engine" detail="Cloudflare cron runs every 60s." />
+                  <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
+                    <Limit label="Cloud scrape" value={runtimeStatus.cloudScrapeEnabled} />
+                    <Limit label="Intake" value={runtimeStatus.intakePaused ? "paused" : "active"} />
+                    <Limit label="Concurrency" value={String(runtimeStatus.scrapeConcurrencyLimit)} />
+                    <Limit label="Timeout" value={`${Math.round(runtimeStatus.scrapeTimeoutMs / 1000)}s`} />
+                    <Limit label="Quality" value={formatScrapeQuality(runtimeStatus.scrapeHealth)} />
+                    <Limit label="Last scrape" value={formatLastScrape(runtimeStatus.scrapeHealth.latest)} />
+                  </div>
+                </Panel>
+              </section>
+
+              <Panel>
+                <SectionTitle icon={Monitor} title="What runs autonomously" detail="No human input is required after Gmail OAuth." />
+                <ul className="space-y-2 text-sm text-zinc-400">
+                  <Bullet>Scrape intake dispatches the next due target every cron tick (capped at {runtimeStatus.intakeDailyLeadCap} adequate leads/day UTC).</Bullet>
+                  <Bullet>Cloudflare Browser Rendering executes the scrape and persists leads.</Bullet>
+                  <Bullet>Auto-pipeline enriches, qualifies, and queues leads on a rolling basis.</Bullet>
+                  <Bullet>Scheduler sends emails only to non-generic owner/staff inboxes, capped by each mailbox and the {runtimeStatus.globalDailySendCap}/day global limit.</Bullet>
+                  <Bullet>Reply detection stops sequences when a recipient replies.</Bullet>
+                </ul>
+              </Panel>
+            </div>
+          </TabsContent>
+        )}
+
+        {isAdmin && (
+          <TabsContent value="users">
+            <Panel>
+              <UserManagement />
+            </Panel>
+          </TabsContent>
+        )}
+
+        {isAdmin && (
+          <TabsContent value="security">
+            <EmergencyControlCard initialState={emergencyControl} />
+          </TabsContent>
+        )}
+      </Tabs>
     </div>
   );
 }

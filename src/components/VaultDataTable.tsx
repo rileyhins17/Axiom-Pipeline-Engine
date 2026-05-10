@@ -18,21 +18,33 @@ import {
     Filter,
     Globe,
     Mail,
+    MoreHorizontalIcon,
     Phone,
+    PlusIcon,
     Search,
     Share2,
     SlidersHorizontal,
     Square,
     Star,
+    Trash2Icon,
     User,
     X,
     XCircle,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { AddLeadDialog } from "@/components/vault/add-lead-dialog";
 import { formatOutreachDate, getOutreachChannelLabel, isContactedOutreachStatus } from "@/lib/outreach";
 import { formatAppDate } from "@/lib/time";
 
@@ -319,6 +331,9 @@ export default function VaultDataTable({ totalCount }: { totalCount: number }) {
     const [exportScope, setExportScope] = useState<ExportScope>("filtered");
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
     const [bulkActing, setBulkActing] = useState(false);
+    const [showAddDialog, setShowAddDialog] = useState(false);
+    const [deleteConfirm, setDeleteConfirm] = useState<{ type: "single"; id: number } | { type: "bulk" } | null>(null);
+    const [deleting, setDeleting] = useState(false);
 
     const uniqueNiches = useMemo(() => [...new Set(leads.map((lead) => lead.niche).filter(Boolean))].sort(), [leads]);
     const uniqueCities = useMemo(() => [...new Set(leads.map((lead) => lead.city).filter(Boolean))].sort(), [leads]);
@@ -528,11 +543,61 @@ export default function VaultDataTable({ totalCount }: { totalCount: number }) {
         URL.revokeObjectURL(a.href);
     }, [selectedIds, leads, exportColumns]);
 
+    const handleDeleteSingle = useCallback(async (id: number) => {
+        setDeleting(true);
+        try {
+            const res = await fetch(`/api/vault/leads/${id}`, { method: "DELETE" });
+            if (res.ok || res.status === 204) {
+                setLeads((prev) => prev.filter((l) => l.id !== id));
+                setSelectedIds((prev) => { const next = new Set(prev); next.delete(id); return next; });
+            }
+        } catch { /* swallow */ } finally {
+            setDeleting(false);
+            setDeleteConfirm(null);
+        }
+    }, []);
+
+    const handleBulkDelete = useCallback(async () => {
+        if (selectedIds.size === 0) return;
+        setDeleting(true);
+        try {
+            const res = await fetch("/api/vault/bulk", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action: "delete", ids: [...selectedIds] }),
+            });
+            if (res.ok) {
+                setLeads((prev) => prev.filter((l) => !selectedIds.has(l.id)));
+                setSelectedIds(new Set());
+            }
+        } catch { /* swallow */ } finally {
+            setDeleting(false);
+            setDeleteConfirm(null);
+        }
+    }, [selectedIds]);
+
+    const handleLeadCreated = useCallback((lead: Record<string, unknown>) => {
+        setLeads((prev) => [lead as unknown as Lead, ...prev]);
+    }, []);
+
     const selectedExportColumnCount = Object.values(exportColumns).filter(Boolean).length;
     const exportRowCount = exportScope === "all" ? leads.length : exportScope === "page" ? pagedLeads.length : processedLeads.length;
 
     return (
         <div className="space-y-4">
+            <AddLeadDialog open={showAddDialog} onOpenChange={setShowAddDialog} onCreated={handleLeadCreated} />
+            <ConfirmDialog
+                open={deleteConfirm !== null}
+                onOpenChange={(v) => { if (!v) setDeleteConfirm(null); }}
+                title={deleteConfirm?.type === "bulk" ? `Delete ${selectedIds.size} leads?` : "Delete lead?"}
+                description="This action cannot be undone. The lead data will be permanently removed."
+                confirmLabel="Delete"
+                loading={deleting}
+                onConfirm={() => {
+                    if (deleteConfirm?.type === "single") handleDeleteSingle(deleteConfirm.id);
+                    else if (deleteConfirm?.type === "bulk") handleBulkDelete();
+                }}
+            />
             <div className="grid gap-3 lg:grid-cols-[minmax(280px,1fr)_auto] lg:items-center">
                 <div className="relative">
                     <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-600" />
@@ -555,6 +620,17 @@ export default function VaultDataTable({ totalCount }: { totalCount: number }) {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => setShowAddDialog(true)}
+                        className="h-8 gap-2 text-[11px]"
+                        data-hotkey="add"
+                    >
+                        <PlusIcon className="h-3.5 w-3.5" />
+                        Add Lead
+                    </Button>
+                    <div className="h-5 w-px bg-white/[0.08]" />
                     {[
                         { key: "ALL", label: "All", count: statusCounts.all },
                         { key: "MISSING", label: "No site", count: statusCounts.missing },
@@ -645,10 +721,19 @@ export default function VaultDataTable({ totalCount }: { totalCount: number }) {
                         type="button"
                         disabled={bulkActing}
                         onClick={handleBulkArchive}
-                        className="flex items-center gap-1.5 rounded-md border border-white/[0.08] bg-black/20 px-2.5 py-1 text-[11px] font-medium text-zinc-300 transition hover:border-red-500/30 hover:text-red-200 disabled:opacity-50"
+                        className="flex items-center gap-1.5 rounded-md border border-white/[0.08] bg-black/20 px-2.5 py-1 text-[11px] font-medium text-zinc-300 transition hover:border-amber-500/30 hover:text-amber-200 disabled:opacity-50"
                     >
                         <Archive className="h-3 w-3" />
                         Archive
+                    </button>
+                    <button
+                        type="button"
+                        disabled={bulkActing}
+                        onClick={() => setDeleteConfirm({ type: "bulk" })}
+                        className="flex items-center gap-1.5 rounded-md border border-white/[0.08] bg-black/20 px-2.5 py-1 text-[11px] font-medium text-zinc-300 transition hover:border-red-500/30 hover:text-red-200 disabled:opacity-50"
+                    >
+                        <Trash2Icon className="h-3 w-3" />
+                        Delete
                     </button>
                     <button
                         type="button"
@@ -924,8 +1009,55 @@ export default function VaultDataTable({ totalCount }: { totalCount: number }) {
                                                 ) : null}
                                             </div>
                                         </TableCell>
-                                        <TableCell className="text-right">
-                                            <ChevronDown className={`h-4 w-4 text-zinc-700 ${expandedId === lead.id ? "rotate-180" : ""}`} />
+                                        <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                                            <DropdownMenu>
+                                                <DropdownMenuTrigger asChild>
+                                                    <button
+                                                        type="button"
+                                                        className="inline-flex size-7 items-center justify-center rounded-md text-zinc-600 transition hover:bg-white/[0.06] hover:text-white cursor-pointer"
+                                                    >
+                                                        <MoreHorizontalIcon className="h-4 w-4" />
+                                                    </button>
+                                                </DropdownMenuTrigger>
+                                                <DropdownMenuContent align="end">
+                                                    <DropdownMenuItem onClick={() => setExpandedId(expandedId === lead.id ? null : lead.id)}>
+                                                        {expandedId === lead.id ? "Collapse" : "View Details"}
+                                                    </DropdownMenuItem>
+                                                    {lead.email && (
+                                                        <DropdownMenuItem onClick={() => navigator.clipboard.writeText(lead.email!)}>
+                                                            <Mail className="h-3.5 w-3.5" />
+                                                            Copy Email
+                                                        </DropdownMenuItem>
+                                                    )}
+                                                    {lead.phone && (
+                                                        <DropdownMenuItem onClick={() => navigator.clipboard.writeText(lead.phone!)}>
+                                                            <Phone className="h-3.5 w-3.5" />
+                                                            Copy Phone
+                                                        </DropdownMenuItem>
+                                                    )}
+                                                    <DropdownMenuSeparator />
+                                                    <DropdownMenuItem
+                                                        onClick={async () => {
+                                                            await fetch("/api/vault/bulk", {
+                                                                method: "POST",
+                                                                headers: { "Content-Type": "application/json" },
+                                                                body: JSON.stringify({ action: "archive", ids: [lead.id] }),
+                                                            });
+                                                            setLeads((prev) => prev.filter((l) => l.id !== lead.id));
+                                                        }}
+                                                    >
+                                                        <Archive className="h-3.5 w-3.5" />
+                                                        Archive
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuItem
+                                                        variant="destructive"
+                                                        onClick={() => setDeleteConfirm({ type: "single", id: lead.id })}
+                                                    >
+                                                        <Trash2Icon className="h-3.5 w-3.5" />
+                                                        Delete
+                                                    </DropdownMenuItem>
+                                                </DropdownMenuContent>
+                                            </DropdownMenu>
                                         </TableCell>
                                     </TableRow>
                                     {expandedId === lead.id ? (

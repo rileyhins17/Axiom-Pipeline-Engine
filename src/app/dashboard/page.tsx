@@ -11,7 +11,6 @@ import {
   Crosshair,
   DollarSign,
   Filter,
-  Inbox,
   Mail,
   MailCheck,
   Radar,
@@ -22,6 +21,9 @@ import {
   Users,
 } from "lucide-react";
 
+import { QuickActions } from "@/components/dashboard/quick-actions";
+import { RefreshButton } from "@/components/dashboard/refresh-button";
+import { ReplyInboxPanel } from "@/components/dashboard/reply-inbox-actions";
 import {
   AUTONOMOUS_INTAKE_MIN_SCORE,
   AUTOMATION_SETTINGS_DEFAULTS,
@@ -562,18 +564,24 @@ export default async function DashboardPage() {
           </span>
           <h1 className="mt-2 text-[34px] font-semibold tracking-[-0.025em] text-white">Dashboard</h1>
           <p className="mt-1 text-sm text-zinc-400">
-            Read-only monitoring. Cron tick every 60s. No human input required.
+            Autonomous pipeline monitoring and command center.
           </p>
         </div>
-        <div className="rounded-lg border border-white/[0.08] bg-white/[0.025] px-3 py-1.5 text-right text-[11px] text-zinc-400">
+        <div className="flex items-center gap-3">
+          <RefreshButton />
+          <div className="rounded-lg border border-white/[0.08] bg-white/[0.025] px-3 py-1.5 text-right text-[11px] text-zinc-400">
           <div className="font-medium text-zinc-200">
             {new Intl.DateTimeFormat("en-US", { weekday: "long", month: "short", day: "numeric", timeZone: BUSINESS_TZ }).format(new Date())}
           </div>
           <div className="font-mono text-[10.5px] text-zinc-500">
             {formatAppDateTime(new Date(), { hour: "numeric", minute: "2-digit" }, "")}
           </div>
+          </div>
         </div>
       </header>
+
+      {/* Quick Actions */}
+      <QuickActions />
 
       {automation.settings.emergencyPaused ? (
         <div className="v2-card border-red-400/25 bg-red-500/[0.07] px-4 py-3">
@@ -608,6 +616,7 @@ export default async function DashboardPage() {
           title="Autonomous Intake"
           subtitle="Lead generation today (UTC)"
           accent="emerald"
+          href="/vault"
         >
           <RatioMeter
             label="Adequate leads"
@@ -645,6 +654,7 @@ export default async function DashboardPage() {
           title="Send Health"
           subtitle="Outbound email volume today (UTC)"
           accent="cyan"
+          href="/settings"
         >
           <RatioMeter
             label="Sent today"
@@ -668,6 +678,7 @@ export default async function DashboardPage() {
           title="Pipeline Throughput"
           subtitle="Last 7 days"
           accent="violet"
+          href="/vault"
         >
           <Sparkline label="Leads found" series={series.leadsFound} tone="emerald" />
           <Sparkline label="Enriched" series={series.enriched} tone="cyan" />
@@ -683,6 +694,7 @@ export default async function DashboardPage() {
           title="Revenue"
           subtitle="CRM deal pipeline"
           accent="amber"
+          href="/clients"
         >
           <div className="flex items-baseline gap-2">
             <span className="font-mono text-3xl font-semibold text-emerald-300 tabular-nums">
@@ -724,40 +736,8 @@ export default async function DashboardPage() {
         </Panel>
       </section>
 
-      {/* Reply Inbox */}
-      {replyInbox.length > 0 && (
-        <div className="v2-card overflow-hidden">
-          <header className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
-            <div className="flex items-center gap-2">
-              <Inbox className="size-4 text-cyan-400" />
-              <div>
-                <div className="text-sm font-semibold text-white">Reply Inbox</div>
-                <div className="mt-0.5 text-[11px] text-zinc-500">{replyInbox.length} unhandled {replyInbox.length === 1 ? "reply" : "replies"} — respond fast</div>
-              </div>
-            </div>
-            <Link href="/clients" className="text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors font-medium flex items-center gap-1">
-              Open board <ArrowRight className="size-3" />
-            </Link>
-          </header>
-          <div className="divide-y divide-white/[0.05]">
-            {replyInbox.map((item) => {
-              const urgency = item.replyAgeHours >= 4 ? "text-red-400" : item.replyAgeHours >= 1 ? "text-amber-400" : "text-emerald-400";
-              return (
-                <Link key={item.id} href={`/clients/${item.id}`} className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-white/[0.02] transition-colors">
-                  <div className="min-w-0">
-                    <div className="text-sm font-medium text-white truncate">{item.businessName}</div>
-                    <div className="text-[11px] text-zinc-500 truncate">{item.city} · {item.niche}{item.email ? ` · ${item.email}` : ""}</div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className={`font-mono text-[11px] font-medium ${urgency}`}>{item.replyAgeLabel}</span>
-                    <span className={`inline-flex h-2 w-2 rounded-full ${item.replyAgeHours >= 4 ? "bg-red-400" : item.replyAgeHours >= 1 ? "bg-amber-400" : "bg-emerald-400"}`} />
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      {/* Reply Inbox — interactive client component */}
+      <ReplyInboxPanel items={replyInbox} />
 
       {/* Conversion Funnel */}
       <div className="v2-card overflow-hidden">
@@ -1014,22 +994,39 @@ function Panel({
   title,
   subtitle,
   accent,
+  href,
   children,
 }: {
   title: string;
   subtitle: string;
   accent: ToneKey;
+  href?: string;
   children: ReactNode;
 }) {
+  const headerContent = (
+    <>
+      <div>
+        <div className="text-sm font-semibold text-white">{title}</div>
+        <div className="mt-0.5 text-[11px] text-zinc-500">{subtitle}</div>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className={`inline-flex h-2 w-2 rounded-full ${TONE[accent].bar}`} />
+        {href && <ArrowRight className="size-3 text-zinc-600 group-hover:text-zinc-400 transition-colors" />}
+      </div>
+    </>
+  );
+
   return (
     <div className="v2-card overflow-hidden">
-      <header className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
-        <div>
-          <div className="text-sm font-semibold text-white">{title}</div>
-          <div className="mt-0.5 text-[11px] text-zinc-500">{subtitle}</div>
-        </div>
-        <span className={`inline-flex h-2 w-2 rounded-full ${TONE[accent].bar}`} />
-      </header>
+      {href ? (
+        <Link href={href} className="group flex items-center justify-between border-b border-white/[0.06] px-4 py-3 transition-colors hover:bg-white/[0.02]">
+          {headerContent}
+        </Link>
+      ) : (
+        <header className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
+          {headerContent}
+        </header>
+      )}
       <div className="space-y-3 p-4">{children}</div>
     </div>
   );

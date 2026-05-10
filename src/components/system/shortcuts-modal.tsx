@@ -28,6 +28,13 @@ const SHORTCUT_GROUPS = [
     ],
   },
   {
+    title: "Actions",
+    shortcuts: [
+      { keys: ["N"], description: "Add new item" },
+      { keys: ["/"], description: "Focus search" },
+    ],
+  },
+  {
     title: "System",
     shortcuts: [{ keys: ["?"], description: "Show this help" }],
   },

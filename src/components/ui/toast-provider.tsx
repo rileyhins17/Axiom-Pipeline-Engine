@@ -9,12 +9,14 @@ import { Check, X, Copy, Phone, Mail, MapPin, FileText } from "lucide-react";
 interface Toast {
     id: string;
     message: string;
-    type?: "success" | "info" | "error";
+    type?: "success" | "info" | "error" | "warning";
     icon?: "copy" | "phone" | "email" | "address" | "note";
+    onUndo?: () => void;
+    duration?: number;
 }
 
 interface ToastContextValue {
-    toast: (message: string, opts?: { type?: Toast["type"]; icon?: Toast["icon"] }) => void;
+    toast: (message: string, opts?: { type?: Toast["type"]; icon?: Toast["icon"]; onUndo?: () => void; duration?: number }) => void;
 }
 
 const ToastContext = createContext<ToastContextValue>({ toast: () => { } });
@@ -34,12 +36,13 @@ const ICON_MAP = {
 export function ToastProvider({ children }: { children: React.ReactNode }) {
     const [toasts, setToasts] = useState<Toast[]>([]);
 
-    const addToast = useCallback((message: string, opts?: { type?: Toast["type"]; icon?: Toast["icon"] }) => {
+    const addToast = useCallback((message: string, opts?: { type?: Toast["type"]; icon?: Toast["icon"]; onUndo?: () => void; duration?: number }) => {
         const id = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-        setToasts(prev => [...prev, { id, message, type: opts?.type || "success", icon: opts?.icon || "copy" }]);
+        const duration = opts?.duration ?? (opts?.onUndo ? 5000 : 2500);
+        setToasts(prev => [...prev, { id, message, type: opts?.type || "success", icon: opts?.icon || "copy", onUndo: opts?.onUndo }]);
         setTimeout(() => {
             setToasts(prev => prev.filter(t => t.id !== id));
-        }, 2500);
+        }, duration);
     }, []);
 
     return (
@@ -58,6 +61,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                                 t.type === "success" && "border-emerald-500/30 text-emerald-300 shadow-emerald-500/10",
                                 t.type === "info" && "border-cyan-500/30 text-cyan-300 shadow-cyan-500/10",
                                 t.type === "error" && "border-red-500/30 text-red-300 shadow-red-500/10",
+                                t.type === "warning" && "border-amber-500/30 text-amber-300 shadow-amber-500/10",
                             )}
                         >
                             <div className={cn(
@@ -65,10 +69,23 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                                 t.type === "success" && "bg-emerald-500/20",
                                 t.type === "info" && "bg-cyan-500/20",
                                 t.type === "error" && "bg-red-500/20",
+                                t.type === "warning" && "bg-amber-500/20",
                             )}>
                                 <IconComp className="w-3.5 h-3.5" />
                             </div>
-                            <span className="text-xs">{t.message}</span>
+                            <span className="text-xs flex-1">{t.message}</span>
+                            {t.onUndo && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        t.onUndo?.();
+                                        setToasts(prev => prev.filter(x => x.id !== t.id));
+                                    }}
+                                    className="shrink-0 rounded-md border border-white/[0.12] bg-white/[0.06] px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-white/[0.12] transition-colors cursor-pointer"
+                                >
+                                    Undo
+                                </button>
+                            )}
                         </div>
                     );
                 })}

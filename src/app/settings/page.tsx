@@ -5,7 +5,7 @@ import { getDeepSeekBalanceStatus } from "@/lib/deepseek";
 import { getServerEnv } from "@/lib/env";
 import { getAutomationSettings, syncMailboxesForGmailConnections } from "@/lib/outreach-automation";
 import { getPrisma } from "@/lib/prisma";
-import { requireAdminSession } from "@/lib/session";
+import { requireSession } from "@/lib/session";
 import { isSendableMailbox } from "@/lib/ui/data-accuracy";
 
 export const dynamic = "force-dynamic";
@@ -67,7 +67,7 @@ async function getScrapeHealthSummary() {
 }
 
 export default async function SettingsPage() {
-  const session = await requireAdminSession();
+  const session = await requireSession();
   const env = getServerEnv();
   const bindings = getCloudflareBindings();
   const prisma = getPrisma();
@@ -125,8 +125,20 @@ export default async function SettingsPage() {
     };
   });
 
+  const isAdmin = session.user.role === "admin";
+
+  const userProfile = {
+    id: session.user.id,
+    name: session.user.name ?? "",
+    email: session.user.email ?? "",
+    image: (session.user as Record<string, unknown>).image as string | null ?? null,
+    role: session.user.role ?? "user",
+  };
+
   return (
     <SettingsClient
+      userProfile={userProfile}
+      isAdmin={isAdmin}
       runtimeStatus={{
         currentUserEmail: session.user.email,
         appBaseUrl: env.APP_BASE_URL,

@@ -37,6 +37,13 @@ export async function POST(request: Request) {
       ).bind(...validIds).run();
       return NextResponse.json({ archived: validIds.length });
     }
+    case "delete": {
+      const placeholders = validIds.map(() => "?").join(",");
+      await db.prepare(
+        `DELETE FROM "Lead" WHERE "id" IN (${placeholders})`,
+      ).bind(...validIds).run();
+      return NextResponse.json({ deleted: validIds.length });
+    }
     default:
       return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   }

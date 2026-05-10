@@ -38,6 +38,30 @@ export function HotkeyProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      // "/" focuses the first search input on the page
+      if (event.key === "/" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        const searchInput = document.querySelector<HTMLInputElement>(
+          'input[type="text"][placeholder*="earch"], input[type="search"]',
+        );
+        if (searchInput) {
+          event.preventDefault();
+          searchInput.focus();
+          return;
+        }
+      }
+
+      // "n" triggers the primary add/new action button
+      if (event.key === "n" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        const addBtn = document.querySelector<HTMLButtonElement>(
+          'button[data-hotkey="add"], [data-hotkey="add"]',
+        );
+        if (addBtn) {
+          event.preventDefault();
+          addBtn.click();
+          return;
+        }
+      }
+
       if (event.metaKey || event.ctrlKey) {
         const routes = APP_NAV_ITEMS.reduce<Record<string, Route>>((acc, item) => {
           acc[item.shortcut.replace("⌘", "")] = item.url;

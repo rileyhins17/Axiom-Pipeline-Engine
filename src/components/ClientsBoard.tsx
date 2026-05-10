@@ -9,16 +9,21 @@ import {
   Calendar,
   ChevronRight,
   Clock,
+  CopyIcon,
   DollarSign,
   Download,
   ExternalLink,
   Globe,
   Mail,
   MessageSquare,
+  MoreHorizontalIcon,
   Pencil,
   Plus,
   RefreshCw,
   Save,
+  SearchIcon,
+  Trash2Icon,
+  UserIcon,
   X,
 } from "lucide-react";
 
@@ -37,6 +42,15 @@ import {
 } from "@/lib/crm";
 import type { LeadRecord } from "@/lib/prisma";
 import { cn } from "@/lib/utils";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { AddClientDialog } from "@/components/clients/add-client-dialog";
 
 type CrmLead = LeadRecord;
 
@@ -95,11 +109,13 @@ function toTime(d: Date | string | null | undefined) {
 function DealCard({
   lead,
   onEdit,
+  onDelete,
   onDragStart,
   onDragEnd,
 }: {
   lead: CrmLead;
   onEdit: (lead: CrmLead) => void;
+  onDelete?: (lead: CrmLead) => void;
   onDragStart?: (e: React.DragEvent, leadId: number) => void;
   onDragEnd?: () => void;
 }) {
@@ -137,7 +153,40 @@ function DealCard({
               {healthMeta.label}
             </span>
           )}
-          <Pencil className="size-3.5 text-zinc-600 group-hover:text-zinc-400 transition-colors" />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <span
+                role="button"
+                tabIndex={0}
+                onClick={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+                className="inline-flex size-6 items-center justify-center rounded-md text-zinc-600 transition-colors hover:bg-white/[0.08] hover:text-zinc-300 cursor-pointer"
+              >
+                <MoreHorizontalIcon className="size-3.5" />
+              </span>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); window.location.href = `/clients/${lead.id}`; }}>
+                <UserIcon className="size-3.5" />
+                View Profile
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEdit(lead); }}>
+                <Pencil className="size-3.5" />
+                Edit Deal
+              </DropdownMenuItem>
+              {lead.email && (
+                <DropdownMenuItem onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(lead.email!); }}>
+                  <CopyIcon className="size-3.5" />
+                  Copy Email
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem variant="destructive" onClick={(e) => { e.stopPropagation(); onDelete?.(lead); }}>
+                <Trash2Icon className="size-3.5" />
+                Remove from Board
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -214,6 +263,7 @@ function KanbanColumn({
   description,
   leads,
   onEdit,
+  onDelete,
   onAddFromInbox,
   onDragStart,
   onDragEnd,
@@ -227,6 +277,7 @@ function KanbanColumn({
   description: string;
   leads: CrmLead[];
   onEdit: (lead: CrmLead) => void;
+  onDelete?: (lead: CrmLead) => void;
   onAddFromInbox?: () => void;
   onDragStart?: (e: React.DragEvent, leadId: number) => void;
   onDragEnd?: () => void;
@@ -271,7 +322,7 @@ function KanbanColumn({
         )}
       >
         {leads.map((lead) => (
-          <DealCard key={lead.id} lead={lead} onEdit={onEdit} onDragStart={onDragStart} onDragEnd={onDragEnd} />
+          <DealCard key={lead.id} lead={lead} onEdit={onEdit} onDelete={onDelete} onDragStart={onDragStart} onDragEnd={onDragEnd} />
         ))}
         {leads.length === 0 && !isDragOver && (
           <div className="flex-1 flex items-center justify-center">
@@ -852,6 +903,10 @@ export function ClientsBoard({ initialLeads }: { initialLeads: CrmLead[] }) {
   const [error, setError] = useState<string | null>(null);
   const [draggedLeadId, setDraggedLeadId] = useState<number | null>(null);
   const [dragOverStage, setDragOverStage] = useState<DealStage | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showAddDialog, setShowAddDialog] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<CrmLead | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const inboxLeads = useMemo(
     () => leads.filter((l) => !l.dealStage && (l.outreachStatus === "REPLIED" || l.outreachStatus === "INTERESTED")),
@@ -977,8 +1032,100 @@ export function ClientsBoard({ initialLeads }: { initialLeads: CrmLead[] }) {
     [leads],
   );
 
+  const filteredLeadsByStage = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return leadsByStage;
+    const map = new Map<string, CrmLead[]>();
+    for (const [stage, stageLeads] of leadsByStage) {
+      map.set(
+        stage,
+        stageLeads.filter(
+          (l) =>
+            l.businessName.toLowerCase().includes(q) ||
+            l.city?.toLowerCase().includes(q) ||
+            l.niche?.toLowerCase().includes(q) ||
+            l.email?.toLowerCase().includes(q) ||
+            l.contactName?.toLowerCase().includes(q),
+        ),
+      );
+    }
+    return map;
+  }, [leadsByStage, searchQuery]);
+
+  const filteredInbox = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return inboxLeads;
+    return inboxLeads.filter(
+      (l) =>
+        l.businessName.toLowerCase().includes(q) ||
+        l.city?.toLowerCase().includes(q) ||
+        l.niche?.toLowerCase().includes(q),
+    );
+  }, [inboxLeads, searchQuery]);
+
+  const handleRemoveFromBoard = useCallback(async () => {
+    if (!deleteConfirm) return;
+    setDeleting(true);
+    try {
+      await handleSave(deleteConfirm.id, { dealStage: null, dealLostReason: null });
+      setLeads((prev) => prev.filter((l) => l.id !== deleteConfirm.id));
+    } catch {
+      // error already handled by handleSave
+    } finally {
+      setDeleting(false);
+      setDeleteConfirm(null);
+    }
+  }, [deleteConfirm, handleSave]);
+
+  const handleClientAdded = useCallback((lead: Record<string, unknown>) => {
+    setLeads((prev) => {
+      const exists = prev.some((l) => l.id === (lead as CrmLead).id);
+      if (exists) return prev.map((l) => (l.id === (lead as CrmLead).id ? (lead as CrmLead) : l));
+      return [lead as CrmLead, ...prev];
+    });
+  }, []);
+
   return (
     <div className="flex flex-col gap-6">
+      <AddClientDialog
+        open={showAddDialog}
+        onOpenChange={setShowAddDialog}
+        onAdded={handleClientAdded}
+      />
+      <ConfirmDialog
+        open={!!deleteConfirm}
+        onOpenChange={(v) => { if (!v) setDeleteConfirm(null); }}
+        title="Remove from Board"
+        description={`Remove "${deleteConfirm?.businessName}" from the CRM pipeline? The lead will remain in the Vault.`}
+        confirmLabel="Remove"
+        variant="destructive"
+        loading={deleting}
+        onConfirm={handleRemoveFromBoard}
+      />
+
+      {/* Search + Add Client */}
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1 max-w-sm">
+          <SearchIcon className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-zinc-500" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search clients..."
+            className="w-full rounded-lg border border-white/[0.09] bg-white/[0.03] py-2 pl-9 pr-3 text-sm text-white placeholder:text-zinc-600 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/20"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowAddDialog(true)}
+          data-hotkey="add"
+          className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-200 transition hover:border-emerald-500/50 hover:bg-emerald-500/20 cursor-pointer"
+        >
+          <Plus className="size-3.5" />
+          Add Client
+        </button>
+      </div>
+
       {/* Stats bar + export */}
       <div className="flex items-start justify-between gap-4">
         <div className="grid flex-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
@@ -1037,7 +1184,7 @@ export function ClientsBoard({ initialLeads }: { initialLeads: CrmLead[] }) {
         </div>
       )}
 
-      <InboxSection leads={inboxLeads} onEdit={setEditing} onQuickUpdate={handleSave} onReset={handleResetInbox} saving={saving} />
+      <InboxSection leads={filteredInbox} onEdit={setEditing} onQuickUpdate={handleSave} onReset={handleResetInbox} saving={saving} />
 
       {/* Kanban board with drag-and-drop */}
       <div className="flex gap-4 overflow-x-auto pb-4">
@@ -1047,8 +1194,9 @@ export function ClientsBoard({ initialLeads }: { initialLeads: CrmLead[] }) {
             stage={col.stage}
             label={col.label}
             description={col.description}
-            leads={leadsByStage.get(col.stage) ?? []}
+            leads={filteredLeadsByStage.get(col.stage) ?? []}
             onEdit={setEditing}
+            onDelete={setDeleteConfirm}
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
             onDrop={handleColumnDrop}

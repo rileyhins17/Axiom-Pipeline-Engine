@@ -18,18 +18,29 @@ import {
   FileText,
   Globe,
   ListChecks,
+  Loader2Icon,
   Mail,
   MapPin,
   MessageSquare,
+  MoreHorizontalIcon,
   Pencil,
   Phone,
   Plus,
   RefreshCw,
   Save,
   Send,
+  Trash2Icon,
   Users,
   X,
 } from "lucide-react";
+
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 import {
   CRM_ACTIVITY_TYPE_OPTIONS,
@@ -186,6 +197,12 @@ export function ClientProfile({ lead, initialActivities, outreachEmails, sequenc
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [savingField, setSavingField] = useState(false);
+  const [editingActivity, setEditingActivity] = useState<CrmActivityRecord | null>(null);
+  const [editActivityTitle, setEditActivityTitle] = useState("");
+  const [editActivityBody, setEditActivityBody] = useState("");
+  const [savingEditActivity, setSavingEditActivity] = useState(false);
+  const [deleteActivity, setDeleteActivity] = useState<CrmActivityRecord | null>(null);
+  const [deletingActivity, setDeletingActivity] = useState(false);
 
   const stageMeta = getDealStageMeta(lead.dealStage);
   const health = lead.dealStage ? computeDealHealth(lead) : null;
@@ -260,8 +277,55 @@ export function ClientProfile({ lead, initialActivities, outreachEmails, sequenc
     }
   };
 
+  const handleEditActivity = async () => {
+    if (!editingActivity) return;
+    setSavingEditActivity(true);
+    try {
+      const res = await fetch(`/api/clients/${lead.id}/activities/${editingActivity.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: editActivityTitle, body: editActivityBody }),
+      });
+      if (!res.ok) throw new Error("Failed to update");
+      const data = await res.json() as { activity: CrmActivityRecord };
+      setActivities((prev) => prev.map((a) => (a.id === data.activity.id ? data.activity : a)));
+      setEditingActivity(null);
+    } catch {
+      // stay in edit mode on failure
+    } finally {
+      setSavingEditActivity(false);
+    }
+  };
+
+  const handleDeleteActivity = async () => {
+    if (!deleteActivity) return;
+    setDeletingActivity(true);
+    try {
+      const res = await fetch(`/api/clients/${lead.id}/activities/${deleteActivity.id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Failed to delete");
+      setActivities((prev) => prev.filter((a) => a.id !== deleteActivity.id));
+      setDeleteActivity(null);
+    } catch {
+      // stay open on failure
+    } finally {
+      setDeletingActivity(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-6">
+      <ConfirmDialog
+        open={!!deleteActivity}
+        onOpenChange={(v) => { if (!v) setDeleteActivity(null); }}
+        title="Delete Activity"
+        description={`Delete "${deleteActivity?.title}"? This cannot be undone.`}
+        confirmLabel="Delete"
+        variant="destructive"
+        loading={deletingActivity}
+        onConfirm={handleDeleteActivity}
+      />
       <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           <Link
@@ -612,25 +676,92 @@ export function ClientProfile({ lead, initialActivities, outreachEmails, sequenc
                       <ActivityIcon type={activity.type} />
                     </div>
                     <div className="min-w-0 border-b border-white/[0.05] pb-4 last:border-0 last:pb-0">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="text-sm font-semibold text-white">{activity.title}</div>
-                          <div className="mt-0.5 text-[11px] uppercase tracking-[0.12em] text-zinc-600">
-                            {getCrmActivityTypeLabel(activity.type)}
+                      {editingActivity?.id === activity.id ? (
+                        <div className="space-y-2">
+                          <input
+                            type="text"
+                            value={editActivityTitle}
+                            onChange={(e) => setEditActivityTitle(e.target.value)}
+                            className="w-full rounded-lg border border-emerald-500/30 bg-black/40 px-3 py-1.5 text-sm text-white focus:outline-none"
+                            autoFocus
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") void handleEditActivity();
+                              if (e.key === "Escape") setEditingActivity(null);
+                            }}
+                          />
+                          <textarea
+                            value={editActivityBody}
+                            onChange={(e) => setEditActivityBody(e.target.value)}
+                            rows={3}
+                            className="w-full rounded-lg border border-white/[0.09] bg-black/40 px-3 py-1.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none"
+                          />
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              disabled={savingEditActivity}
+                              onClick={() => void handleEditActivity()}
+                              className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-200 transition hover:bg-emerald-500/20 disabled:opacity-50 cursor-pointer"
+                            >
+                              {savingEditActivity ? <Loader2Icon className="size-3 animate-spin" /> : <Save className="size-3" />}
+                              Save
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingActivity(null)}
+                              className="rounded-md border border-white/[0.08] px-3 py-1 text-xs text-zinc-400 hover:text-white transition cursor-pointer"
+                            >
+                              Cancel
+                            </button>
                           </div>
                         </div>
-                        <div className="shrink-0 text-right text-[11px] text-zinc-600">{formatDateTime(activity.createdAt)}</div>
-                      </div>
-                      {activity.body ? (
-                        <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-zinc-400">{activity.body}</p>
-                      ) : null}
+                      ) : (
+                        <>
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="text-sm font-semibold text-white">{activity.title}</div>
+                              <div className="mt-0.5 text-[11px] uppercase tracking-[0.12em] text-zinc-600">
+                                {getCrmActivityTypeLabel(activity.type)}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="text-[11px] text-zinc-600">{formatDateTime(activity.createdAt)}</span>
+                              {activity.type !== "STAGE_CHANGE" && activity.type !== "SYSTEM" && (
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <button type="button" className="inline-flex size-6 items-center justify-center rounded-md text-zinc-600 hover:bg-white/[0.08] hover:text-zinc-300 transition-colors cursor-pointer">
+                                      <MoreHorizontalIcon className="size-3.5" />
+                                    </button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onClick={() => {
+                                      setEditingActivity(activity);
+                                      setEditActivityTitle(activity.title);
+                                      setEditActivityBody(activity.body ?? "");
+                                    }}>
+                                      <Pencil className="size-3.5" />
+                                      Edit
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem variant="destructive" onClick={() => setDeleteActivity(activity)}>
+                                      <Trash2Icon className="size-3.5" />
+                                      Delete
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              )}
+                            </div>
+                          </div>
+                          {activity.body ? (
+                            <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-zinc-400">{activity.body}</p>
+                          ) : null}
+                        </>
+                      )}
                     </div>
                   </div>
                 ))}
               </div>
             ) : (
               <p className="text-sm text-zinc-600">No CRM activity logged yet.</p>
-            )}
+            )
           </Section>
         </div>
       </div>
