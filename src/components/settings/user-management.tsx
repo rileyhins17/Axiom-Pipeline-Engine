@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2Icon, ShieldIcon, ShieldOffIcon, UserBanIcon, UserCheckIcon, UsersIcon } from "lucide-react";
+import { Loader2Icon, ShieldIcon, ShieldOffIcon, UserXIcon, UserCheckIcon, UsersIcon } from "lucide-react";
 
 import { Avatar } from "@/components/ui/avatar";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -164,7 +164,7 @@ export function UserManagement() {
                   />
                 ) : (
                   <ActionButton
-                    icon={<UserBanIcon className="size-3.5" />}
+                    icon={<UserXIcon className="size-3.5" />}
                     title="Ban"
                     tone="destructive"
                     onClick={() => setPendingAction({

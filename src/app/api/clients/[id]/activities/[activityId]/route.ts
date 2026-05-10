@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { isCrmActivityType } from "@/lib/crm";
-import { getPrisma } from "@/lib/prisma";
+import { getDatabase } from "@/lib/cloudflare";
 import { requireApiSession } from "@/lib/session";
 
 function parseId(value: string) {
@@ -24,10 +24,13 @@ export async function PATCH(
     return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
   }
 
-  const prisma = getPrisma();
-  const existing = await prisma.crmActivity.findFirst({
-    where: { id: actId, leadId },
-  });
+  const db = getDatabase();
+
+  // Verify activity exists and belongs to this lead
+  const existing = await db
+    .prepare(`SELECT "id" FROM "CrmActivity" WHERE "id" = ?1 AND "leadId" = ?2`)
+    .bind(actId, leadId)
+    .first();
 
   if (!existing) {
     return NextResponse.json({ error: "Activity not found" }, { status: 404 });
@@ -40,29 +43,42 @@ export async function PATCH(
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const update: Record<string, unknown> = {};
+  const setClauses: string[] = [];
+  const binds: (string | number | null)[] = [];
+  let bindIdx = 1;
 
   if (typeof body.title === "string") {
     const trimmed = body.title.trim().slice(0, 140);
-    if (trimmed) update.title = trimmed;
+    if (trimmed) {
+      setClauses.push(`"title" = ?${bindIdx++}`);
+      binds.push(trimmed);
+    }
   }
 
   if (typeof body.body === "string") {
-    update.body = body.body.trim().slice(0, 4000) || null;
+    const val = body.body.trim().slice(0, 4000) || null;
+    setClauses.push(`"body" = ?${bindIdx++}`);
+    binds.push(val);
   }
 
   if (body.type && isCrmActivityType(body.type)) {
-    update.type = body.type;
+    setClauses.push(`"type" = ?${bindIdx++}`);
+    binds.push(body.type as string);
   }
 
-  if (Object.keys(update).length === 0) {
+  if (setClauses.length === 0) {
     return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
   }
 
-  const activity = await prisma.crmActivity.update({
-    where: { id: actId },
-    data: update,
-  });
+  binds.push(actId);
+  const sql = `UPDATE "CrmActivity" SET ${setClauses.join(", ")} WHERE "id" = ?${bindIdx}`;
+  await db.prepare(sql).bind(...binds).run();
+
+  // Return updated activity
+  const activity = await db
+    .prepare(`SELECT * FROM "CrmActivity" WHERE "id" = ?1`)
+    .bind(actId)
+    .first();
 
   return NextResponse.json({ activity });
 }
@@ -82,16 +98,19 @@ export async function DELETE(
     return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
   }
 
-  const prisma = getPrisma();
-  const existing = await prisma.crmActivity.findFirst({
-    where: { id: actId, leadId },
-  });
+  const db = getDatabase();
+
+  // Verify activity exists and belongs to this lead
+  const existing = await db
+    .prepare(`SELECT "id" FROM "CrmActivity" WHERE "id" = ?1 AND "leadId" = ?2`)
+    .bind(actId, leadId)
+    .first();
 
   if (!existing) {
     return NextResponse.json({ error: "Activity not found" }, { status: 404 });
   }
 
-  await prisma.crmActivity.delete({ where: { id: actId } });
+  await db.prepare(`DELETE FROM "CrmActivity" WHERE "id" = ?1`).bind(actId).run();
 
   return new NextResponse(null, { status: 204 });
 }
