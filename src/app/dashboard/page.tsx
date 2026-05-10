@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { Route } from "next";
 import Link from "next/link";
 import {
   Activity,
@@ -1000,7 +1001,7 @@ function Panel({
   title: string;
   subtitle: string;
   accent: ToneKey;
-  href?: string;
+  href?: Route;
   children: ReactNode;
 }) {
   const headerContent = (
