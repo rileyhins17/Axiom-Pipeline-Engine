@@ -30,6 +30,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [session, setSession] = useState<ShellSession>(null);
   const [loading, setLoading] = useState(true);
+  const [avatarError, setAvatarError] = useState(false);
 
   useEffect(() => {
     authClient.getSession().then((result) => {
@@ -91,8 +92,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   {sessionEmail || "—"}
                 </div>
               </div>
-              <div className="relative flex size-9 items-center justify-center rounded-full border border-emerald-400/30 bg-gradient-to-br from-emerald-400/20 to-cyan-400/10 text-xs font-semibold text-emerald-100">
-                {initials}
+              <div className="relative flex size-9 items-center justify-center rounded-full border border-emerald-400/30 overflow-hidden bg-gradient-to-br from-emerald-400/20 to-cyan-400/10 text-xs font-semibold text-emerald-100">
+                {localPart && !avatarError ? (
+                  <picture>
+                    <source srcSet={`/avatars/${localPart}.webp`} type="image/webp" />
+                    <source srcSet={`/avatars/${localPart}.jpg`} type="image/jpeg" />
+                    <img
+                      src={`/avatars/${localPart}.jpg`}
+                      alt={displayName}
+                      className="size-full object-cover"
+                      onError={() => setAvatarError(true)}
+                    />
+                  </picture>
+                ) : (
+                  initials
+                )}
                 <span className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border-2 border-[#06101a] bg-emerald-400" />
               </div>
             </div>
