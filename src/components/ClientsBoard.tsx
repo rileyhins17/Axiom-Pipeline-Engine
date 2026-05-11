@@ -51,6 +51,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { AddClientDialog } from "@/components/clients/add-client-dialog";
+import { useToast } from "@/components/ui/toast-provider";
 
 type CrmLead = LeadRecord;
 
@@ -410,8 +411,9 @@ function DealDrawer({
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-end" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
       <div
-        className="relative h-full w-full max-w-md bg-[#070d14] border-l border-white/[0.08] shadow-2xl flex flex-col overflow-y-auto"
+        className="relative h-full w-full max-w-md bg-[#070d14] border-l border-white/[0.08] shadow-2xl flex flex-col overflow-y-auto animate-in slide-in-from-right duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -955,6 +957,7 @@ function exportClientsCsv(leads: CrmLead[]) {
 }
 
 export function ClientsBoard({ initialLeads }: { initialLeads: CrmLead[] }) {
+  const { toast } = useToast();
   const [leads, setLeads] = useState<CrmLead[]>(initialLeads);
   const [editing, setEditing] = useState<CrmLead | null>(null);
   const [saving, setSaving] = useState(false);
@@ -1002,11 +1005,12 @@ export function ClientsBoard({ initialLeads }: { initialLeads: CrmLead[] }) {
       });
       if (res.ok) {
         setLeads((prev) => prev.map((l) => l.id === leadId ? { ...l, outreachStatus: null } : l));
+        toast("Dismissed from inbox", { type: "success" });
       }
     } finally {
       setSaving(false);
     }
-  }, []);
+  }, [toast]);
 
   const handleSave = useCallback(async (leadId: number, update: Record<string, unknown>) => {
     setSaving(true);
@@ -1024,12 +1028,15 @@ export function ClientsBoard({ initialLeads }: { initialLeads: CrmLead[] }) {
       const updated = await res.json() as CrmLead;
       setLeads((prev) => prev.map((l) => (l.id === leadId ? updated : l)));
       setEditing(null);
+      toast("Deal updated", { type: "success" });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save");
+      const msg = err instanceof Error ? err.message : "Failed to save";
+      setError(msg);
+      toast(msg, { type: "error" });
     } finally {
       setSaving(false);
     }
-  }, []);
+  }, [toast]);
 
   const handleDragStart = useCallback((e: React.DragEvent, leadId: number) => {
     setDraggedLeadId(leadId);
@@ -1143,13 +1150,14 @@ export function ClientsBoard({ initialLeads }: { initialLeads: CrmLead[] }) {
     try {
       await handleSave(deleteConfirm.id, { dealStage: null, dealLostReason: null });
       setLeads((prev) => prev.filter((l) => l.id !== deleteConfirm.id));
+      toast(`${deleteConfirm.businessName} removed from board`, { type: "info" });
     } catch {
       // error already handled by handleSave
     } finally {
       setDeleting(false);
       setDeleteConfirm(null);
     }
-  }, [deleteConfirm, handleSave]);
+  }, [deleteConfirm, handleSave, toast]);
 
   const handleClientAdded = useCallback((lead: Record<string, unknown>) => {
     setLeads((prev) => {

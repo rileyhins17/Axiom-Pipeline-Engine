@@ -12,12 +12,13 @@ const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo";
 const GMAIL_SEND_URL = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send";
 const GMAIL_THREAD_URL = "https://gmail.googleapis.com/gmail/v1/users/me/threads";
+const GMAIL_MESSAGE_URL = "https://gmail.googleapis.com/gmail/v1/users/me/messages";
 const GOOGLE_REVOKE_URL = "https://oauth2.googleapis.com/revoke";
 const GMAIL_REQUEST_TIMEOUT_MS = 20000;
 
 const SCOPES = [
   "https://www.googleapis.com/auth/gmail.send",
-  "https://www.googleapis.com/auth/gmail.metadata",
+  "https://www.googleapis.com/auth/gmail.readonly",
   "https://www.googleapis.com/auth/userinfo.email",
   "https://www.googleapis.com/auth/userinfo.profile",
 ].join(" ");
@@ -500,11 +501,6 @@ export async function getGmailMessageMetadata(
   accessToken: string,
   messageId: string,
 ): Promise<GmailMessageMeta> {
-  const params = new URLSearchParams({
-    format: "metadata",
-    metadataHeaders: ["From", "To", "Subject", "X-Failed-Recipients"].join(","),
-  });
-
   // Gmail API needs repeated metadataHeaders params
   const url = `${GMAIL_MESSAGES_URL}/${encodeURIComponent(messageId)}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=X-Failed-Recipients`;
 
@@ -539,6 +535,150 @@ export async function getGmailMessageMetadata(
       xFailedRecipients: getHeaderValue(payload.payload?.headers, "X-Failed-Recipients"),
     },
   };
+}
+
+// ─── Full Thread Content ─────────────────────────────────────────
+
+export type GmailMessageFull = {
+  id: string;
+  threadId: string;
+  internalDate: string;
+  from: string;
+  to: string;
+  subject: string;
+  bodyPlain: string;
+  bodyHtml: string;
+  labelIds: string[];
+};
+
+export type GmailThreadFull = {
+  id: string;
+  messages: GmailMessageFull[];
+};
+
+/**
+ * Decode base64url to UTF-8 string.
+ */
+function decodeBase64Url(data: string): string {
+  const base64 = data.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new TextDecoder().decode(bytes);
+}
+
+/**
+ * Extract plain text and HTML body from a Gmail message payload (recursive MIME walk).
+ */
+function extractBodies(payload: GmailPayload): { plain: string; html: string } {
+  let plain = "";
+  let html = "";
+
+  if (payload.body?.data) {
+    const decoded = decodeBase64Url(payload.body.data);
+    const mimeType = payload.mimeType || "";
+    if (mimeType === "text/plain") plain = decoded;
+    else if (mimeType === "text/html") html = decoded;
+  }
+
+  if (payload.parts) {
+    for (const part of payload.parts) {
+      const sub = extractBodies(part);
+      if (!plain && sub.plain) plain = sub.plain;
+      if (!html && sub.html) html = sub.html;
+    }
+  }
+
+  return { plain, html };
+}
+
+type GmailPayload = {
+  mimeType?: string;
+  headers?: Array<{ name?: string; value?: string }>;
+  body?: { data?: string; size?: number };
+  parts?: GmailPayload[];
+};
+
+/**
+ * Fetch full thread content including message bodies.
+ * Requires gmail.readonly scope.
+ */
+export async function getGmailThreadFull(
+  accessToken: string,
+  threadId: string,
+): Promise<GmailThreadFull> {
+  const timeout = withTimeout(GMAIL_REQUEST_TIMEOUT_MS);
+  const response = await fetch(
+    `${GMAIL_THREAD_URL}/${encodeURIComponent(threadId)}?format=full`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      signal: timeout.signal,
+    },
+  ).finally(timeout.clear);
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Failed to fetch Gmail thread (${response.status}): ${text}`);
+  }
+
+  const payload = (await response.json()) as {
+    id?: string;
+    messages?: Array<{
+      id?: string;
+      threadId?: string;
+      internalDate?: string;
+      labelIds?: string[];
+      payload?: GmailPayload;
+    }>;
+  };
+
+  return {
+    id: payload.id || threadId,
+    messages: (payload.messages || []).map((msg) => {
+      const hdrs = msg.payload?.headers || [];
+      const bodies = msg.payload ? extractBodies(msg.payload) : { plain: "", html: "" };
+      return {
+        id: msg.id || "",
+        threadId: msg.threadId || threadId,
+        internalDate: msg.internalDate || "",
+        from: getHeaderValue(hdrs, "From"),
+        to: getHeaderValue(hdrs, "To"),
+        subject: getHeaderValue(hdrs, "Subject"),
+        bodyPlain: bodies.plain,
+        bodyHtml: bodies.html,
+        labelIds: msg.labelIds || [],
+      };
+    }),
+  };
+}
+
+/**
+ * Send a reply email on an existing Gmail thread.
+ */
+export async function sendGmailReply(options: {
+  accessToken: string;
+  from: string;
+  fromName?: string;
+  to: string;
+  subject: string;
+  bodyHtml: string;
+  bodyPlain: string;
+  threadId: string;
+  inReplyTo?: string;
+}): Promise<SendEmailResult> {
+  return sendGmailEmail({
+    accessToken: options.accessToken,
+    from: options.from,
+    fromName: options.fromName,
+    to: options.to,
+    subject: options.subject.startsWith("Re:") ? options.subject : `Re: ${options.subject}`,
+    bodyHtml: options.bodyHtml,
+    bodyPlain: options.bodyPlain,
+    threadId: options.threadId,
+  });
 }
 
 // ─── Token Management Helpers ──────────────────────────────────────

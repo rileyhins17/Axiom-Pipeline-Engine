@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Keyboard, X } from "lucide-react";
 
 import { APP_NAV_ITEMS } from "@/lib/navigation";
@@ -10,37 +11,52 @@ interface ShortcutsModalProps {
   onClose: () => void;
 }
 
-const SHORTCUT_GROUPS = [
-  {
-    title: "Navigation",
-    shortcuts: APP_NAV_ITEMS.map((item) => ({
-      keys: ["Cmd", item.shortcut.replace("⌘", "")],
-      description: `Go to ${item.label}`,
-    })),
-  },
-  {
-    title: "Command Palette",
-    shortcuts: [
-      { keys: ["Cmd", "K"], description: "Open command palette" },
-      { keys: ["Up", "Down"], description: "Navigate results" },
-      { keys: ["Enter"], description: "Run selected command" },
-      { keys: ["Esc"], description: "Close palette or modal" },
-    ],
-  },
-  {
-    title: "Actions",
-    shortcuts: [
-      { keys: ["N"], description: "Add new item" },
-      { keys: ["/"], description: "Focus search" },
-    ],
-  },
-  {
-    title: "System",
-    shortcuts: [{ keys: ["?"], description: "Show this help" }],
-  },
-];
+function useModifierKey() {
+  const [mod, setMod] = useState("Ctrl");
+  useEffect(() => {
+    if (typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/.test(navigator.userAgent)) {
+      setMod("Cmd");
+    }
+  }, []);
+  return mod;
+}
+
+function getShortcutGroups(mod: string) {
+  return [
+    {
+      title: "Navigation",
+      shortcuts: APP_NAV_ITEMS.map((item) => ({
+        keys: [mod, item.shortcut.replace("⌘", "")],
+        description: `Go to ${item.label}`,
+      })),
+    },
+    {
+      title: "Command Palette",
+      shortcuts: [
+        { keys: [mod, "K"], description: "Open command palette" },
+        { keys: ["Up", "Down"], description: "Navigate results" },
+        { keys: ["Enter"], description: "Run selected command" },
+        { keys: ["Esc"], description: "Close palette or modal" },
+      ],
+    },
+    {
+      title: "Actions",
+      shortcuts: [
+        { keys: ["N"], description: "Add new item" },
+        { keys: ["/"], description: "Focus search" },
+      ],
+    },
+    {
+      title: "System",
+      shortcuts: [{ keys: ["?"], description: "Show this help" }],
+    },
+  ];
+}
 
 export function ShortcutsModal({ open, onClose }: ShortcutsModalProps) {
+  const mod = useModifierKey();
+  const groups = getShortcutGroups(mod);
+
   if (!open) return null;
 
   return (
@@ -66,7 +82,7 @@ export function ShortcutsModal({ open, onClose }: ShortcutsModalProps) {
           </div>
 
           <div className="max-h-[60vh] space-y-5 overflow-y-auto p-5">
-            {SHORTCUT_GROUPS.map((group) => (
+            {groups.map((group) => (
               <div key={group.title}>
                 <h3 className="mb-3 text-[11px] font-medium text-zinc-500">{group.title}</h3>
                 <div className="space-y-1.5">

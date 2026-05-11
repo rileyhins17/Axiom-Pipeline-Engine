@@ -34,6 +34,7 @@ import {
   X,
 } from "lucide-react";
 
+import { EmailThreadPanel } from "@/components/clients/email-thread";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   DropdownMenu,
@@ -603,6 +604,14 @@ export function ClientProfile({ lead, initialActivities, outreachEmails, sequenc
             ) : (
               <p className="text-sm text-zinc-600">No outreach emails recorded for this lead.</p>
             )}
+          </Section>
+
+          <Section title="Email Conversations" icon={<Mail className="size-4" />}>
+            <EmailThreadPanel
+              leadId={lead.id}
+              leadName={lead.businessName}
+              leadEmail={lead.email}
+            />
           </Section>
         </div>
 
