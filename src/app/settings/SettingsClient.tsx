@@ -202,7 +202,7 @@ export function SettingsClient({
                 </Panel>
 
                 <Panel>
-                  <SectionTitle icon={TimerReset} title="Scrape engine" detail="Cloudflare cron runs every 60s." />
+                  <SectionTitle icon={TimerReset} title="Scrape engine" detail="Cloudflare cron runs every 5m." />
                   <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
                     <Limit label="Cloud scrape" value={runtimeStatus.cloudScrapeEnabled} />
                     <Limit label="Intake" value={runtimeStatus.intakePaused ? "paused" : "active"} />

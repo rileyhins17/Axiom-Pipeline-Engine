@@ -28,10 +28,9 @@
     }
   ],
   "triggers": {
-    // Scheduler fires every minute for maximum reactivity. Each tick
-    // runs auto-pipeline + reply sync + up to schedulerClaimBatch sends,
-    // so shorter cron = tighter send spacing when there's backlog.
-    "crons": ["*/1 * * * *"]
+    // 5-min cron is well within the 36-min mailbox cooldown so send
+    // throughput is identical to */1; saves ~80% of worker invocations.
+    "crons": ["*/5 * * * *"]
   },
   "vars": {
     "APP_BASE_URL": "https://operations.getaxiom.ca/",

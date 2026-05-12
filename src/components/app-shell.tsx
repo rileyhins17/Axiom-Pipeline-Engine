@@ -157,7 +157,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <div className="flex items-center gap-2">
               <span className="v2-dot text-emerald-400" />
               <span className="font-medium uppercase tracking-[0.14em] text-zinc-400">Status</span>
-              <span className="text-emerald-300">Autonomous · cron every 60s</span>
+              <span className="text-emerald-300">Autonomous · cron every 5m</span>
             </div>
             <div className="flex items-center gap-5 font-mono text-[10.5px] tabular-nums text-zinc-500">
               <span className="hidden md:inline-flex items-center gap-1.5">

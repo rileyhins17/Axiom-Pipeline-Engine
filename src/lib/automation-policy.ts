@@ -24,8 +24,8 @@ export const MAILBOX_MAX_DELAY_SECONDS = 45 * 60;
 export const AUTONOMOUS_INTAKE_MIN_SCORE = 45;
 export const AUTONOMOUS_QUEUE_MIN_SCORE = AUTONOMOUS_INTAKE_MIN_SCORE;
 export const AUTONOMOUS_SEND_MIN_SCORE = AUTONOMOUS_INTAKE_MIN_SCORE;
-/** Max leads to queue per scheduler tick. With cron every 1 min this is
- *  3000/hour peak which is more than enough headroom. */
+/** Max leads to queue per scheduler tick. With cron every 5 min this is
+ *  600/hour peak which is more than enough headroom. */
 export const AUTONOMOUS_QUEUE_BATCH_SIZE = 50;
 
 /** Hard ceiling on new ADEQUATE leads (axiomScore >= 45, non-D, non-generic

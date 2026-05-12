@@ -12,7 +12,7 @@ import { requireAdminApiSession } from "@/lib/session";
  *   { leadIds: number[], immediate?: boolean }
  *
  * When `immediate: true`, we also fast-forward step 1 of each newly-created
- * sequence so it fires on the very next cron tick (within 60s) instead of
+ * sequence so it fires on the very next cron tick (within 5 min) instead of
  * waiting the random 1-5 min initial delay. Powers the "Send this lead now"
  * button on the outreach database.
  */
