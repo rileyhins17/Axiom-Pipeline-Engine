@@ -4041,7 +4041,7 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
   });
   const settings = await getSettings(prisma);
   const now = new Date();
-  const staleRunThreshold = addMinutes(now, -5);
+  const staleRunThreshold = addMinutes(now, -15);
 
   const staleRuns = await prisma.outreachRun.findMany({
     where: {
