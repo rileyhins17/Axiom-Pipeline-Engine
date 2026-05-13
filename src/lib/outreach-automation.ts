@@ -398,6 +398,21 @@ function getAutomationBusinessDomain(lead: Pick<LeadRecord, "websiteDomain" | "e
   return emailDomain && !isSharedEmailProviderDomain(emailDomain) ? emailDomain : "";
 }
 
+export function getAutomationSuppressionDomainsForLead(
+  lead: Pick<LeadRecord, "websiteDomain" | "email"> | null | undefined,
+) {
+  const domains = new Set<string>();
+  const businessDomain = getAutomationBusinessDomain(lead);
+  if (businessDomain) domains.add(businessDomain);
+
+  const emailDomain = normalizeDomain(getDomainFromEmail(lead?.email));
+  if (emailDomain && !isSharedEmailProviderDomain(emailDomain)) {
+    domains.add(emailDomain);
+  }
+
+  return Array.from(domains);
+}
+
 function chunkArray<T>(values: T[], size = D1_IN_CLAUSE_CHUNK_SIZE) {
   const chunks: T[][] = [];
   for (let index = 0; index < values.length; index += size) {
@@ -2585,7 +2600,93 @@ const AUTOMATED_SENDER_PATTERNS = [
 ];
 
 function isAutomatedSender(email: string): boolean {
-  return AUTOMATED_SENDER_PATTERNS.some((pattern) => pattern.test(email));
+  const normalized = email.toLowerCase();
+  const extractedEmail = extractEmailAddress(normalized) || normalized;
+  return AUTOMATED_SENDER_PATTERNS.some((pattern) => pattern.test(extractedEmail) || pattern.test(normalized));
+}
+
+function extractEmailAddress(value: string | null | undefined) {
+  const match = (value || "").match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i);
+  return match ? normalizeEmail(match[0]) : "";
+}
+
+export type BounceFailureDetails = {
+  failedRecipient: string | null;
+  failedDomain: string | null;
+  reason: "domain_not_found" | "recipient_not_found" | "delivery_failed" | null;
+};
+
+type BounceMetadataLike = {
+  snippet?: string;
+  headers: {
+    from: string;
+    to?: string;
+    subject: string;
+    xFailedRecipients: string;
+  };
+};
+
+const DOMAIN_NOT_FOUND_PATTERNS = [
+  /domain\s+[a-z0-9.-]+\s+could(?:n'?t| not)\s+be\s+found/i,
+  /domain\s+not\s+found/i,
+  /no\s+such\s+domain/i,
+  /host\s+or\s+domain\s+name\s+not\s+found/i,
+  /dns\s+error/i,
+];
+
+const RECIPIENT_NOT_FOUND_PATTERNS = [
+  /address\s+not\s+found/i,
+  /recipient\s+address\s+rejected/i,
+  /user\s+unknown/i,
+  /mailbox\s+unavailable/i,
+  /no\s+such\s+user/i,
+];
+
+export function isBounceNotificationMessage(input: { from: string; subject: string }) {
+  const subject = (input.subject || "").toLowerCase();
+  if (!isAutomatedSender(input.from)) return false;
+  return (
+    subject.includes("address not found") ||
+    subject.includes("delivery status notification") ||
+    subject.includes("delivery failure") ||
+    subject.includes("undeliverable") ||
+    subject.includes("undelivered") ||
+    subject.includes("returned mail")
+  );
+}
+
+export function extractBounceFailureDetails(meta: BounceMetadataLike): BounceFailureDetails {
+  const headerRecipient = extractEmailAddress(meta.headers.xFailedRecipients);
+  const searchableText = [meta.snippet, meta.headers.subject].filter(Boolean).join(" ");
+  const snippetRecipient = extractEmailAddress(searchableText);
+  const failedRecipient = headerRecipient || snippetRecipient || null;
+  const reason = DOMAIN_NOT_FOUND_PATTERNS.some((pattern) => pattern.test(searchableText))
+    ? "domain_not_found"
+    : RECIPIENT_NOT_FOUND_PATTERNS.some((pattern) => pattern.test(searchableText))
+      ? "recipient_not_found"
+      : failedRecipient
+        ? "delivery_failed"
+        : null;
+  const recipientDomain = failedRecipient?.split("@")[1] || "";
+
+  return {
+    failedRecipient,
+    failedDomain: reason === "domain_not_found" && recipientDomain ? recipientDomain : null,
+    reason,
+  };
+}
+
+export function buildBounceNotificationSearchQueries(days = 7) {
+  const window = `newer_than:${days}d`;
+  return [
+    `from:mailer-daemon ${window}`,
+    `from:postmaster ${window}`,
+    `from:(mailer-daemon@googlemail.com OR mailer-daemon@google.com) ${window}`,
+    `subject:"Address not found" ${window}`,
+    `subject:"Delivery Status Notification" ${window}`,
+    `subject:"Undeliverable" ${window}`,
+    `subject:"Delivery failure" ${window}`,
+  ];
 }
 
 /**
@@ -2687,7 +2788,17 @@ async function detectReplyForSequence(
       continue;
     }
 
-    // Filter out delivery failures, bounce notifications, and automated systems.
+    if (isBounceNotificationMessage({ from: message.headers.from, subject: message.headers.subject })) {
+      return {
+        detected: true,
+        inboundMessageId: message.id,
+        inboundFrom: message.headers.from,
+        threadId: thread.id,
+        isBounce: true,
+      } satisfies ReplyDetectionResult;
+    }
+
+    // Filter out automated systems that are not explicit delivery failures.
     if (isAutomatedSender(fromHeader)) {
       continue;
     }
@@ -2803,15 +2914,19 @@ export async function syncBounceNotifications() {
       continue;
     }
 
-    let bounceMessages;
-    try {
-      bounceMessages = await searchGmailMessages(
-        tokenResult.accessToken,
-        "from:mailer-daemon subject:\"Delivery Status Notification\" newer_than:2d",
-        30,
-      );
-    } catch {
-      continue;
+    const bounceMessages: Array<{ id: string; threadId: string }> = [];
+    const seenMessageIds = new Set<string>();
+    for (const query of buildBounceNotificationSearchQueries()) {
+      try {
+        const results = await searchGmailMessages(tokenResult.accessToken, query, 30);
+        for (const result of results) {
+          if (!result.id || seenMessageIds.has(result.id)) continue;
+          seenMessageIds.add(result.id);
+          bounceMessages.push(result);
+        }
+      } catch {
+        continue;
+      }
     }
 
     for (const msg of bounceMessages) {
@@ -2823,11 +2938,21 @@ export async function syncBounceNotifications() {
         continue;
       }
 
-      const failedRecipient = meta.headers.xFailedRecipients?.trim().toLowerCase();
+      if (!isBounceNotificationMessage({ from: meta.headers.from, subject: meta.headers.subject })) {
+        continue;
+      }
+
+      const failure = extractBounceFailureDetails(meta);
+      const failedRecipient = failure.failedRecipient;
       if (!failedRecipient || !failedRecipient.includes("@")) continue;
 
       const existingSuppression = await prisma.outreachSuppression.findFirst({
-        where: { email: failedRecipient },
+        where: {
+          OR: [
+            { email: failedRecipient },
+            ...(failure.failedDomain ? [{ domain: failure.failedDomain }] : []),
+          ],
+        },
       });
       if (existingSuppression) continue;
 
@@ -2839,8 +2964,11 @@ export async function syncBounceNotifications() {
         data: {
           id: crypto.randomUUID(),
           email: failedRecipient,
-          domain: "",
-          reason: `Hard bounce detected from inbox scan: ${failedRecipient}`,
+          domain: failure.failedDomain || "",
+          reason:
+            failure.reason === "domain_not_found"
+              ? `Hard bounce detected from inbox scan: domain not found for ${failedRecipient}`
+              : `Hard bounce detected from inbox scan: ${failedRecipient}`,
           source: "BOUNCE",
           leadId: lead?.id ?? null,
           sequenceId: null,
@@ -3245,11 +3373,12 @@ async function sendScheduledStep(
     }
   }
 
+  const suppressionDomains = getAutomationSuppressionDomainsForLead(context.lead);
   const suppression = await prisma.outreachSuppression.findFirst({
     where: {
       OR: [
         { email: normalizeEmail(context.lead.email) },
-        { domain: getAutomationBusinessDomain(context.lead) },
+        ...suppressionDomains.map((domain) => ({ domain })),
       ],
     },
   });

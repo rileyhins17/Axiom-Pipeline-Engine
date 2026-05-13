@@ -2,8 +2,12 @@ import { strict as assert } from "node:assert";
 import test from "node:test";
 
 import {
+  buildBounceNotificationSearchQueries,
   buildScheduledTimeline,
+  extractBounceFailureDetails,
+  getAutomationSuppressionDomainsForLead,
   getStepType,
+  isBounceNotificationMessage,
   orderDueStepsForClaiming,
   selectAutomationReadyLeads,
 } from "./outreach-automation";
@@ -305,4 +309,65 @@ test("automation sequence timeline refuses zero-day follow-up delays", () => {
   assert(timeline[1].getTime() - timeline[0].getTime() >= 2 * day);
   assert(timeline[2].getTime() - timeline[1].getTime() >= 3 * day);
   assert(timeline[3].getTime() - timeline[2].getTime() >= 4 * day);
+});
+
+test("bounce parsing detects Gmail address-not-found snippets without X-Failed-Recipients", () => {
+  const details = extractBounceFailureDetails({
+    snippet:
+      "Address not found Your message wasn't delivered to needhelp@linoor.com because the domain linoor.com couldn't be found.",
+    headers: {
+      from: "Mail Delivery Subsystem <mailer-daemon@googlemail.com>",
+      to: "Riley <riley@example.com>",
+      subject: "Address not found",
+      xFailedRecipients: "",
+    },
+  });
+
+  assert.deepEqual(details, {
+    failedRecipient: "needhelp@linoor.com",
+    failedDomain: "linoor.com",
+    reason: "domain_not_found",
+  });
+});
+
+test("bounce parsing still prefers X-Failed-Recipients when Gmail provides it", () => {
+  const details = extractBounceFailureDetails({
+    snippet: "Delivery Status Notification",
+    headers: {
+      from: "mailer-daemon@googlemail.com",
+      to: "Riley <riley@example.com>",
+      subject: "Delivery Status Notification (Failure)",
+      xFailedRecipients: " Owner@Example.ca ",
+    },
+  });
+
+  assert.equal(details.failedRecipient, "owner@example.ca");
+  assert.equal(details.failedDomain, null);
+});
+
+test("bounce message recognition covers address-not-found delivery subsystem mail", () => {
+  assert.equal(
+    isBounceNotificationMessage({
+      from: "Mail Delivery Subsystem <mailer-daemon@googlemail.com>",
+      subject: "Address not found",
+    }),
+    true,
+  );
+});
+
+test("bounce search queries include address-not-found and generic mailer-daemon scans", () => {
+  const queries = buildBounceNotificationSearchQueries();
+
+  assert(queries.some((query) => query.includes("Address not found")));
+  assert(queries.some((query) => query.includes("from:mailer-daemon")));
+});
+
+test("suppression domains include both website and recipient email domains", () => {
+  const domains = getAutomationSuppressionDomainsForLead(makeLead({
+    id: 99,
+    websiteDomain: "villagedallas.ca",
+    email: "needhelp@linoor.com",
+  }));
+
+  assert.deepEqual(domains.sort(), ["linoor.com", "villagedallas.ca"]);
 });

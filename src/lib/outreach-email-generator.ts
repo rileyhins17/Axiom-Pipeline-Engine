@@ -160,6 +160,7 @@ function buildFollowUpContext(
   stepType: OutreachSequenceStepType = "FOLLOW_UP_1",
 ): string {
   const lines: string[] = [];
+  const plan = chooseColdEmailPlan(lead, enrichment);
 
   lines.push(`SENDER: ${senderName} from Axiom Web`);
   lines.push(`RECIPIENT BUSINESS: ${lead.businessName}`);
@@ -183,9 +184,16 @@ function buildFollowUpContext(
   lines.push("");
   lines.push(buildPainSignalContext(lead));
   lines.push("");
+  lines.push("CURRENT FOLLOW-UP ANGLE:");
+  lines.push(`- Concrete anchor to use now: ${plan.concreteAnchor}`);
+  lines.push(`- Current observed issue: ${plan.observed_issue}`);
+  lines.push(`- Current evidence: ${plan.issueEvidence}`);
+  lines.push(`- Preferred observation framing: ${plan.observationHint}`);
+  lines.push(`- Preferred CTA: ${plan.ctaHint}`);
+  lines.push("");
   lines.push(`PREVIOUS EMAIL SUBJECT: ${previousEmail.subject}`);
   lines.push(`PREVIOUS EMAIL SENT AT: ${new Date(previousEmail.sentAt).toISOString()}`);
-  lines.push(`PREVIOUS EMAIL BODY: ${truncateContextText(previousEmail.bodyPlain)}`);
+  lines.push("PRIOR BODY OMITTED: Use the current lead intelligence above. Do not continue stale or generic points from older sent copy.");
   lines.push(`FOLLOW-UP STEP: ${stepType}`);
   lines.push(``);
   lines.push(`=== ENRICHMENT INTELLIGENCE ===`);
@@ -198,6 +206,16 @@ function buildFollowUpContext(
   lines.push(`EMAIL TONE: ${enrichment.emailTone}`);
 
   return lines.join("\n");
+}
+
+export function buildFollowUpContextForTesting(
+  lead: LeadRecord,
+  enrichment: EnrichmentResult,
+  senderName: string,
+  previousEmail: FollowUpSourceEmail,
+  stepType: OutreachSequenceStepType = "FOLLOW_UP_1",
+) {
+  return buildFollowUpContext(lead, enrichment, senderName, previousEmail, stepType);
 }
 
 const COLD_EMAIL_SYSTEM_PROMPT = `You write cold emails for Axiom Web, a small studio that helps local service businesses get more from their website. Your only job is to earn a reply.
@@ -289,15 +307,6 @@ function stripHtmlTags(value: string) {
     .replace(/\n[ \t]+/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-}
-
-function truncateContextText(value: string, maxLength = 800) {
-  const cleaned = value.replace(/\r/g, " ").replace(/\s+/g, " ").trim();
-  if (cleaned.length <= maxLength) {
-    return cleaned;
-  }
-
-  return `${cleaned.slice(0, maxLength - 3).trimEnd()}...`;
 }
 
 function normalizeColdEmailDraft(
