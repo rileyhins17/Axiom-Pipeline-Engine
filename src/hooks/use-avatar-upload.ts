@@ -2,11 +2,20 @@
 
 import { useState, useCallback } from "react";
 
+import {
+  AVATAR_OUTPUT_SIZE,
+  DEFAULT_AVATAR_CROP,
+  type AvatarCropSettings,
+  getAvatarCanvasDrawRect,
+} from "@/lib/avatar-resize";
+
 const MAX_RAW_SIZE = 2 * 1024 * 1024; // 2MB
-const TARGET_SIZE = 200;
 const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
-function resizeImage(file: File): Promise<string> {
+function resizeImage(
+  file: File,
+  cropSettings: AvatarCropSettings = DEFAULT_AVATAR_CROP
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
@@ -15,18 +24,20 @@ function resizeImage(file: File): Promise<string> {
       URL.revokeObjectURL(url);
 
       const canvas = document.createElement("canvas");
-      canvas.width = TARGET_SIZE;
-      canvas.height = TARGET_SIZE;
+      canvas.width = AVATAR_OUTPUT_SIZE;
+      canvas.height = AVATAR_OUTPUT_SIZE;
       const ctx = canvas.getContext("2d");
       if (!ctx) {
         reject(new Error("Canvas context unavailable"));
         return;
       }
 
-      const size = Math.min(img.width, img.height);
-      const sx = (img.width - size) / 2;
-      const sy = (img.height - size) / 2;
-      ctx.drawImage(img, sx, sy, size, size, 0, 0, TARGET_SIZE, TARGET_SIZE);
+      const { dx, dy, dw, dh } = getAvatarCanvasDrawRect(
+        img.width,
+        img.height,
+        cropSettings
+      );
+      ctx.drawImage(img, dx, dy, dw, dh);
 
       resolve(canvas.toDataURL("image/jpeg", 0.85));
     };
@@ -45,22 +56,22 @@ export function useAvatarUpload(onSuccess?: (imageUrl: string) => void) {
   const [error, setError] = useState<string | null>(null);
 
   const upload = useCallback(
-    async (file: File) => {
+    async (file: File, cropSettings: AvatarCropSettings = DEFAULT_AVATAR_CROP) => {
       setError(null);
 
       if (!ACCEPTED_TYPES.includes(file.type)) {
         setError("Please upload a JPEG, PNG, or WebP image");
-        return;
+        return false;
       }
 
       if (file.size > MAX_RAW_SIZE) {
         setError("Image must be under 2MB");
-        return;
+        return false;
       }
 
       setUploading(true);
       try {
-        const dataUri = await resizeImage(file);
+        const dataUri = await resizeImage(file, cropSettings);
 
         const res = await fetch("/api/user/profile", {
           method: "PATCH",
@@ -74,8 +85,10 @@ export function useAvatarUpload(onSuccess?: (imageUrl: string) => void) {
         }
 
         onSuccess?.(dataUri);
+        return true;
       } catch (err) {
         setError(err instanceof Error ? err.message : "Upload failed");
+        return false;
       } finally {
         setUploading(false);
       }

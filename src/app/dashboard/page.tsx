@@ -268,7 +268,8 @@ async function getCrmStats(): Promise<CrmStats> {
       `SELECT COUNT(*) AS c FROM "Lead" WHERE "dealStage" IN ('ACTIVE', 'RETAINED') AND "isArchived" = 0`,
     ).first<{ c: number | string }>(),
     db.prepare(
-      `SELECT COUNT(*) AS c FROM "Lead" WHERE "dealStage" IN ('PROPOSAL_SENT', 'NEGOTIATING', 'SIGNED') AND "isArchived" = 0`,
+      `SELECT COUNT(*) AS c FROM "Lead"
+       WHERE "dealStage" IS NOT NULL AND "dealStage" != 'LOST' AND "isArchived" = 0`,
     ).first<{ c: number | string }>(),
     db.prepare(
       `SELECT COUNT(*) AS c FROM "Lead"

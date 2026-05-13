@@ -9,6 +9,11 @@ function parseId(value: string) {
   return Number.isFinite(id) && id > 0 ? id : null;
 }
 
+function parseActivityId(value: string) {
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string; activityId: string }> },
@@ -18,7 +23,7 @@ export async function PATCH(
 
   const { id, activityId } = await params;
   const leadId = parseId(id);
-  const actId = parseId(activityId);
+  const actId = parseActivityId(activityId);
 
   if (!leadId || !actId) {
     return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
@@ -92,7 +97,7 @@ export async function DELETE(
 
   const { id, activityId } = await params;
   const leadId = parseId(id);
-  const actId = parseId(activityId);
+  const actId = parseActivityId(activityId);
 
   if (!leadId || !actId) {
     return NextResponse.json({ error: "Invalid ID" }, { status: 400 });

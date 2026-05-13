@@ -115,6 +115,11 @@ function formatDateTime(value: Date | string | null | undefined) {
 
 function formatMoney(value: number | null | undefined) {
   if (!value) return "Not set";
+  return `$${value.toLocaleString()}`;
+}
+
+function formatMonthlyMoney(value: number | null | undefined) {
+  if (!value) return "Not set";
   return `$${value.toLocaleString()}/mo`;
 }
 
@@ -390,7 +395,7 @@ export function ClientProfile({ lead, initialActivities, outreachEmails, sequenc
             <DollarSign className="size-3.5" />
             Value
           </div>
-          <div className="font-mono text-lg font-semibold text-emerald-300">{formatMoney(lead.monthlyValue)}</div>
+          <div className="font-mono text-lg font-semibold text-emerald-300">{formatMonthlyMoney(lead.monthlyValue)}</div>
           <div className="mt-1 text-xs text-zinc-500">{getEngagementTypeLabel(lead.engagementType)}</div>
         </div>
         <div className="v2-card p-4">
@@ -421,10 +426,15 @@ export function ClientProfile({ lead, initialActivities, outreachEmails, sequenc
             <dl>
               <FieldRow label="Stage" value={getDealStageLabel(lead.dealStage)} />
               <FieldRow label="Engagement" value={getEngagementTypeLabel(lead.engagementType)} />
-              <FieldRow label="Monthly value" value={formatMoney(lead.monthlyValue)} />
+              <FieldRow label="Project value" value={formatMoney(lead.proposalValue)} />
+              <FieldRow label="Monthly value" value={formatMonthlyMoney(lead.monthlyValue)} />
+              <FieldRow label="Proposal status" value={lead.proposalStatus} />
+              <FieldRow label="Package" value={lead.packageRecommendation} />
               <FieldRow label="Proposal sent" value={formatDate(lead.proposalSentAt)} />
               <FieldRow label="Signed" value={formatDate(lead.signedAt)} />
               <FieldRow label="Project start" value={formatDate(lead.projectStartDate)} />
+              <FieldRow label="Launch target" value={formatDate(lead.launchTargetDate)} />
+              <FieldRow label="Project owner" value={lead.projectOwner} />
               <FieldRow label="Lost reason" value={lead.dealLostReason} />
             </dl>
           </Section>

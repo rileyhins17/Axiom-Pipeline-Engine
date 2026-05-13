@@ -43,7 +43,7 @@ export async function PATCH(
   const db = getDatabase();
   await db
     .prepare(
-      `UPDATE "Lead" SET "${field}" = ?1, "updatedAt" = datetime('now') WHERE "id" = ?2`
+      `UPDATE "Lead" SET "${field}" = ?1, "lastUpdated" = datetime('now') WHERE "id" = ?2`
     )
     .bind(value ?? null, id)
     .run();

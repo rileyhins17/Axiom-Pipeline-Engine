@@ -38,6 +38,31 @@ function addBusinessDays(start: Date, businessDays: number) {
 
 export function getDefaultNextActionForStage(stage: DealStage, now = new Date()): DefaultNextAction | null {
   switch (stage) {
+    case "NEW_LEAD":
+      return {
+        nextAction: "Review fit and choose contact path",
+        nextActionDueAt: addBusinessDays(now, 1),
+      };
+    case "CONTACTED":
+      return {
+        nextAction: "Watch for reply",
+        nextActionDueAt: addBusinessDays(now, 3),
+      };
+    case "INTERESTED":
+      return {
+        nextAction: "Book discovery call",
+        nextActionDueAt: addBusinessDays(now, 1),
+      };
+    case "DISCOVERY_BOOKED":
+      return {
+        nextAction: "Prepare discovery notes",
+        nextActionDueAt: addBusinessDays(now, 1),
+      };
+    case "DISCOVERY_COMPLETED":
+      return {
+        nextAction: "Draft proposal scope",
+        nextActionDueAt: addBusinessDays(now, 2),
+      };
     case "PROPOSAL_SENT":
       return {
         nextAction: "Follow up on proposal",
@@ -208,6 +233,36 @@ export function buildDealUpdateActivities(before: LeadRecord, after: LeadRecord)
       "Deal value updated",
       `$${after.monthlyValue.toLocaleString()}/mo`,
       changeMetadata(before, after, "monthlyValue"),
+    );
+  }
+
+  if (changed(before, after, "proposalValue") && after.proposalValue !== null) {
+    pushActivity(
+      activities,
+      "SYSTEM",
+      "Proposal value updated",
+      `$${after.proposalValue.toLocaleString()}`,
+      changeMetadata(before, after, "proposalValue"),
+    );
+  }
+
+  if (changed(before, after, "proposalStatus") && after.proposalStatus) {
+    pushActivity(
+      activities,
+      "SYSTEM",
+      "Proposal status updated",
+      after.proposalStatus,
+      changeMetadata(before, after, "proposalStatus"),
+    );
+  }
+
+  if (changed(before, after, "packageRecommendation") && after.packageRecommendation) {
+    pushActivity(
+      activities,
+      "SYSTEM",
+      "Package recommendation updated",
+      after.packageRecommendation,
+      changeMetadata(before, after, "packageRecommendation"),
     );
   }
 

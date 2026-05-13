@@ -106,7 +106,7 @@ export async function POST(
       data: {
         leadId,
         actorUserId: authResult.session.user.id,
-        type: "EMAIL_SENT",
+        type: "EMAIL",
         title: `Reply sent: ${subject}`,
         body: plainText.slice(0, 500),
         metadata: JSON.stringify({
@@ -135,10 +135,10 @@ export async function POST(
       },
     });
 
-    // Update lead's last reply timestamp
+    // Update outbound contact timestamp. lastReplyAt is reserved for prospect replies.
     await prisma.lead.update({
       where: { id: leadId },
-      data: { lastReplyAt: new Date() },
+      data: { lastContactedAt: new Date() },
     });
 
     return NextResponse.json({

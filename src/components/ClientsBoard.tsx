@@ -368,11 +368,16 @@ function DealDrawer({
   const [dealStage, setDealStage] = useState<string>(lead.dealStage ?? "");
   const [engagementType, setEngagementType] = useState<string>(lead.engagementType ?? "");
   const [monthlyValue, setMonthlyValue] = useState<string>(lead.monthlyValue ? String(lead.monthlyValue) : "");
+  const [proposalValue, setProposalValue] = useState<string>(lead.proposalValue ? String(lead.proposalValue) : "");
+  const [proposalStatus, setProposalStatus] = useState<string>(lead.proposalStatus ?? "");
+  const [packageRecommendation, setPackageRecommendation] = useState<string>(lead.packageRecommendation ?? "");
   const [clientPriority, setClientPriority] = useState<string>(lead.clientPriority ?? "");
   const [nextAction, setNextAction] = useState<string>(lead.nextAction ?? "");
   const [nextActionDueAt, setNextActionDueAt] = useState<string>(toInputDate(lead.nextActionDueAt));
   const [dealLostReason, setDealLostReason] = useState<string>(lead.dealLostReason ?? "");
   const [projectStartDate, setProjectStartDate] = useState<string>(toInputDate(lead.projectStartDate));
+  const [launchTargetDate, setLaunchTargetDate] = useState<string>(toInputDate(lead.launchTargetDate));
+  const [projectOwner, setProjectOwner] = useState<string>(lead.projectOwner ?? "");
   const [renewalDate, setRenewalDate] = useState<string>(toInputDate(lead.renewalDate));
   const [proposalSentAt, setProposalSentAt] = useState<string>(toInputDate(lead.proposalSentAt));
   const [signedAt, setSignedAt] = useState<string>(toInputDate(lead.signedAt));
@@ -394,11 +399,16 @@ function DealDrawer({
       dealStage: dealStage || null,
       engagementType: engagementType || null,
       monthlyValue: monthlyValue ? Number(monthlyValue) : null,
+      proposalValue: proposalValue ? Number(proposalValue) : null,
+      proposalStatus: proposalStatus || null,
+      packageRecommendation: packageRecommendation || null,
       clientPriority: clientPriority || null,
       nextAction: nextAction || null,
       nextActionDueAt: nextActionDueAt || null,
       dealLostReason: dealLostReason || null,
       projectStartDate: projectStartDate || null,
+      launchTargetDate: launchTargetDate || null,
+      projectOwner: projectOwner || null,
       renewalDate: renewalDate || null,
       proposalSentAt: proposalSentAt || null,
       signedAt: signedAt || null,
@@ -512,20 +522,66 @@ function DealDrawer({
           </div>
 
           {/* Monthly Value */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-[10.5px] uppercase tracking-[0.15em] text-zinc-500 font-semibold">
-              Monthly Value ($/mo)
-            </label>
-            <div className="relative">
-              <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-zinc-500 pointer-events-none" />
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[10.5px] uppercase tracking-[0.15em] text-zinc-500 font-semibold">
+                Project Value
+              </label>
+              <div className="relative">
+                <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-zinc-500 pointer-events-none" />
+                <input
+                  type="number"
+                  min={0}
+                  step={100}
+                  value={proposalValue}
+                  onChange={(e) => setProposalValue(e.target.value)}
+                  placeholder="3500"
+                  className="w-full rounded-lg border border-white/[0.09] bg-white/[0.03] pl-8 pr-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20"
+                />
+              </div>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[10.5px] uppercase tracking-[0.15em] text-zinc-500 font-semibold">
+                Monthly Value
+              </label>
+              <div className="relative">
+                <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-zinc-500 pointer-events-none" />
+                <input
+                  type="number"
+                  min={0}
+                  step={50}
+                  value={monthlyValue}
+                  onChange={(e) => setMonthlyValue(e.target.value)}
+                  placeholder="150"
+                  className="w-full rounded-lg border border-white/[0.09] bg-white/[0.03] pl-8 pr-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[10.5px] uppercase tracking-[0.15em] text-zinc-500 font-semibold">
+                Proposal Status
+              </label>
               <input
-                type="number"
-                min={0}
-                step={50}
-                value={monthlyValue}
-                onChange={(e) => setMonthlyValue(e.target.value)}
-                placeholder="150"
-                className="w-full rounded-lg border border-white/[0.09] bg-white/[0.03] pl-8 pr-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20"
+                type="text"
+                value={proposalStatus}
+                onChange={(e) => setProposalStatus(e.target.value)}
+                placeholder="draft / sent / accepted"
+                className="w-full rounded-lg border border-white/[0.09] bg-white/[0.03] px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[10.5px] uppercase tracking-[0.15em] text-zinc-500 font-semibold">
+                Package
+              </label>
+              <input
+                type="text"
+                value={packageRecommendation}
+                onChange={(e) => setPackageRecommendation(e.target.value)}
+                placeholder="Rebuild + care"
+                className="w-full rounded-lg border border-white/[0.09] bg-white/[0.03] px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20"
               />
             </div>
           </div>
@@ -608,7 +664,7 @@ function DealDrawer({
             </div>
           </div>
 
-          {/* Project Start / Renewal dates */}
+          {/* Project Start / Launch dates */}
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
               <label className="text-[10.5px] uppercase tracking-[0.15em] text-zinc-500 font-semibold">
@@ -623,6 +679,36 @@ function DealDrawer({
                   className="w-full rounded-lg border border-white/[0.09] bg-white/[0.03] pl-7 pr-2 py-2 text-sm text-white focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20 [color-scheme:dark]"
                 />
               </div>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[10.5px] uppercase tracking-[0.15em] text-zinc-500 font-semibold">
+                Launch Target
+              </label>
+              <div className="relative">
+                <Calendar className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-zinc-500 pointer-events-none" />
+                <input
+                  type="date"
+                  value={launchTargetDate}
+                  onChange={(e) => setLaunchTargetDate(e.target.value)}
+                  className="w-full rounded-lg border border-white/[0.09] bg-white/[0.03] pl-7 pr-2 py-2 text-sm text-white focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20 [color-scheme:dark]"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Owner / Renewal */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[10.5px] uppercase tracking-[0.15em] text-zinc-500 font-semibold">
+                Project Owner
+              </label>
+              <input
+                type="text"
+                value={projectOwner}
+                onChange={(e) => setProjectOwner(e.target.value)}
+                placeholder="Aidan / Riley"
+                className="w-full rounded-lg border border-white/[0.09] bg-white/[0.03] px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20"
+              />
             </div>
             <div className="flex flex-col gap-1.5">
               <label className="text-[10.5px] uppercase tracking-[0.15em] text-zinc-500 font-semibold">
@@ -850,7 +936,7 @@ function InboxSection({
                 disabled={saving}
                 onClick={() =>
                   void onQuickUpdate(lead.id, {
-                    dealStage: "NEGOTIATING",
+                    dealStage: "DISCOVERY_BOOKED",
                     nextAction: "Schedule 30-minute discovery call",
                     nextActionDueAt: defaultDueDate(1),
                   })
@@ -925,10 +1011,10 @@ function StatTile({
 
 function exportClientsCsv(leads: CrmLead[]) {
   const headers = [
-    "Business Name", "City", "Niche", "Stage", "Engagement", "Monthly Value",
-    "Priority", "Contact", "Email", "Phone", "Website", "Next Action",
-    "Due Date", "Health", "Proposal Sent", "Signed", "Project Start",
-    "Renewal", "Notes",
+    "Business Name", "City", "Niche", "Stage", "Engagement", "Project Value",
+    "Monthly Value", "Proposal Status", "Package", "Priority", "Contact", "Email",
+    "Phone", "Website", "Next Action", "Due Date", "Health", "Proposal Sent",
+    "Signed", "Project Start", "Launch Target", "Project Owner", "Renewal", "Notes",
   ];
   const escCsv = (v: string | null | undefined) => {
     if (!v) return "";
@@ -937,13 +1023,16 @@ function exportClientsCsv(leads: CrmLead[]) {
   };
   const rows = leads.map((l) => [
     l.businessName, l.city, l.niche, l.dealStage ?? "", l.engagementType ?? "",
-    l.monthlyValue ?? "", l.clientPriority ?? "", l.contactName ?? "",
+    l.proposalValue ?? "", l.monthlyValue ?? "", l.proposalStatus ?? "",
+    l.packageRecommendation ?? "", l.clientPriority ?? "", l.contactName ?? "",
     l.email ?? "", l.phone ?? "", l.websiteUrl ?? "", l.nextAction ?? "",
     toInputDate(l.nextActionDueAt),
     l.dealStage ? computeDealHealth(l) : "",
     toInputDate(l.proposalSentAt),
     toInputDate(l.signedAt),
     toInputDate(l.projectStartDate),
+    toInputDate(l.launchTargetDate),
+    l.projectOwner ?? "",
     toInputDate(l.renewalDate),
     l.projectNotes ?? "",
   ].map((v) => escCsv(String(v ?? ""))).join(","));

@@ -11,7 +11,7 @@ export async function POST(request: Request) {
 
   const result = await db
     .prepare(
-      `UPDATE "Lead" SET "outreachStatus" = NULL, "updatedAt" = datetime('now')
+      `UPDATE "Lead" SET "outreachStatus" = NULL, "lastUpdated" = datetime('now')
        WHERE "isArchived" = 0 AND "dealStage" IS NULL
        AND "outreachStatus" IN ('REPLIED', 'INTERESTED')`
     )

@@ -77,12 +77,13 @@ export async function PATCH(
     update.engagementType = v ?? null;
   }
 
-  if ("monthlyValue" in body) {
-    const v = body.monthlyValue;
+  for (const field of ["monthlyValue", "proposalValue"] as const) {
+    if (!(field in body)) continue;
+    const v = body[field];
     if (v !== null && (typeof v !== "number" || !Number.isFinite(v) || v < 0)) {
-      return NextResponse.json({ error: "Invalid monthlyValue" }, { status: 400 });
+      return NextResponse.json({ error: `Invalid ${field}` }, { status: 400 });
     }
-    update.monthlyValue = v ?? null;
+    update[field] = v ?? null;
   }
 
   if ("clientPriority" in body) {
@@ -94,7 +95,7 @@ export async function PATCH(
   }
 
   // Date fields
-  for (const field of ["projectStartDate", "renewalDate", "nextActionDueAt", "lastReplyAt", "proposalSentAt", "signedAt"] as const) {
+  for (const field of ["projectStartDate", "launchTargetDate", "renewalDate", "nextActionDueAt", "lastReplyAt", "proposalSentAt", "signedAt"] as const) {
     if (field in body) {
       const parsed = parseDateField(body[field]);
       if (parsed !== null && "error" in parsed) {
@@ -105,7 +106,7 @@ export async function PATCH(
   }
 
   // Text fields
-  for (const field of ["projectNotes", "nextAction", "dealHealth", "dealLostReason", "contactName", "email", "phone", "websiteUrl", "address", "outreachStatus"] as const) {
+  for (const field of ["projectNotes", "nextAction", "dealHealth", "dealLostReason", "contactName", "email", "phone", "websiteUrl", "address", "outreachStatus", "proposalStatus", "packageRecommendation", "projectOwner"] as const) {
     if (field in body) {
       update[field] = body[field] ? String(body[field]) : null;
     }

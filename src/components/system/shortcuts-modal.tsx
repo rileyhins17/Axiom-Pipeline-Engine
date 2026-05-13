@@ -1,24 +1,24 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 import { Keyboard, X } from "lucide-react";
 
 import { APP_NAV_ITEMS } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
+
+const subscribePlatform = () => () => {};
 
 interface ShortcutsModalProps {
   open: boolean;
   onClose: () => void;
 }
 
+function isApplePlatform() {
+  return typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
+}
+
 function useModifierKey() {
-  const [mod, setMod] = useState("Ctrl");
-  useEffect(() => {
-    if (typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/.test(navigator.userAgent)) {
-      setMod("Cmd");
-    }
-  }, []);
-  return mod;
+  return useSyncExternalStore(subscribePlatform, isApplePlatform, () => false) ? "Cmd" : "Ctrl";
 }
 
 function getShortcutGroups(mod: string) {

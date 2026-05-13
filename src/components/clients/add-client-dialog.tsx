@@ -40,14 +40,14 @@ export function AddClientDialog({ open, onOpenChange, onAdded }: AddClientDialog
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [stage, setStage] = useState("NEGOTIATING");
+  const [stage, setStage] = useState("INTERESTED");
 
   const reset = useCallback(() => {
     setSearch("");
     setResults([]);
     setSelectedId(null);
     setError(null);
-    setStage("NEGOTIATING");
+    setStage("INTERESTED");
   }, []);
 
   useEffect(() => {
@@ -180,6 +180,9 @@ export function AddClientDialog({ open, onOpenChange, onAdded }: AddClientDialog
                 onChange={(e) => setStage(e.target.value)}
                 className="w-full rounded-lg border border-white/[0.09] bg-white/[0.03] px-3 py-2 text-sm text-white focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/20"
               >
+                <option value="INTERESTED">Interested</option>
+                <option value="DISCOVERY_BOOKED">Discovery Booked</option>
+                <option value="DISCOVERY_COMPLETED">Discovery Completed</option>
                 <option value="NEGOTIATING">Negotiating</option>
                 <option value="PROPOSAL_SENT">Proposal Sent</option>
                 <option value="SIGNED">Signed</option>

@@ -91,7 +91,12 @@ export type LeadRecord = {
   dealStage: string | null;
   engagementType: string | null;
   monthlyValue: number | null;
+  proposalValue: number | null;
+  proposalStatus: string | null;
+  packageRecommendation: string | null;
   projectStartDate: Date | null;
+  launchTargetDate: Date | null;
+  projectOwner: string | null;
   renewalDate: Date | null;
   projectNotes: string | null;
   nextAction: string | null;
@@ -542,7 +547,12 @@ const leadTable: TableSpec<LeadRecord> = {
     "dealStage",
     "engagementType",
     "monthlyValue",
+    "proposalValue",
+    "proposalStatus",
+    "packageRecommendation",
     "projectStartDate",
+    "launchTargetDate",
+    "projectOwner",
     "renewalDate",
     "projectNotes",
     "nextAction",
@@ -554,9 +564,9 @@ const leadTable: TableSpec<LeadRecord> = {
     "signedAt",
     "clientPriority",
   ],
-  dateFields: new Set(["createdAt", "lastUpdated", "firstContactedAt", "lastContactedAt", "nextFollowUpDue", "enrichedAt", "projectStartDate", "renewalDate", "nextActionDueAt", "lastReplyAt", "proposalSentAt", "signedAt"]),
+  dateFields: new Set(["createdAt", "lastUpdated", "firstContactedAt", "lastContactedAt", "nextFollowUpDue", "enrichedAt", "projectStartDate", "launchTargetDate", "renewalDate", "nextActionDueAt", "lastReplyAt", "proposalSentAt", "signedAt"]),
   idField: "id",
-  integerFields: new Set(["id", "reviewCount", "leadScore", "axiomScore", "monthlyValue"]),
+  integerFields: new Set(["id", "reviewCount", "leadScore", "axiomScore", "monthlyValue", "proposalValue"]),
   stringFields: new Set([
     "businessName",
     "niche",
@@ -592,6 +602,9 @@ const leadTable: TableSpec<LeadRecord> = {
     "source",
     "dealStage",
     "engagementType",
+    "proposalStatus",
+    "packageRecommendation",
+    "projectOwner",
     "projectNotes",
     "nextAction",
     "dealHealth",
@@ -966,7 +979,12 @@ async function ensureLeadQualityColumns() {
         ["dealStage", "TEXT"],
         ["engagementType", "TEXT"],
         ["monthlyValue", "INTEGER"],
+        ["proposalValue", "INTEGER"],
+        ["proposalStatus", "TEXT"],
+        ["packageRecommendation", "TEXT"],
         ["projectStartDate", "DATETIME"],
+        ["launchTargetDate", "DATETIME"],
+        ["projectOwner", "TEXT"],
         ["renewalDate", "DATETIME"],
         ["projectNotes", "TEXT"],
         ["nextAction", "TEXT"],

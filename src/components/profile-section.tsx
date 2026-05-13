@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CameraIcon, Loader2Icon, Trash2Icon, PencilIcon, CheckIcon, XIcon } from "lucide-react";
 
 import { Avatar } from "@/components/ui/avatar";
@@ -8,6 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAvatarUpload } from "@/hooks/use-avatar-upload";
+import {
+  DEFAULT_AVATAR_CROP,
+  type AvatarCropSettings,
+} from "@/lib/avatar-resize";
 
 type ProfileSectionProps = {
   user: {
@@ -32,6 +36,12 @@ export function ProfileSection({ user }: ProfileSectionProps) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [savingPassword, setSavingPassword] = useState(false);
   const [passwordMsg, setPasswordMsg] = useState<{ type: "error" | "success"; text: string } | null>(null);
+  const [pendingAvatar, setPendingAvatar] = useState<{
+    file: File;
+    previewUrl: string;
+  } | null>(null);
+  const [cropSettings, setCropSettings] =
+    useState<AvatarCropSettings>(DEFAULT_AVATAR_CROP);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -47,6 +57,33 @@ export function ProfileSection({ user }: ProfileSectionProps) {
     }
     return user.email?.slice(0, 2).toUpperCase() ?? "?";
   })();
+
+  useEffect(() => {
+    return () => {
+      if (pendingAvatar) URL.revokeObjectURL(pendingAvatar.previewUrl);
+    };
+  }, [pendingAvatar]);
+
+  function clearPendingAvatar() {
+    setPendingAvatar((current) => {
+      if (current) URL.revokeObjectURL(current.previewUrl);
+      return null;
+    });
+    setCropSettings(DEFAULT_AVATAR_CROP);
+  }
+
+  function updateCropSetting(key: keyof AvatarCropSettings, value: number) {
+    setCropSettings((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  }
+
+  async function handleAvatarUpload() {
+    if (!pendingAvatar) return;
+    const ok = await upload(pendingAvatar.file, cropSettings);
+    if (ok) clearPendingAvatar();
+  }
 
   async function handleSaveName() {
     const trimmed = nameValue.trim();
@@ -135,7 +172,13 @@ export function ProfileSection({ user }: ProfileSectionProps) {
             className="hidden"
             onChange={(e) => {
               const file = e.target.files?.[0];
-              if (file) upload(file);
+              if (file) {
+                clearPendingAvatar();
+                setPendingAvatar({
+                  file,
+                  previewUrl: URL.createObjectURL(file),
+                });
+              }
               e.target.value = "";
             }}
           />
@@ -157,13 +200,111 @@ export function ProfileSection({ user }: ProfileSectionProps) {
             )}
           </div>
           <p className="text-xs text-zinc-500">
-            JPEG, PNG, or WebP. Max 2MB. Will be resized to 200×200.
+            JPEG, PNG, or WebP. Max 2MB. Resize before upload.
           </p>
           {uploadError && (
             <p className="text-xs text-red-400">{uploadError}</p>
           )}
         </div>
       </div>
+
+      {pendingAvatar && (
+        <div className="max-w-xl rounded-lg border border-white/[0.08] bg-white/[0.03] p-4">
+          <div className="flex flex-col gap-4 sm:flex-row">
+            <div className="flex items-center justify-center">
+              <div className="size-40 overflow-hidden rounded-full border border-white/[0.12] bg-zinc-950">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={pendingAvatar.previewUrl}
+                  alt=""
+                  className="h-full w-full object-cover"
+                  style={{
+                    transform: `translate(${cropSettings.offsetX * 18}%, ${
+                      cropSettings.offsetY * 18
+                    }%) scale(${cropSettings.zoom})`,
+                    transformOrigin: "center",
+                  }}
+                />
+              </div>
+            </div>
+
+            <div className="flex-1 space-y-3">
+              <div>
+                <h3 className="text-sm font-semibold text-white">
+                  Resize Profile Photo
+                </h3>
+                <p className="text-xs text-zinc-500">
+                  Adjust the crop, then upload the final 200x200 image.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs text-zinc-400">Zoom</Label>
+                <input
+                  type="range"
+                  min="1"
+                  max="2.5"
+                  step="0.05"
+                  value={cropSettings.zoom}
+                  onChange={(e) =>
+                    updateCropSetting("zoom", Number(e.target.value))
+                  }
+                  className="w-full accent-emerald-400"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs text-zinc-400">Horizontal</Label>
+                <input
+                  type="range"
+                  min="-1"
+                  max="1"
+                  step="0.05"
+                  value={cropSettings.offsetX}
+                  onChange={(e) =>
+                    updateCropSetting("offsetX", Number(e.target.value))
+                  }
+                  className="w-full accent-emerald-400"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs text-zinc-400">Vertical</Label>
+                <input
+                  type="range"
+                  min="-1"
+                  max="1"
+                  step="0.05"
+                  value={cropSettings.offsetY}
+                  onChange={(e) =>
+                    updateCropSetting("offsetY", Number(e.target.value))
+                  }
+                  className="w-full accent-emerald-400"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-1">
+                <Button
+                  size="sm"
+                  onClick={handleAvatarUpload}
+                  disabled={uploading}
+                >
+                  {uploading && <Loader2Icon className="size-3.5 animate-spin" />}
+                  Upload Photo
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={clearPendingAvatar}
+                  disabled={uploading}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Name */}
       <div className="space-y-2">

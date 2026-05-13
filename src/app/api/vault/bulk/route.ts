@@ -33,7 +33,7 @@ export async function POST(request: Request) {
     case "archive": {
       const placeholders = validIds.map(() => "?").join(",");
       await db.prepare(
-        `UPDATE "Lead" SET "isArchived" = 1, "updatedAt" = datetime('now') WHERE "id" IN (${placeholders})`,
+        `UPDATE "Lead" SET "isArchived" = 1, "lastUpdated" = datetime('now') WHERE "id" IN (${placeholders})`,
       ).bind(...validIds).run();
       return NextResponse.json({ archived: validIds.length });
     }

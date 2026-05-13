@@ -1,13 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 import { Search } from "lucide-react";
 
+const subscribePlatform = () => () => {};
+
+function isApplePlatform() {
+  return typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
+}
+
 export function SearchTrigger() {
-  const [isMac, setIsMac] = useState(false);
-  useEffect(() => {
-    setIsMac(/Mac|iPhone|iPad|iPod/.test(navigator.userAgent));
-  }, []);
+  const isMac = useSyncExternalStore(subscribePlatform, isApplePlatform, () => false);
 
   return (
     <button
