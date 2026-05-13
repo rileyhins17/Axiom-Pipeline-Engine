@@ -335,8 +335,18 @@ function renderDigestPlain(data: DigestData): string {
 
 // ─── Sending ───────────────────────────────────────────────────────
 
-async function getFirstGmailConnection(): Promise<GmailConnectionRecord | null> {
+async function getDigestSenderConnection(): Promise<GmailConnectionRecord | null> {
   const prisma = getPrisma();
+  const recipients = await getDigestRecipients();
+  // Prefer a connection matching the first admin email so the digest
+  // arrives "from" the primary operator rather than whichever account
+  // was touched most recently.
+  if (recipients.length > 0) {
+    const preferred = await prisma.gmailConnection.findFirst({
+      where: { gmailAddress: recipients[0] },
+    }) as GmailConnectionRecord | null;
+    if (preferred) return preferred;
+  }
   return prisma.gmailConnection.findFirst({
     orderBy: { updatedAt: "desc" },
   }) as Promise<GmailConnectionRecord | null>;
@@ -349,7 +359,7 @@ async function getDigestRecipients(): Promise<string[]> {
 }
 
 export async function sendDailyDigest(): Promise<{ sent: boolean; recipients: string[]; error?: string }> {
-  const connection = await getFirstGmailConnection();
+  const connection = await getDigestSenderConnection();
   if (!connection) {
     return { sent: false, recipients: [], error: "No Gmail connection available" };
   }
