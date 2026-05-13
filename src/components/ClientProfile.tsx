@@ -157,6 +157,13 @@ function Section({
   );
 }
 
+type TimelineEntry =
+  | { kind: "activity"; data: CrmActivityRecord; timestamp: number }
+  | { kind: "email"; data: ProfileOutreachEmail; timestamp: number }
+  | { kind: "milestone"; key: string; title: string; timestamp: number };
+
+type TimelineFilter = "ALL" | "ACTIVITY" | "EMAIL" | "MILESTONE";
+
 function ActivityIcon({ type }: { type: string }) {
   if (type === "EMAIL") return <Mail className="size-3.5" />;
   if (type === "CALL") return <Phone className="size-3.5" />;
@@ -166,6 +173,29 @@ function ActivityIcon({ type }: { type: string }) {
   if (type === "RENEWAL") return <RefreshCw className="size-3.5" />;
   if (type === "STAGE_CHANGE") return <BriefcaseBusiness className="size-3.5" />;
   return <MessageSquare className="size-3.5" />;
+}
+
+function MilestoneIcon({ milestoneKey }: { milestoneKey: string }) {
+  if (milestoneKey === "created") return <Plus className="size-3.5" />;
+  if (milestoneKey === "enriched") return <Bot className="size-3.5" />;
+  if (milestoneKey === "firstContact") return <Send className="size-3.5" />;
+  if (milestoneKey === "proposalSent") return <FileText className="size-3.5" />;
+  if (milestoneKey === "signed") return <CheckCircle2 className="size-3.5" />;
+  return <Circle className="size-3.5" />;
+}
+
+function EmailStatusBadge({ status }: { status: string }) {
+  const isError = status === "bounced" || status === "failed";
+  return (
+    <span className={cn(
+      "rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em]",
+      isError
+        ? "border-red-500/20 bg-red-500/10 text-red-300"
+        : "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
+    )}>
+      {status}
+    </span>
+  );
 }
 
 function ContactLink({
@@ -198,7 +228,7 @@ export function ClientProfile({ lead, initialActivities, outreachEmails, sequenc
   const [activityBody, setActivityBody] = useState("");
   const [savingActivity, setSavingActivity] = useState(false);
   const [activityError, setActivityError] = useState<string | null>(null);
-  const [activityFilter, setActivityFilter] = useState<string>("ALL");
+  const [timelineFilter, setTimelineFilter] = useState<TimelineFilter>("ALL");
   const [expandedEmails, setExpandedEmails] = useState<Set<string>>(new Set());
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
@@ -218,11 +248,34 @@ export function ClientProfile({ lead, initialActivities, outreachEmails, sequenc
   const renewalDays = getDaysUntilRenewal(lead.renewalDate);
   const sentEmails = outreachEmails.filter((email) => email.status === "sent").length;
 
-  const sortedActivities = useMemo(() => {
-    const sorted = [...activities].sort((a, b) => (toDate(b.createdAt)?.getTime() ?? 0) - (toDate(a.createdAt)?.getTime() ?? 0));
-    if (activityFilter === "ALL") return sorted;
-    return sorted.filter((a) => a.type === activityFilter);
-  }, [activities, activityFilter]);
+  const timeline = useMemo(() => {
+    const entries: TimelineEntry[] = [];
+
+    for (const a of activities) {
+      entries.push({ kind: "activity", data: a, timestamp: toDate(a.createdAt)?.getTime() ?? 0 });
+    }
+
+    for (const e of outreachEmails) {
+      entries.push({ kind: "email", data: e, timestamp: toDate(e.sentAt)?.getTime() ?? 0 });
+    }
+
+    const milestones: { key: string; title: string; date: Date | string | null | undefined }[] = [
+      { key: "created", title: "Lead created", date: lead.createdAt },
+      { key: "enriched", title: "Lead enriched", date: lead.enrichedAt },
+      { key: "firstContact", title: "First contact", date: lead.firstContactedAt },
+      { key: "proposalSent", title: "Proposal sent", date: lead.proposalSentAt },
+      { key: "signed", title: "Contract signed", date: lead.signedAt },
+    ];
+    for (const m of milestones) {
+      const ts = toDate(m.date)?.getTime();
+      if (ts) entries.push({ kind: "milestone", key: m.key, title: m.title, timestamp: ts });
+    }
+
+    entries.sort((a, b) => b.timestamp - a.timestamp);
+
+    if (timelineFilter === "ALL") return entries;
+    return entries.filter((e) => e.kind === timelineFilter.toLowerCase());
+  }, [activities, outreachEmails, lead, timelineFilter]);
 
   const toggleEmailExpand = (emailId: string) => {
     setExpandedEmails((prev) => {
@@ -668,118 +721,166 @@ export function ClientProfile({ lead, initialActivities, outreachEmails, sequenc
           <Section
             title="Activity Timeline"
             icon={<Clock className="size-4" />}
-            action={<span className="font-mono text-[11px] text-zinc-600">{activities.length}</span>}
+            action={<span className="font-mono text-[11px] text-zinc-600">{timeline.length}</span>}
           >
             <div className="flex flex-wrap gap-1.5 mb-4">
-              {["ALL", "NOTE", "CALL", "MEETING", "EMAIL", "STAGE_CHANGE", "SYSTEM"].map((filter) => (
+              {(["ALL", "ACTIVITY", "EMAIL", "MILESTONE"] as const).map((filter) => (
                 <button
                   key={filter}
                   type="button"
-                  onClick={() => setActivityFilter(filter)}
+                  onClick={() => setTimelineFilter(filter)}
                   className={cn(
                     "rounded-md border px-2 py-1 text-[10px] font-medium transition-colors cursor-pointer",
-                    activityFilter === filter
+                    timelineFilter === filter
                       ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
                       : "border-white/[0.08] bg-white/[0.025] text-zinc-500 hover:text-zinc-300 hover:border-white/[0.14]"
                   )}
                 >
-                  {filter === "ALL" ? "All" : filter === "STAGE_CHANGE" ? "Stages" : filter.charAt(0) + filter.slice(1).toLowerCase()}
+                  {filter === "ALL" ? "All" : filter === "ACTIVITY" ? "Activities" : filter === "EMAIL" ? "Emails" : "Milestones"}
                 </button>
               ))}
             </div>
-            {sortedActivities.length > 0 ? (
+            {timeline.length > 0 ? (
               <div className="relative flex flex-col gap-4">
-                {sortedActivities.map((activity) => (
-                  <div key={activity.id} className="grid grid-cols-[28px_1fr] gap-3">
-                    <div className="flex size-7 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.03] text-zinc-500">
-                      <ActivityIcon type={activity.type} />
-                    </div>
-                    <div className="min-w-0 border-b border-white/[0.05] pb-4 last:border-0 last:pb-0">
-                      {editingActivity?.id === activity.id ? (
-                        <div className="space-y-2">
-                          <input
-                            type="text"
-                            value={editActivityTitle}
-                            onChange={(e) => setEditActivityTitle(e.target.value)}
-                            className="w-full rounded-lg border border-emerald-500/30 bg-black/40 px-3 py-1.5 text-sm text-white focus:outline-none"
-                            autoFocus
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") void handleEditActivity();
-                              if (e.key === "Escape") setEditingActivity(null);
-                            }}
-                          />
-                          <textarea
-                            value={editActivityBody}
-                            onChange={(e) => setEditActivityBody(e.target.value)}
-                            rows={3}
-                            className="w-full rounded-lg border border-white/[0.09] bg-black/40 px-3 py-1.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none"
-                          />
-                          <div className="flex gap-2">
-                            <button
-                              type="button"
-                              disabled={savingEditActivity}
-                              onClick={() => void handleEditActivity()}
-                              className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-200 transition hover:bg-emerald-500/20 disabled:opacity-50 cursor-pointer"
-                            >
-                              {savingEditActivity ? <Loader2Icon className="size-3 animate-spin" /> : <Save className="size-3" />}
-                              Save
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setEditingActivity(null)}
-                              className="rounded-md border border-white/[0.08] px-3 py-1 text-xs text-zinc-400 hover:text-white transition cursor-pointer"
-                            >
-                              Cancel
-                            </button>
-                          </div>
+                {timeline.map((entry) => {
+                  if (entry.kind === "activity") {
+                    const activity = entry.data;
+                    return (
+                      <div key={`a-${activity.id}`} className="grid grid-cols-[28px_1fr] gap-3">
+                        <div className="flex size-7 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.03] text-zinc-500">
+                          <ActivityIcon type={activity.type} />
                         </div>
-                      ) : (
-                        <>
+                        <div className="min-w-0 border-b border-white/[0.05] pb-4 last:border-0 last:pb-0">
+                          {editingActivity?.id === activity.id ? (
+                            <div className="space-y-2">
+                              <input
+                                type="text"
+                                value={editActivityTitle}
+                                onChange={(e) => setEditActivityTitle(e.target.value)}
+                                className="w-full rounded-lg border border-emerald-500/30 bg-black/40 px-3 py-1.5 text-sm text-white focus:outline-none"
+                                autoFocus
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") void handleEditActivity();
+                                  if (e.key === "Escape") setEditingActivity(null);
+                                }}
+                              />
+                              <textarea
+                                value={editActivityBody}
+                                onChange={(e) => setEditActivityBody(e.target.value)}
+                                rows={3}
+                                className="w-full rounded-lg border border-white/[0.09] bg-black/40 px-3 py-1.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none"
+                              />
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  disabled={savingEditActivity}
+                                  onClick={() => void handleEditActivity()}
+                                  className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-200 transition hover:bg-emerald-500/20 disabled:opacity-50 cursor-pointer"
+                                >
+                                  {savingEditActivity ? <Loader2Icon className="size-3 animate-spin" /> : <Save className="size-3" />}
+                                  Save
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingActivity(null)}
+                                  className="rounded-md border border-white/[0.08] px-3 py-1 text-xs text-zinc-400 hover:text-white transition cursor-pointer"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="text-sm font-semibold text-white">{activity.title}</div>
+                                  <div className="mt-0.5 text-[11px] uppercase tracking-[0.12em] text-zinc-600">
+                                    {getCrmActivityTypeLabel(activity.type)}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <span className="text-[11px] text-zinc-600">{formatDateTime(activity.createdAt)}</span>
+                                  {activity.type !== "STAGE_CHANGE" && activity.type !== "SYSTEM" && (
+                                    <DropdownMenu>
+                                      <DropdownMenuTrigger asChild>
+                                        <button type="button" className="inline-flex size-6 items-center justify-center rounded-md text-zinc-600 hover:bg-white/[0.08] hover:text-zinc-300 transition-colors cursor-pointer">
+                                          <MoreHorizontalIcon className="size-3.5" />
+                                        </button>
+                                      </DropdownMenuTrigger>
+                                      <DropdownMenuContent align="end">
+                                        <DropdownMenuItem onClick={() => {
+                                          setEditingActivity(activity);
+                                          setEditActivityTitle(activity.title);
+                                          setEditActivityBody(activity.body ?? "");
+                                        }}>
+                                          <Pencil className="size-3.5" />
+                                          Edit
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem variant="destructive" onClick={() => setDeleteActivity(activity)}>
+                                          <Trash2Icon className="size-3.5" />
+                                          Delete
+                                        </DropdownMenuItem>
+                                      </DropdownMenuContent>
+                                    </DropdownMenu>
+                                  )}
+                                </div>
+                              </div>
+                              {activity.body ? (
+                                <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-zinc-400">{activity.body}</p>
+                              ) : null}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  if (entry.kind === "email") {
+                    const email = entry.data;
+                    return (
+                      <div key={`e-${email.id}`} className="grid grid-cols-[28px_1fr] gap-3">
+                        <div className="flex size-7 items-center justify-center rounded-full border border-sky-500/20 bg-sky-500/10 text-sky-400">
+                          <Send className="size-3.5" />
+                        </div>
+                        <div className="min-w-0 border-b border-white/[0.05] pb-4 last:border-0 last:pb-0">
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
-                              <div className="text-sm font-semibold text-white">{activity.title}</div>
-                              <div className="mt-0.5 text-[11px] uppercase tracking-[0.12em] text-zinc-600">
-                                {getCrmActivityTypeLabel(activity.type)}
+                              <div className="truncate text-sm font-semibold text-white">{email.subject || "No subject"}</div>
+                              <div className="mt-0.5 text-[11px] text-zinc-600">
+                                {email.senderEmail} &rarr; {email.recipientEmail}
                               </div>
                             </div>
                             <div className="flex items-center gap-2 shrink-0">
-                              <span className="text-[11px] text-zinc-600">{formatDateTime(activity.createdAt)}</span>
-                              {activity.type !== "STAGE_CHANGE" && activity.type !== "SYSTEM" && (
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <button type="button" className="inline-flex size-6 items-center justify-center rounded-md text-zinc-600 hover:bg-white/[0.08] hover:text-zinc-300 transition-colors cursor-pointer">
-                                      <MoreHorizontalIcon className="size-3.5" />
-                                    </button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end">
-                                    <DropdownMenuItem onClick={() => {
-                                      setEditingActivity(activity);
-                                      setEditActivityTitle(activity.title);
-                                      setEditActivityBody(activity.body ?? "");
-                                    }}>
-                                      <Pencil className="size-3.5" />
-                                      Edit
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem variant="destructive" onClick={() => setDeleteActivity(activity)}>
-                                      <Trash2Icon className="size-3.5" />
-                                      Delete
-                                    </DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
-                              )}
+                              <EmailStatusBadge status={email.status} />
                             </div>
                           </div>
-                          {activity.body ? (
-                            <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-zinc-400">{activity.body}</p>
-                          ) : null}
-                        </>
-                      )}
+                          <div className="mt-1 text-[11px] text-zinc-600">{formatDateTime(email.sentAt)}</div>
+                          {email.errorMessage ? <div className="mt-1 text-xs text-red-300">{email.errorMessage}</div> : null}
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div key={`m-${entry.key}`} className="grid grid-cols-[28px_1fr] gap-3">
+                      <div className="flex size-7 items-center justify-center rounded-full border border-amber-500/20 bg-amber-500/10 text-amber-400">
+                        <MilestoneIcon milestoneKey={entry.key} />
+                      </div>
+                      <div className="min-w-0 border-b border-white/[0.05] pb-4 last:border-0 last:pb-0">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold text-white">{entry.title}</div>
+                            <div className="mt-0.5 text-[11px] uppercase tracking-[0.12em] text-amber-500/60">Milestone</div>
+                          </div>
+                          <span className="shrink-0 text-[11px] text-zinc-600">{formatDateTime(new Date(entry.timestamp))}</span>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
-              <p className="text-sm text-zinc-600">No CRM activity logged yet.</p>
+              <p className="text-sm text-zinc-600">No activity yet.</p>
             )}
           </Section>
         </div>
