@@ -7,6 +7,7 @@ import openNextWorkerModule, {
 import { runAutomationScheduler } from "./src/lib/outreach-automation";
 import { runCloudScrapeWorker } from "./src/lib/cloud-scrape-worker";
 import { runAutonomousIntake } from "./src/lib/autonomous-intake";
+import { maybeRunDailyDigest } from "./src/lib/daily-digest";
 import { setCloudflareBindings } from "./src/lib/cloudflare";
 
 const worker = openNextWorkerModule;
@@ -25,8 +26,9 @@ export default {
         runAutonomousIntake(),
         runCloudScrapeWorker(),
         runAutomationScheduler(),
+        maybeRunDailyDigest(),
       ]).then((results) => {
-        const labels = ["intake", "scrape", "scheduler"];
+        const labels = ["intake", "scrape", "scheduler", "digest"];
         for (let i = 0; i < results.length; i++) {
           const result = results[i];
           if (result.status === "rejected") {
