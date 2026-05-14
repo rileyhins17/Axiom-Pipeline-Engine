@@ -10,6 +10,7 @@ import {
   isBounceNotificationMessage,
   orderDueStepsForClaiming,
   selectAutomationReadyLeads,
+  withSchedulerTimeout,
 } from "./outreach-automation";
 import {
   AUTONOMOUS_DAILY_LEAD_INTAKE_CAP,
@@ -314,6 +315,13 @@ test("automation sequence timeline refuses zero-day follow-up delays", () => {
   assert(timeline[1].getTime() - timeline[0].getTime() >= 2 * day);
   assert(timeline[2].getTime() - timeline[1].getTime() >= 3 * day);
   assert(timeline[3].getTime() - timeline[2].getTime() >= 4 * day);
+});
+
+test("scheduler watchdog rejects hung operations", async () => {
+  await assert.rejects(
+    withSchedulerTimeout(new Promise(() => undefined), 5, "test phase"),
+    /test phase timed out after 5ms/,
+  );
 });
 
 test("bounce parsing detects Gmail address-not-found snippets without X-Failed-Recipients", () => {

@@ -279,6 +279,10 @@ const TERMINAL_SEQUENCE_STATUSES = ["STOPPED", "FAILED", "COMPLETED"] as const;
 const MAILBOX_SENDABLE_STATUSES = ["ACTIVE", "WARMING"] as const;
 const OPEN_FIRST_TOUCH_STEP_STATUSES = ["SCHEDULED", "CLAIMED", "SENDING"] as const;
 const D1_IN_CLAUSE_CHUNK_SIZE = 40;
+const SCHEDULER_PIPELINE_TIMEOUT_MS = 120_000;
+const SCHEDULER_REPLY_SYNC_TIMEOUT_MS = 60_000;
+const SCHEDULER_BOUNCE_SYNC_TIMEOUT_MS = 60_000;
+const SCHEDULER_SEND_STEP_TIMEOUT_MS = 90_000;
 const REQUEUEABLE_STALE_STOP_REASONS = new Set([
   "below_send_min_score",
   "generation_failed_retryable",
@@ -299,6 +303,24 @@ const FIRST_TOUCH_RECHECK_BLOCKERS = [
   "global_daily_cap_reached",
   "domain_cooldown_active",
 ] as const satisfies readonly AutomationBlockerReason[];
+
+export function withSchedulerTimeout<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+  label: string,
+): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(
+      () => reject(new Error(`${label} timed out after ${timeoutMs}ms`)),
+      timeoutMs,
+    );
+  });
+
+  return Promise.race([operation, timeout]).finally(() => {
+    if (timeoutId) clearTimeout(timeoutId);
+  });
+}
 
 function normalizeEmail(email: string | null | undefined) {
   return normalizePipelineEmail(email);
@@ -4297,7 +4319,11 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
     // Auto-pipeline: enrich → qualify → queue new leads (gated by kill switch)
     if (env.AUTONOMOUS_QUEUE_ENABLED) {
       try {
-        pipeline = await runAutoPipeline("system");
+        pipeline = await withSchedulerTimeout(
+          runAutoPipeline("system"),
+          SCHEDULER_PIPELINE_TIMEOUT_MS,
+          "auto-pipeline",
+        );
       } catch (pipelineError) {
         console.error("[scheduler] Auto-pipeline error (non-fatal):", pipelineError);
       }
@@ -4305,11 +4331,24 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
       console.log("[scheduler] AUTONOMOUS_QUEUE_ENABLED=false — skipping enrich/qualify/queue");
     }
 
-    const replySync = await syncAutomationReplies();
+    let replySync = { checked: 0, stopped: 0 };
+    try {
+      replySync = await withSchedulerTimeout(
+        syncAutomationReplies(),
+        SCHEDULER_REPLY_SYNC_TIMEOUT_MS,
+        "reply sync",
+      );
+    } catch (replySyncError) {
+      console.error("[scheduler] Reply sync error (non-fatal):", replySyncError);
+    }
 
     let bounceSync = { scanned: 0, suppressed: 0 };
     try {
-      bounceSync = await syncBounceNotifications();
+      bounceSync = await withSchedulerTimeout(
+        syncBounceNotifications(),
+        SCHEDULER_BOUNCE_SYNC_TIMEOUT_MS,
+        "bounce sync",
+      );
     } catch (bounceError) {
       console.error("[scheduler] Bounce sync error (non-fatal):", bounceError);
     }
@@ -4413,7 +4452,11 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
         emailType: decisionLead?.emailType ?? null,
       };
       try {
-        await sendScheduledStep(prisma, claim, run.id);
+        await withSchedulerTimeout(
+          sendScheduledStep(prisma, claim, run.id),
+          SCHEDULER_SEND_STEP_TIMEOUT_MS,
+          `send step ${claim.step.id}`,
+        );
         sentCount += 1;
         await recordSendDecision({
           ...baseDecision,

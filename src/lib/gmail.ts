@@ -478,9 +478,11 @@ export async function searchGmailMessages(
     maxResults: String(maxResults),
   });
 
+  const timeout = withTimeout(GMAIL_REQUEST_TIMEOUT_MS);
   const response = await fetch(`${GMAIL_MESSAGES_URL}?${params}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
-  });
+    signal: timeout.signal,
+  }).finally(timeout.clear);
 
   if (!response.ok) {
     const text = await response.text();
@@ -504,9 +506,11 @@ export async function getGmailMessageMetadata(
   // Gmail API needs repeated metadataHeaders params
   const url = `${GMAIL_MESSAGES_URL}/${encodeURIComponent(messageId)}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=X-Failed-Recipients`;
 
+  const timeout = withTimeout(GMAIL_REQUEST_TIMEOUT_MS);
   const response = await fetch(url, {
     headers: { Authorization: `Bearer ${accessToken}` },
-  });
+    signal: timeout.signal,
+  }).finally(timeout.clear);
 
   if (!response.ok) {
     const text = await response.text();
