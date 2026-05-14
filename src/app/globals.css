@@ -150,6 +150,9 @@
       linear-gradient(120deg, rgba(16, 185, 129, 0.08), transparent 42%),
       #080a0d;
     min-height: 100vh;
+    min-height: 100svh;
+    overscroll-behavior-y: none;
+    -webkit-tap-highlight-color: transparent;
   }
 }
 
@@ -1361,6 +1364,16 @@ body::after {
 .v2-focus-ring:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px var(--v2-bg), 0 0 0 4px rgba(52, 211, 153, 0.55);
+}
+
+@media (display-mode: standalone) {
+  body {
+    min-height: 100dvh;
+  }
+
+  .v2-header {
+    padding-top: env(safe-area-inset-top);
+  }
 }
 
 /* v2 ring badge for status dots */

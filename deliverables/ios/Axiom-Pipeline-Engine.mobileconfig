@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>PayloadContent</key>
+  <array>
+    <dict>
+      <key>FullScreen</key>
+      <true/>
+      <key>Icon</key>
+      <data>
+      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
+      </data>
+      <key>IsRemovable</key>
+      <true/>
+      <key>Label</key>
+      <string>Axiom Ops</string>
+      <key>PayloadDescription</key>
+      <string>Adds Axiom Pipeline Engine as a full-screen Home Screen app.</string>
+      <key>PayloadDisplayName</key>
+      <string>Axiom Ops Web Clip</string>
+      <key>PayloadIdentifier</key>
+      <string>ca.getaxiom.operations.webclip</string>
+      <key>PayloadType</key>
+      <string>com.apple.webClip.managed</string>
+      <key>PayloadUUID</key>
+      <string>FF7E6F8E-1938-4F23-B9B0-2BAFA136ED7A</string>
+      <key>PayloadVersion</key>
+      <integer>1</integer>
+      <key>Precomposed</key>
+      <false/>
+      <key>URL</key>
+      <string>https://operations.getaxiom.ca/dashboard</string>
+    </dict>
+  </array>
+  <key>PayloadDescription</key>
+  <string>Installs Axiom Pipeline Engine as a private iPhone app-like web clip.</string>
+  <key>PayloadDisplayName</key>
+  <string>Axiom Pipeline Engine</string>
+  <key>PayloadIdentifier</key>
+  <string>ca.getaxiom.operations.profile</string>
+  <key>PayloadOrganization</key>
+  <string>Axiom Infrastructure</string>
+  <key>PayloadRemovalDisallowed</key>
+  <false/>
+  <key>PayloadType</key>
+  <string>Configuration</string>
+  <key>PayloadUUID</key>
+  <string>4092772B-3D2F-47D8-BD5D-FE99261AEE0E</string>
+  <key>PayloadVersion</key>
+  <integer>1</integer>
+</dict>
+</plist>

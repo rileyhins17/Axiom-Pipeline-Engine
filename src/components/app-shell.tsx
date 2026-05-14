@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { CheckCircle2, LogOutIcon, Settings, UserIcon } from "lucide-react";
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 
 import { authClient } from "@/lib/auth-client";
@@ -9,6 +10,8 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { LayoutBreadcrumb } from "@/components/layout-breadcrumb";
 import { SearchTrigger } from "@/components/system/search-trigger";
 import { HotkeyProvider } from "@/components/system/hotkey-provider";
+import { APP_NAV_ITEMS } from "@/lib/navigation";
+import { cn } from "@/lib/utils";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { Avatar } from "@/components/ui/avatar";
 import {
@@ -20,7 +23,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-const PUBLIC_PATH_PREFIXES = ["/sign-in", "/sign-up"];
+const PUBLIC_PATH_PREFIXES = ["/sign-in", "/sign-up", "/offline"];
 
 type ShellSession = {
   user?: {
@@ -149,10 +152,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </header>
 
         <HotkeyProvider>
-          <div className="flex-1 px-4 py-6 md:px-7 md:py-7">{children}</div>
+          <div className="flex-1 px-4 py-6 pb-28 md:px-7 md:py-7">{children}</div>
         </HotkeyProvider>
 
-        <footer className="v2-footer sticky bottom-0 z-30 px-4 py-2.5 md:px-7">
+        <MobileTabBar pathname={pathname} />
+
+        <footer className="v2-footer sticky bottom-0 z-30 hidden px-4 py-2.5 md:block md:px-7">
           <div className="flex flex-col gap-2 text-[11px] text-zinc-500 md:flex-row md:items-center md:justify-between">
             <div className="flex items-center gap-2">
               <span className="v2-dot text-emerald-400" />
@@ -169,5 +174,38 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </footer>
       </main>
     </SidebarProvider>
+  );
+}
+
+function MobileTabBar({ pathname }: { pathname: string | null }) {
+  return (
+    <nav
+      aria-label="Primary"
+      className="fixed inset-x-0 bottom-0 z-50 border-t border-white/[0.08] bg-[#06101a]/95 px-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 backdrop-blur-xl md:hidden"
+    >
+      <div className="grid grid-cols-5 gap-1">
+        {APP_NAV_ITEMS.map((item) => {
+          const active = pathname === item.url || pathname?.startsWith(`${item.url}/`);
+          const Icon = item.icon;
+
+          return (
+            <Link
+              key={item.url}
+              href={item.url}
+              prefetch
+              className={cn(
+                "flex min-h-12 flex-col items-center justify-center gap-1 rounded-lg px-1 text-[10px] font-medium transition-colors",
+                active
+                  ? "bg-emerald-400/12 text-emerald-200"
+                  : "text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200",
+              )}
+            >
+              <Icon className={cn("size-4", active ? "text-emerald-300" : "text-zinc-500")} />
+              <span className="max-w-full truncate">{item.title}</span>
+            </Link>
+          );
+        })}
+      </div>
+    </nav>
   );
 }
