@@ -3917,14 +3917,6 @@ async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: numbe
   }
 
   const now = new Date();
-  const repairedThirdFollowUps = await ensureThirdFollowUpSteps(prisma, now).catch((error) => {
-    console.warn("[scheduler] Failed to ensure third follow-up steps:", error);
-    return 0;
-  });
-  if (repairedThirdFollowUps > 0) {
-    console.log(`[scheduler] Ensured third follow-up step for ${repairedThirdFollowUps} sequence(s)`);
-  }
-
   const settings = await getSettings(prisma);
   const dueStepScanLimit = Math.max(batchSize * 50, 500);
   const [initialDueSteps, followUpDueSteps] = await Promise.all([
@@ -4519,6 +4511,7 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
 
       let postReplySync = { checked: 0, stopped: 0 };
       let postBounceSync = { scanned: 0, suppressed: 0 };
+      let repairedThirdFollowUps = 0;
       if (env.AUTONOMOUS_QUEUE_ENABLED) {
         try {
           pipeline = await withSchedulerTimeout(
@@ -4531,6 +4524,19 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
         }
       } else {
         console.log("[scheduler] AUTONOMOUS_QUEUE_ENABLED=false - skipping enrich/qualify/queue");
+      }
+
+      try {
+        repairedThirdFollowUps = await withSchedulerTimeout(
+          ensureThirdFollowUpSteps(prisma, new Date()),
+          20_000,
+          "third follow-up repair",
+        );
+        if (repairedThirdFollowUps > 0) {
+          console.log(`[scheduler] Ensured third follow-up step for ${repairedThirdFollowUps} sequence(s)`);
+        }
+      } catch (thirdFollowUpError) {
+        console.error("[scheduler] Third follow-up repair error (non-fatal):", thirdFollowUpError);
       }
 
       try {
@@ -4563,6 +4569,7 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
             replySync: postReplySync,
             bounceSync: postBounceSync,
             pipeline,
+            repairedThirdFollowUps,
             fastForwarded: fastForwardedCount,
             firstTouchDiagnostics,
             claimDiagnostics: claimResult.claimDiagnostics,
