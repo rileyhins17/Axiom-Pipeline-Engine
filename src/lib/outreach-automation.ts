@@ -3155,6 +3155,25 @@ async function sendScheduledStep(
     throw new AutomationStoppedError("already_contacted");
   }
 
+  if (claim.step.stepNumber > 1) {
+    try {
+      const reply = await withSchedulerTimeout(
+        detectReplyForSequence(prisma, claim.sequence),
+        10_000,
+        `reply preflight ${claim.sequence.id}`,
+      );
+      if (reply.detected) {
+        await markReplyStop(prisma, claim.sequence, reply);
+        throw new AutomationStoppedError("reply_detected");
+      }
+    } catch (error) {
+      if (error instanceof AutomationStoppedError) {
+        throw error;
+      }
+      console.warn(`[scheduler] Reply preflight failed for sequence ${claim.sequence.id}:`, error);
+    }
+  }
+
   const settings = await getSettings(prisma);
   if (settings.emergencyPaused) {
     await prisma.outreachSequenceStep.update({
@@ -4291,6 +4310,7 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
     queueSkipped: 0,
     firstTouchDiagnostics: createFirstTouchDiagnostics(),
   };
+  let runClosed = false;
 
   try {
     if (!settings.enabled || settings.globalPaused) {
@@ -4316,7 +4336,255 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
       };
     }
 
-    // Auto-pipeline: enrich → qualify → queue new leads (gated by kill switch)
+    // Send first; maintenance runs after the run is closed.
+    if (env.AUTONOMOUS_SEND_ENABLED) {
+      const liveSettings = await getAutomationSettings(prisma);
+      if (liveSettings.emergencyPaused) {
+        await prisma.outreachRun.update({
+          where: { id: run.id },
+          data: {
+            finishedAt: new Date(),
+            status: "SKIPPED",
+            metadata: JSON.stringify({
+              source: "scheduler",
+              reason: "emergency_stop",
+              pipeline,
+              replySync: { checked: 0, stopped: 0 },
+              bounceSync: { scanned: 0, suppressed: 0 },
+            }),
+          },
+        });
+        return {
+          runId: run.id,
+          claimed: 0,
+          sent: 0,
+          failed: 0,
+          skipped: 0,
+          pipeline,
+          replySync: { checked: 0, stopped: 0 },
+          bounceSync: { scanned: 0, suppressed: 0 },
+        };
+      }
+
+      fastForwardedCount = await fastForwardInitialTouches(prisma, now);
+      const claimResult = await claimDueSteps(prisma, run.id, settings.schedulerClaimBatch);
+      const claims = claimResult.claims;
+      const firstTouchDiagnostics = {
+        ...createFirstTouchDiagnostics(pipeline.firstTouchDiagnostics),
+        skippedCooldownCount: claimResult.diagnostics.skippedCooldownCount,
+      };
+
+      console.log(`[scheduler] Send phase | Fast-forwarded: ${fastForwardedCount} | Claims: ${claims.length}`);
+      console.log(`[scheduler] First-touch diagnostics: ${JSON.stringify(firstTouchDiagnostics)}`);
+      console.log(`[scheduler] Claim diagnostics: ${JSON.stringify(claimResult.claimDiagnostics)}`);
+
+      const { recordSendDecision } = await import("@/lib/send-decisions");
+
+      for (const claim of claims) {
+        const decisionLead = await prisma.lead.findUnique({
+          where: { id: claim.sequence.leadId },
+          select: {
+            email: true,
+            axiomScore: true,
+            axiomTier: true,
+            emailType: true,
+          },
+        }) as Pick<LeadRecord, "email" | "axiomScore" | "axiomTier" | "emailType"> | null;
+        const baseDecision = {
+          leadId: claim.sequence.leadId,
+          sequenceId: claim.sequence.id,
+          stepId: claim.step.id,
+          mailboxId: claim.mailbox.id,
+          senderEmail: claim.mailbox.gmailAddress,
+          recipientEmail: normalizeEmail(decisionLead?.email),
+          axiomScore: decisionLead?.axiomScore ?? null,
+          axiomTier: decisionLead?.axiomTier ?? null,
+          emailType: decisionLead?.emailType ?? null,
+        };
+        try {
+          await withSchedulerTimeout(
+            sendScheduledStep(prisma, claim, run.id),
+            SCHEDULER_SEND_STEP_TIMEOUT_MS,
+            `send step ${claim.step.id}`,
+          );
+          sentCount += 1;
+          await recordSendDecision({
+            ...baseDecision,
+            decision: "SENT",
+            reason: null,
+          });
+          console.log(`[scheduler] SENT step ${claim.step.stepNumber} for sequence ${claim.sequence.id} (lead ${claim.sequence.leadId})`);
+        } catch (error) {
+          if (error instanceof AutomationSkipError) {
+            skippedCount += 1;
+            if (error.reason === "mailbox_disconnected") {
+              await markMailboxDisconnected(prisma, claim.mailbox.id);
+            }
+            if (error.reason === "awaiting_follow_up_window") {
+              await recordSendDecision({
+                ...baseDecision,
+                decision: "SKIPPED",
+                reason: error.reason,
+              });
+              continue;
+            }
+            await recordSendDecision({
+              ...baseDecision,
+              decision: "BLOCKED",
+              reason: error.reason,
+            });
+            await setSequenceBlocked(prisma, claim, error.reason);
+            continue;
+          }
+
+          if (error instanceof AutomationStoppedError) {
+            skippedCount += 1;
+            await recordSendDecision({
+              ...baseDecision,
+              decision: "SKIPPED",
+              reason: error.reason,
+            });
+            continue;
+          }
+
+          if (error instanceof AutomationRetryableSendError) {
+            failedCount += 1;
+            const latestStep = await prisma.outreachSequenceStep.findUnique({
+              where: { id: claim.step.id },
+            }) as OutreachSequenceStepRecord | null;
+            const attemptCount = latestStep?.attemptCount || claim.step.attemptCount || 0;
+            if (attemptCount <= 1) {
+              await rescheduleClaimStep(prisma, claim, 15, error.reason);
+            } else if (attemptCount <= 2) {
+              await rescheduleClaimStep(prisma, claim, 60, error.reason);
+            } else {
+              await setSequenceBlocked(prisma, claim, error.reason);
+            }
+            continue;
+          }
+
+          const classification = classifySendFailure(error);
+          if (classification.kind === "retryable") {
+            failedCount += 1;
+            const latestStep = await prisma.outreachSequenceStep.findUnique({
+              where: { id: claim.step.id },
+            }) as OutreachSequenceStepRecord | null;
+            const attemptCount = latestStep?.attemptCount || claim.step.attemptCount || 0;
+            if (attemptCount <= 1) {
+              await rescheduleClaimStep(prisma, claim, 15, classification.reason);
+            } else if (attemptCount <= 2) {
+              await rescheduleClaimStep(prisma, claim, 60, classification.reason);
+            } else {
+              await setSequenceBlocked(prisma, claim, classification.reason);
+            }
+            continue;
+          }
+
+          if (classification.kind === "blocked") {
+            failedCount += 1;
+            if (classification.reason === "mailbox_disconnected") {
+              await markMailboxDisconnected(prisma, claim.mailbox.id);
+            }
+            await setSequenceBlocked(prisma, claim, classification.reason);
+            continue;
+          }
+
+          failedCount += 1;
+          await stopSequenceInternal(prisma, claim.sequence, classification.reason.toUpperCase());
+        }
+      }
+
+      await prisma.outreachRun.update({
+        where: { id: run.id },
+        data: {
+          finishedAt: new Date(),
+          status: "COMPLETED",
+          claimedCount: claims.length,
+          sentCount,
+          failedCount,
+          skippedCount,
+          metadata: JSON.stringify({
+            source: "scheduler",
+            maintenanceStatus: "pending",
+            replySync: { checked: 0, stopped: 0 },
+            bounceSync: { scanned: 0, suppressed: 0 },
+            pipeline,
+            fastForwarded: fastForwardedCount,
+            firstTouchDiagnostics,
+            claimDiagnostics: claimResult.claimDiagnostics,
+          }),
+        },
+      });
+      runClosed = true;
+
+      let postReplySync = { checked: 0, stopped: 0 };
+      let postBounceSync = { scanned: 0, suppressed: 0 };
+      if (env.AUTONOMOUS_QUEUE_ENABLED) {
+        try {
+          pipeline = await withSchedulerTimeout(
+            runAutoPipeline("system"),
+            SCHEDULER_PIPELINE_TIMEOUT_MS,
+            "auto-pipeline",
+          );
+        } catch (pipelineError) {
+          console.error("[scheduler] Auto-pipeline error (non-fatal):", pipelineError);
+        }
+      } else {
+        console.log("[scheduler] AUTONOMOUS_QUEUE_ENABLED=false - skipping enrich/qualify/queue");
+      }
+
+      try {
+        postReplySync = await withSchedulerTimeout(
+          syncAutomationReplies(),
+          SCHEDULER_REPLY_SYNC_TIMEOUT_MS,
+          "reply sync",
+        );
+      } catch (replySyncError) {
+        console.error("[scheduler] Reply sync error (non-fatal):", replySyncError);
+      }
+
+      try {
+        postBounceSync = await withSchedulerTimeout(
+          syncBounceNotifications(),
+          SCHEDULER_BOUNCE_SYNC_TIMEOUT_MS,
+          "bounce sync",
+        );
+      } catch (bounceError) {
+        console.error("[scheduler] Bounce sync error (non-fatal):", bounceError);
+      }
+
+      await prisma.outreachRun.update({
+        where: { id: run.id },
+        data: {
+          metadata: JSON.stringify({
+            source: "scheduler",
+            maintenanceStatus: "completed",
+            maintenanceFinishedAt: new Date().toISOString(),
+            replySync: postReplySync,
+            bounceSync: postBounceSync,
+            pipeline,
+            fastForwarded: fastForwardedCount,
+            firstTouchDiagnostics,
+            claimDiagnostics: claimResult.claimDiagnostics,
+          }),
+        },
+      }).catch((maintenanceUpdateError) => {
+        console.warn("[scheduler] Failed to update post-send maintenance metadata:", maintenanceUpdateError);
+      });
+
+      return {
+        runId: run.id,
+        claimed: claims.length,
+        sent: sentCount,
+        failed: failedCount,
+        skipped: skippedCount,
+        fastForwarded: fastForwardedCount,
+        pipeline,
+        replySync: postReplySync,
+        bounceSync: postBounceSync,
+      };
+    }
+
     if (env.AUTONOMOUS_QUEUE_ENABLED) {
       try {
         pipeline = await withSchedulerTimeout(
@@ -4388,210 +4656,24 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
       };
     }
 
-    const liveSettings = await getAutomationSettings(prisma);
-    if (liveSettings.emergencyPaused) {
+  } catch (error) {
+    if (!runClosed) {
       await prisma.outreachRun.update({
         where: { id: run.id },
         data: {
           finishedAt: new Date(),
-          status: "SKIPPED",
+          status: "FAILED",
+          claimedCount: 0,
+          sentCount,
+          failedCount: failedCount + 1,
+          skippedCount,
           metadata: JSON.stringify({
             source: "scheduler",
-            reason: "emergency_stop",
-            pipeline,
-            replySync,
-            bounceSync,
+            error: error instanceof Error ? error.message : String(error),
           }),
         },
-      });
-      return {
-        runId: run.id,
-        claimed: 0,
-        sent: 0,
-        failed: 0,
-        skipped: 0,
-        pipeline,
-        replySync,
-        bounceSync,
-      };
+      }).catch(() => null);
     }
-
-    fastForwardedCount = await fastForwardInitialTouches(prisma, now);
-    const claimResult = await claimDueSteps(prisma, run.id, settings.schedulerClaimBatch);
-    const claims = claimResult.claims;
-    const firstTouchDiagnostics = {
-      ...createFirstTouchDiagnostics(pipeline.firstTouchDiagnostics),
-      skippedCooldownCount: claimResult.diagnostics.skippedCooldownCount,
-    };
-
-    console.log(`[scheduler] Pipeline: ${JSON.stringify(pipeline)} | Replies: checked=${replySync.checked} stopped=${replySync.stopped} | Bounces: scanned=${bounceSync.scanned} suppressed=${bounceSync.suppressed} | Fast-forwarded: ${fastForwardedCount} | Claims: ${claims.length}`);
-    console.log(`[scheduler] First-touch diagnostics: ${JSON.stringify(firstTouchDiagnostics)}`);
-    console.log(`[scheduler] Claim diagnostics: ${JSON.stringify(claimResult.claimDiagnostics)}`);
-
-    const { recordSendDecision } = await import("@/lib/send-decisions");
-
-    for (const claim of claims) {
-      const decisionLead = await prisma.lead.findUnique({
-        where: { id: claim.sequence.leadId },
-        select: {
-          email: true,
-          axiomScore: true,
-          axiomTier: true,
-          emailType: true,
-        },
-      }) as Pick<LeadRecord, "email" | "axiomScore" | "axiomTier" | "emailType"> | null;
-      const baseDecision = {
-        leadId: claim.sequence.leadId,
-        sequenceId: claim.sequence.id,
-        stepId: claim.step.id,
-        mailboxId: claim.mailbox.id,
-        senderEmail: claim.mailbox.gmailAddress,
-        recipientEmail: normalizeEmail(decisionLead?.email),
-        axiomScore: decisionLead?.axiomScore ?? null,
-        axiomTier: decisionLead?.axiomTier ?? null,
-        emailType: decisionLead?.emailType ?? null,
-      };
-      try {
-        await withSchedulerTimeout(
-          sendScheduledStep(prisma, claim, run.id),
-          SCHEDULER_SEND_STEP_TIMEOUT_MS,
-          `send step ${claim.step.id}`,
-        );
-        sentCount += 1;
-        await recordSendDecision({
-          ...baseDecision,
-          decision: "SENT",
-          reason: null,
-        });
-        console.log(`[scheduler] SENT step ${claim.step.stepNumber} for sequence ${claim.sequence.id} (lead ${claim.sequence.leadId})`);
-      } catch (error) {
-        if (error instanceof AutomationSkipError) {
-          skippedCount += 1;
-          if (error.reason === "mailbox_disconnected") {
-            await markMailboxDisconnected(prisma, claim.mailbox.id);
-          }
-          if (error.reason === "awaiting_follow_up_window") {
-            await recordSendDecision({
-              ...baseDecision,
-              decision: "SKIPPED",
-              reason: error.reason,
-            });
-            continue;
-          }
-          await recordSendDecision({
-            ...baseDecision,
-            decision: "BLOCKED",
-            reason: error.reason,
-          });
-          await setSequenceBlocked(prisma, claim, error.reason);
-          continue;
-        }
-
-        if (error instanceof AutomationStoppedError) {
-          skippedCount += 1;
-          await recordSendDecision({
-            ...baseDecision,
-            decision: "SKIPPED",
-            reason: error.reason,
-          });
-          continue;
-        }
-
-        if (error instanceof AutomationRetryableSendError) {
-          failedCount += 1;
-          const latestStep = await prisma.outreachSequenceStep.findUnique({
-            where: { id: claim.step.id },
-          }) as OutreachSequenceStepRecord | null;
-          const attemptCount = latestStep?.attemptCount || claim.step.attemptCount || 0;
-          if (attemptCount <= 1) {
-            await rescheduleClaimStep(prisma, claim, 15, error.reason);
-          } else if (attemptCount <= 2) {
-            await rescheduleClaimStep(prisma, claim, 60, error.reason);
-          } else {
-            await setSequenceBlocked(prisma, claim, error.reason);
-          }
-          continue;
-        }
-
-        const classification = classifySendFailure(error);
-        if (classification.kind === "retryable") {
-          failedCount += 1;
-          const latestStep = await prisma.outreachSequenceStep.findUnique({
-            where: { id: claim.step.id },
-          }) as OutreachSequenceStepRecord | null;
-          const attemptCount = latestStep?.attemptCount || claim.step.attemptCount || 0;
-          if (attemptCount <= 1) {
-            await rescheduleClaimStep(prisma, claim, 15, classification.reason);
-          } else if (attemptCount <= 2) {
-            await rescheduleClaimStep(prisma, claim, 60, classification.reason);
-          } else {
-            await setSequenceBlocked(prisma, claim, classification.reason);
-          }
-          continue;
-        }
-
-        if (classification.kind === "blocked") {
-          failedCount += 1;
-          if (classification.reason === "mailbox_disconnected") {
-            await markMailboxDisconnected(prisma, claim.mailbox.id);
-          }
-          await setSequenceBlocked(prisma, claim, classification.reason);
-          continue;
-        }
-
-        failedCount += 1;
-        await stopSequenceInternal(prisma, claim.sequence, classification.reason.toUpperCase());
-      }
-    }
-
-    await prisma.outreachRun.update({
-      where: { id: run.id },
-      data: {
-        finishedAt: new Date(),
-        status: "COMPLETED",
-        claimedCount: claims.length,
-        sentCount,
-        failedCount,
-        skippedCount,
-        metadata: JSON.stringify({
-          source: "scheduler",
-          replySync,
-          bounceSync,
-          pipeline,
-          fastForwarded: fastForwardedCount,
-          firstTouchDiagnostics,
-          claimDiagnostics: claimResult.claimDiagnostics,
-        }),
-      },
-    });
-
-    return {
-      runId: run.id,
-      claimed: claims.length,
-      sent: sentCount,
-      failed: failedCount,
-      skipped: skippedCount,
-      fastForwarded: fastForwardedCount,
-      pipeline,
-      replySync,
-      bounceSync,
-    };
-  } catch (error) {
-    await prisma.outreachRun.update({
-      where: { id: run.id },
-      data: {
-        finishedAt: new Date(),
-        status: "FAILED",
-        claimedCount: 0,
-        sentCount,
-        failedCount: failedCount + 1,
-        skippedCount,
-        metadata: JSON.stringify({
-          source: "scheduler",
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      },
-    }).catch(() => null);
     throw error;
   }
 }
