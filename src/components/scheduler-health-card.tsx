@@ -101,11 +101,11 @@ export function SchedulerHealthCard({ compact = false }: Props) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
+      const payload = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const payload = await res.json().catch(() => ({}));
         throw new Error((payload as any).error || "Repair failed");
       }
-      const result = (await res.json()) as RepairResult;
+      const result = payload as RepairResult;
       setRepairResult(result);
       await fetchHealth();
       router.refresh();
