@@ -223,7 +223,7 @@ const COLD_EMAIL_SYSTEM_PROMPT = `You write cold emails for Axiom Web, a small s
 These emails go to real owners and managers on their phones. They take 2 seconds to judge. You have ONE shot to sound like a real person who actually looked at their business — not an agency, not a marketer, not a bot.
 
 HARD RULES — violating any of these kills the conversion:
-1. LENGTH: 45-75 words. Under 80 words, period. Short wins.
+1. LENGTH: 50-90 words. Under 95 words, period. Short wins.
 2. SUBJECT: 3-6 words, sentence case (capitalize the first word and proper nouns only — not Title Case, not all-lowercase), no salesy language. Good: "Noticed something on your site", "Quick thought for {Business}", "{City} {niche} — site question". Never all-lowercase, never SHOUTY CASE, never: "Exclusive Opportunity", "Unlock Your Potential", "Grow {Business} 10x".
 3. OPENING LINE: Must reference a SPECIFIC concrete detail from the context (the niche in that city, the domain, a visible issue, the contact's first name). Never "I hope you're doing well", "My name is X", "I came across your website and was impressed".
 4. ONE OBSERVATION: Point out ONE specific thing you noticed. Soften it with "looks like", "seems to", "might be", "from a visitor's eye". Never list multiple issues. Never sound like an audit.
@@ -231,15 +231,16 @@ HARD RULES — violating any of these kills the conversion:
 6. SIGNOFF: "Best,\\n{First Name}" or "Thanks,\\n{First Name}" — nothing else. No title, no company name after the signature.
 7. BANNED PHRASES (never use, even paraphrased): "hope this finds you well", "my name is", "we specialize in", "I help businesses like yours", "would love to", "circle back", "touch base", "unlock growth", "digital transformation", "boost revenue", "online presence", "scale your business", "award-winning", "stellar reputation", "glowing reviews", "high-converting", "best-in-class", "schedule a quick 10-minute call", "hop on a call".
 8. NO exclamation marks. NO em dashes (—). NO bold. NO HTML. Plain text only.
-9. NO complimenting the business generically ("you have a great business"). Compliments feel fake; specific observations feel real.
+9. NO generic compliments ("you have a great business", "stellar reputation"). But DO include one SPECIFIC positive grounded in data: their review count, years operating, a specific service shown on their site, or their niche focus. Specific positives build trust; generic ones destroy it.
 10. GOOGLE REVIEWS: Do NOT open with reviews/rating/stars. It's the laziest hook and every agency does it. Only reference reviews if the provided anchor explicitly calls them out, and even then never in the first sentence.
 
 STRUCTURE that converts (follow this exactly):
   Line 1 — first-name greeting OR skip greeting entirely. "Hey {first name}," or no greeting if unknown.
   Line 2 — concrete observation that proves you actually looked (niche in city, specific page, something on their site).
-  Line 3 — the ONE soft issue framed as curiosity, not critique.
-  Line 4 — the single low-friction CTA (question format).
-  Line 5 — "Best,\\n{first name of sender}"
+  Line 3 — ONE genuine positive about the business (their reviews, years in business, specific work shown on site, niche focus). Keep it brief, specific, and earned — not flattery.
+  Line 4 — the ONE soft issue framed as curiosity, not critique. Transition naturally from the positive.
+  Line 5 — the single low-friction CTA (question format).
+  Line 6 — "Best,\\n{first name of sender}"
 
 Return JSON only:
 {
@@ -411,6 +412,8 @@ function stableHashFromLeadId(value: string | number | null | undefined) {
 
 function rotateFallbackSubject(lead: LeadRecord): string {
   const domainOrName = lead.websiteDomain || lead.businessName;
+  const city = lead.city?.trim() || "";
+  const niche = lead.niche?.trim() || "";
   const pool: string[] = [
     `Quick thought on ${domainOrName}`,
     "Quick site thought",
@@ -418,6 +421,15 @@ function rotateFallbackSubject(lead: LeadRecord): string {
     "Question about the site",
     "Noticed one thing",
     `Quick note on ${domainOrName}`,
+    `Thought on your ${niche || "business"} site`,
+    `Something on ${domainOrName}`,
+    city ? `${city} ${niche || "business"} question` : "Site question",
+    `One thing on ${domainOrName}`,
+    `Idea for ${lead.businessName}`,
+    `${lead.businessName} site thought`,
+    niche ? `${niche} site note` : "Site note",
+    `Thought for ${lead.businessName}`,
+    `Had a look at ${domainOrName}`,
   ];
   const index = stableHashFromLeadId(lead.id) % pool.length;
   return pool[index];
@@ -495,7 +507,10 @@ function buildPlanBasedInitialEmail(
           `I was searching for ${nicheCity} and couldn't find a clear website for ${lead.businessName}.`,
           `Looked up ${nicheCity} options and ${lead.businessName} didn't have a clear site to land on.`,
           `Searching for ${nicheCity} didn't turn up a proper website for ${lead.businessName}.`,
-        ][openerSeed % 3]
+          `Tried to look up ${lead.businessName} online after seeing the Google listing for ${nicheCity}.`,
+          `Found ${lead.businessName} in some ${nicheCity} results but no website came up.`,
+          `Your Google listing for ${nicheCity} looks solid, but I couldn't find a website behind it.`,
+        ][openerSeed % 6]
       : `I came across ${lead.businessName} and couldn't find a proper website for the business.`;
   } else if (plan.strategy === "observation_based") {
     if (nicheCity && domain) {
@@ -503,32 +518,52 @@ function buildPlanBasedInitialEmail(
         `I was looking at ${nicheCity} and clicked through ${domain}.`,
         `Came across ${domain} while browsing ${nicheCity} options.`,
         `Had a quick look at ${domain} while going through ${nicheCity} listings.`,
-      ][openerSeed % 3];
+        `Found ${domain} while searching ${nicheCity} and spent a minute on it.`,
+        `Your site came up while I was looking at ${nicheCity} options.`,
+        `Landed on ${domain} from a ${nicheCity} search.`,
+        `Was comparing a few ${nicheCity} sites and ended up on ${domain}.`,
+        `Clicked into ${domain} after searching ${nicheCity}.`,
+      ][openerSeed % 8];
     } else if (domain) {
       openingLine = [
         `I was looking through ${domain} and noticed one thing.`,
         `Spent a minute on ${domain} today.`,
         `Had a quick look at ${domain} earlier.`,
-      ][openerSeed % 3];
+        `Pulled up ${domain} on my phone and noticed something.`,
+        `Took a look at ${domain} and one thing stood out.`,
+        `Browsed ${domain} for a minute and had a thought.`,
+      ][openerSeed % 6];
     } else {
-      openingLine = `I came across ${lead.businessName} in ${city || "your area"} and had one quick thought.`;
+      openingLine = [
+        `I came across ${lead.businessName} in ${city || "your area"} and had one quick thought.`,
+        `Found ${lead.businessName} while looking at businesses in ${city || "your area"}.`,
+        `Was browsing ${city || "local"} businesses and noticed ${lead.businessName}.`,
+      ][openerSeed % 3];
     }
   } else {
-    // curiosity_based — domain-anchored but soft
     if (domain && nicheCity) {
       openingLine = [
         `I came across ${domain} while looking at ${nicheCity}.`,
         `Ran into ${domain} while browsing ${nicheCity} options.`,
         `Spent a minute on ${domain} while looking at ${nicheCity} listings.`,
-      ][openerSeed % 3];
+        `Found ${domain} in some ${nicheCity} results and took a look.`,
+        `Your site popped up while I was browsing ${nicheCity}.`,
+        `Was looking through ${nicheCity} options and landed on ${domain}.`,
+        `Checked out ${domain} after seeing it in ${nicheCity} results.`,
+      ][openerSeed % 7];
     } else if (domain) {
       openingLine = [
         `I was looking through ${domain} and had one quick thought.`,
         `Spent a minute on ${domain} today.`,
         `Had a quick look at ${domain} earlier.`,
-      ][openerSeed % 3];
+        `Pulled up ${domain} and had a thought.`,
+        `Took a look at ${domain} earlier today.`,
+      ][openerSeed % 5];
     } else {
-      openingLine = `I came across ${lead.businessName} in ${city || "your area"} and had one quick thought.`;
+      openingLine = [
+        `I came across ${lead.businessName} in ${city || "your area"} and had one quick thought.`,
+        `Found ${lead.businessName} while looking at businesses in ${city || "your area"}.`,
+      ][openerSeed % 2];
     }
   }
 
@@ -549,15 +584,42 @@ function buildPlanBasedInitialEmail(
   // --- CTA: low-friction, rotated across leads ---
   const ctaLine =
     plan.CTA_type === "soft_call"
-      ? "Open to me walking you through what I'd fix?"
+      ? [
+          "Open to me walking you through what I'd fix?",
+          "Want me to walk you through it quickly?",
+          "Would a quick walkthrough be useful?",
+        ][openerSeed % 3]
       : [
           "Worth me sending over the 2 or 3 things I'd change?",
           "Want me to send over what I'd fix?",
           "Happy to send a couple of thoughts if that's useful.",
           "Open to me sharing what I noticed?",
-        ][openerSeed % 4];
+          "Would it help if I sent a few specific ideas?",
+          "Want me to put together a quick list of what I'd tweak?",
+          "Interested in seeing what I'd do differently?",
+          "Should I send over the couple of things that stood out?",
+        ][openerSeed % 8];
 
-  const bodyParts = [greeting, "", openingLine, observationLine];
+  // --- Positive line: one specific, earned compliment ---
+  const reviewCount = Number(lead.reviewCount || 0);
+  const rating = Number(lead.rating || 0);
+  let positiveLine = "";
+  if (reviewCount >= 10 && rating >= 4.0) {
+    positiveLine = [
+      `${reviewCount} reviews at ${rating} stars says a lot about the work.`,
+      `Clearly doing strong work with ${reviewCount} reviews.`,
+      `The ${reviewCount} reviews speak for themselves.`,
+    ][openerSeed % 3];
+  } else if (niche && niche.length > 2) {
+    positiveLine = [
+      `Looks like you've built a solid ${niche.toLowerCase()} operation.`,
+      `The ${niche.toLowerCase()} focus comes through clearly.`,
+    ][openerSeed % 2];
+  }
+
+  const bodyParts = [greeting, "", openingLine];
+  if (positiveLine) bodyParts.push(positiveLine);
+  bodyParts.push(observationLine);
   if (consequenceLine) bodyParts.push(consequenceLine);
   bodyParts.push(ctaLine);
 
@@ -614,11 +676,30 @@ function buildFallbackFollowUpEmail(
     senderFirst,
   );
 
+  const followUp1Pool = [
+    "One site thought",
+    "Following up",
+    "One more thought",
+    `Thought on ${domain || lead.businessName}`,
+    "Quick follow-up",
+  ];
+  const followUp2Pool = [
+    "Quick site thought",
+    "One more idea",
+    `Still thinking about ${domain || lead.businessName}`,
+    "Circling back on this",
+  ];
+  const followUp3Pool = [
+    "Last site thought",
+    "Final thought on this",
+    "One last idea",
+  ];
+  const seed = stableHashFromLeadId(lead.id);
   const subjectMap: Record<OutreachSequenceStepType, string> = {
     INITIAL: rotateFallbackSubject(lead),
-    FOLLOW_UP_1: "One site thought",
-    FOLLOW_UP_2: "Quick site thought",
-    FOLLOW_UP_3: "Last site thought",
+    FOLLOW_UP_1: followUp1Pool[seed % followUp1Pool.length],
+    FOLLOW_UP_2: followUp2Pool[seed % followUp2Pool.length],
+    FOLLOW_UP_3: followUp3Pool[seed % followUp3Pool.length],
   };
 
   return {

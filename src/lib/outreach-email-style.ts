@@ -519,11 +519,31 @@ export function chooseColdEmailPlan(lead: LeadRecord, _enrichment: EnrichmentRes
   const personalizationReason = buildPersonalizationReason(lead, observation);
   const concreteAnchor = buildConcreteAnchor(lead);
 
-  let ctaHint = "Would it be helpful if I sent over 2 or 3 ideas?";
+  const seed = Number(lead.id || 0);
+  const observationCtaPool = [
+    "Would it be helpful if I sent over 2 or 3 ideas?",
+    "Want me to send what I'd tweak?",
+    "Should I send the specifics?",
+    "Interested in hearing what I'd change?",
+  ];
+  const permissionCtaPool = [
+    "Happy to send a few quick observations if useful.",
+    "Would it help if I shared a couple of thoughts?",
+    "Open to me sending what stood out?",
+    "Want me to put a quick list together?",
+  ];
+  const softCallCtaPool = [
+    "If helpful, I'd be happy to walk you through it briefly.",
+    "Want me to walk you through it?",
+    "Open to a quick walkthrough?",
+  ];
+  let ctaHint: string;
   if (CTA_type === "permission_offer") {
-    ctaHint = "Happy to send a few quick observations if useful.";
+    ctaHint = permissionCtaPool[seed % permissionCtaPool.length];
   } else if (CTA_type === "soft_call") {
-    ctaHint = "If helpful, I'd be happy to walk you through it briefly.";
+    ctaHint = softCallCtaPool[seed % softCallCtaPool.length];
+  } else {
+    ctaHint = observationCtaPool[seed % observationCtaPool.length];
   }
 
   const curiosityObservation =
@@ -567,9 +587,9 @@ export function validateColdEmailDraft(draft: ColdEmailDraft, lead: LeadRecord, 
   const combinedLower = combined.toLowerCase();
   const errors: string[] = [];
 
-  const lengthScore = wordCount >= 45 && wordCount <= 85 ? 100 : wordCount < 45 ? 45 : 35;
+  const lengthScore = wordCount >= 50 && wordCount <= 95 ? 100 : wordCount < 50 ? 45 : 35;
   if (lengthScore < 100) {
-    errors.push(`Email length must stay between 45 and 85 words. Current count: ${wordCount}.`);
+    errors.push(`Email length must stay between 50 and 95 words. Current count: ${wordCount}.`);
   }
 
   const bannedHits = BANNED_EMAIL_PHRASES.filter((phrase) => combinedLower.includes(phrase));
@@ -661,6 +681,14 @@ export function validateColdEmailDraft(draft: ColdEmailDraft, lead: LeadRecord, 
     "would it be helpful",
     "if useful",
     "want me to send",
+    "interested in",
+    "should i send",
+    "put together",
+    "what stood out",
+    "what i'd change",
+    "what i'd tweak",
+    "quick list",
+    "couple of thoughts",
   ];
   const callHit = includesAny(combinedLower, callPatterns);
   let ctaFrictionScore = 100;
@@ -707,7 +735,7 @@ export function buildRetryInstructions(validation: ColdEmailValidation, plan: Co
     "The first draft did not pass validation. Rewrite it once and fix every issue below.",
     ...validation.errors.map((error) => `- ${error}`),
     `- Keep the CTA type as ${plan.CTA_type}.`,
-    `- Keep the email between 45 and 85 words.`,
+    `- Keep the email between 50 and 95 words.`,
     "- Use plain English and make it sound like a real person who actually looked at the business.",
   ].join("\n");
 }

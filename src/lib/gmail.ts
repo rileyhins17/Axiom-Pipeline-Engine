@@ -259,12 +259,15 @@ function buildRfc2822Message(options: {
 }): string {
   const boundary = `boundary_${crypto.randomUUID().replace(/-/g, "")}`;
   const fromHeader = formatAddressHeader(options.from, options.fromName);
+  const unsubEmail = sanitizeHeaderValue(options.from);
 
   const lines = [
     `From: ${fromHeader}`,
     `To: ${sanitizeHeaderValue(options.to)}`,
     `Subject: ${encodeMimeHeader(options.subject)}`,
     `MIME-Version: 1.0`,
+    `List-Unsubscribe: <mailto:${unsubEmail}?subject=unsubscribe>`,
+    `List-Unsubscribe-Post: List-Unsubscribe=One-Click`,
     `Content-Type: multipart/alternative; boundary="${boundary}"`,
     ``,
     `--${boundary}`,
