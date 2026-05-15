@@ -296,13 +296,6 @@ const REQUEUEABLE_STALE_STOP_REASONS = new Set([
   "global_daily_cap_reached",
   "domain_cooldown_active",
 ]);
-const FIRST_TOUCH_RECHECK_BLOCKERS = [
-  "mailbox_cooldown",
-  "hourly_cap_reached",
-  "daily_cap_reached",
-  "global_daily_cap_reached",
-  "domain_cooldown_active",
-] as const satisfies readonly AutomationBlockerReason[];
 
 export function withSchedulerTimeout<T>(
   operation: Promise<T>,
@@ -3672,6 +3665,107 @@ async function recoverStaleClaims(prisma: PrismaLike) {
   return staleClaims.length;
 }
 
+const TRANSIENT_BLOCKER_REASONS = new Set([
+  "mailbox_cooldown",
+  "hourly_cap_reached",
+  "daily_cap_reached",
+  "follow_up_daily_cap_reached",
+  "global_daily_cap_reached",
+  "outside_send_window",
+  "generation_failed_retryable",
+  "send_failed_retryable",
+  "below_send_min_score",
+  "missing_enrichment",
+  "mailbox_disconnected",
+  "mailbox_disabled",
+  "global_pause",
+  "emergency_stop",
+  "manual_pause",
+  "stale_claim_recovered",
+  "stale_sender_claim_recovered",
+]);
+
+async function healStaleSchedulerState(prisma: PrismaLike) {
+  const now = new Date();
+  let healed = { steps: 0, sequences: 0 };
+
+  const overdueSteps = await prisma.outreachSequenceStep.findMany({
+    where: {
+      status: "SCHEDULED",
+      scheduledFor: { lte: now },
+      errorMessage: { not: null },
+    },
+    take: 500,
+  }) as OutreachSequenceStepRecord[];
+
+  const staleSteps = overdueSteps.filter(
+    (s) => s.errorMessage && TRANSIENT_BLOCKER_REASONS.has(s.errorMessage),
+  );
+
+  for (const chunk of chunkArray(staleSteps.map((s) => s.id))) {
+    const updated = await prisma.outreachSequenceStep.updateMany({
+      where: { id: { in: chunk }, status: "SCHEDULED" },
+      data: { errorMessage: null },
+    });
+    healed.steps += updated.count;
+  }
+
+  const staleSequenceIds = Array.from(
+    new Set(staleSteps.map((s) => s.sequenceId)),
+  );
+  for (const chunk of chunkArray(staleSequenceIds)) {
+    const updated = await prisma.outreachSequence.updateMany({
+      where: {
+        id: { in: chunk },
+        status: { in: [...CLAIMABLE_SEQUENCE_STATUSES] },
+        stopReason: { not: null },
+      },
+      data: { stopReason: null },
+    });
+    healed.sequences += updated.count;
+  }
+
+  const driftedSequences = (await prisma.outreachSequence.findMany({
+    where: {
+      status: { in: [...CLAIMABLE_SEQUENCE_STATUSES] },
+      nextScheduledAt: { gt: now },
+    },
+    select: { id: true },
+    take: 500,
+  })) as Array<{ id: string }>;
+
+  if (driftedSequences.length > 0) {
+    for (const chunk of chunkArray(driftedSequences.map((s) => s.id))) {
+      const seqsWithDueSteps = (await prisma.outreachSequence.findMany({
+        where: {
+          id: { in: chunk },
+          nextScheduledAt: { gt: now },
+        },
+        select: { id: true },
+      })) as Array<{ id: string }>;
+
+      for (const seq of seqsWithDueSteps) {
+        const earliestStep = await prisma.outreachSequenceStep.findFirst({
+          where: { sequenceId: seq.id, status: "SCHEDULED" },
+          orderBy: { scheduledFor: "asc" },
+          select: { scheduledFor: true },
+        }) as { scheduledFor: Date | string | null } | null;
+
+        const stepTime = coerceDate(earliestStep?.scheduledFor);
+        if (stepTime && stepTime.getTime() <= now.getTime()) {
+          await prisma.outreachSequence.update({
+            where: { id: seq.id },
+            data: { nextScheduledAt: stepTime, stopReason: null },
+          }).catch(() => null);
+          healed.sequences += 1;
+        }
+      }
+    }
+  }
+
+  return healed;
+}
+
 async function cleanupTerminalSequenceSteps(prisma: PrismaLike) {
   const terminalSequences = (await prisma.outreachSequence.findMany({
     where: {
@@ -3722,14 +3816,10 @@ async function fastForwardInitialTouches(prisma: PrismaLike, now: Date) {
       stepNumber: 1,
       status: "SCHEDULED",
       scheduledFor: { gt: now },
-      OR: [
-        { errorMessage: null },
-        { errorMessage: { notIn: [...FIRST_TOUCH_RECHECK_BLOCKERS] } },
-      ],
     },
-    select: { id: true, sequenceId: true },
+    select: { id: true, sequenceId: true, errorMessage: true },
     take: 500,
-  })) as Array<Pick<OutreachSequenceStepRecord, "id" | "sequenceId">>;
+  })) as Array<Pick<OutreachSequenceStepRecord, "id" | "sequenceId" | "errorMessage">>;
 
   if (initialSteps.length === 0) return 0;
 
@@ -3740,7 +3830,6 @@ async function fastForwardInitialTouches(prisma: PrismaLike, now: Date) {
       where: {
         id: { in: chunk },
         status: { in: [...ACTIVE_SEQUENCE_STATUSES] },
-        nextScheduledAt: { gt: now },
       },
       select: { id: true },
     })) as Array<{ id: string }>;
@@ -3765,13 +3854,10 @@ async function fastForwardInitialTouches(prisma: PrismaLike, now: Date) {
         stepNumber: 1,
         status: "SCHEDULED",
         scheduledFor: { gt: now },
-        OR: [
-          { errorMessage: null },
-          { errorMessage: { notIn: [...FIRST_TOUCH_RECHECK_BLOCKERS] } },
-        ],
       },
       data: {
         scheduledFor: now,
+        errorMessage: null,
       },
     });
     updatedCount += updated.count;
@@ -3783,9 +3869,8 @@ async function fastForwardInitialTouches(prisma: PrismaLike, now: Date) {
         where: {
           id: { in: chunk },
           status: { in: [...ACTIVE_SEQUENCE_STATUSES] },
-          nextScheduledAt: { gt: now },
         },
-        data: { nextScheduledAt: now },
+        data: { nextScheduledAt: now, stopReason: null },
       });
     }
   }
@@ -4132,12 +4217,13 @@ async function rescheduleClaimStep(
       errorMessage: reason,
     },
   });
+  const isTransient = TRANSIENT_BLOCKER_REASONS.has(reason);
   await prisma.outreachSequence.update({
     where: { id: claim.sequence.id },
     data: {
       status: claim.sequence.lastSentAt ? "ACTIVE" : "QUEUED",
       nextScheduledAt: nextAttempt,
-      stopReason: reason,
+      ...(isTransient ? { stopReason: null } : { stopReason: reason }),
     },
   });
 }
@@ -4183,12 +4269,13 @@ async function setSequenceBlocked(
     },
   }).catch(() => null);
 
+  const isTransient = TRANSIENT_BLOCKER_REASONS.has(reason);
   await prisma.outreachSequence.update({
     where: { id: claim.sequence.id },
     data: {
       status: claim.sequence.lastSentAt ? "ACTIVE" : "QUEUED",
       nextScheduledAt: recheckAt,
-      stopReason: reason,
+      ...(isTransient ? { stopReason: null } : { stopReason: reason }),
     },
   }).catch(() => null);
 }
@@ -4245,6 +4332,14 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
       replySync: { checked: 0, stopped: 0 },
       bounceSync: { scanned: 0, suppressed: 0 },
     };
+  }
+
+  const healed = await healStaleSchedulerState(prisma).catch((error) => {
+    console.warn("[scheduler] Self-heal failed (non-fatal):", error);
+    return { steps: 0, sequences: 0 };
+  });
+  if (healed.steps > 0 || healed.sequences > 0) {
+    console.log(`[scheduler] Self-healed: ${healed.steps} steps, ${healed.sequences} sequences`);
   }
 
   // Master kill switch — when scheduler kill switch is off, no enrich /
@@ -4366,9 +4461,26 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
         skippedCooldownCount: claimResult.diagnostics.skippedCooldownCount,
       };
 
-      console.log(`[scheduler] Send phase | Fast-forwarded: ${fastForwardedCount} | Claims: ${claims.length}`);
+      console.log(`[scheduler] Send phase | Fast-forwarded: ${fastForwardedCount} | Claims: ${claims.length} | Healed: ${healed.steps}s/${healed.sequences}sq`);
       console.log(`[scheduler] First-touch diagnostics: ${JSON.stringify(firstTouchDiagnostics)}`);
       console.log(`[scheduler] Claim diagnostics: ${JSON.stringify(claimResult.claimDiagnostics)}`);
+
+      if (claims.length === 0) {
+        const [scheduledCount, activeMailboxCount, activeSequenceCount] = await Promise.all([
+          prisma.outreachSequenceStep.count({
+            where: { status: "SCHEDULED" },
+          }),
+          prisma.outreachMailbox.count({
+            where: { status: { in: [...MAILBOX_SENDABLE_STATUSES] }, gmailConnectionId: { not: null } },
+          }),
+          prisma.outreachSequence.count({
+            where: { status: { in: [...CLAIMABLE_SEQUENCE_STATUSES] } },
+          }),
+        ]);
+        console.warn(
+          `[scheduler] ZERO CLAIMS — scheduledSteps=${scheduledCount} activeMailboxes=${activeMailboxCount} activeSequences=${activeSequenceCount} dueInitial=${claimResult.claimDiagnostics.dueInitialCount} dueFollowUp=${claimResult.claimDiagnostics.dueFollowUpCount}`,
+        );
+      }
 
       const { recordSendDecision } = await import("@/lib/send-decisions");
 
