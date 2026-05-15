@@ -101,23 +101,23 @@ export function SettingsClient({
 }) {
   return (
     <div className="mx-auto max-w-6xl space-y-5">
-      <header className="v2-card p-5">
+      <header className="v2-card p-4 sm:p-5">
         <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-          <div>
+          <div className="min-w-0">
             <p className="v2-eyebrow">Settings</p>
-            <h1 className="mt-2 text-[32px] font-semibold tracking-[-0.022em] text-white">Settings</h1>
+            <h1 className="mt-2 text-2xl font-semibold tracking-[-0.022em] text-white sm:text-[32px]">Settings</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">
               Manage your profile, mailbox connections, and system configuration.
             </p>
           </div>
-          <div className="v2-pill self-start">
+          <div className="v2-pill max-w-full self-start">
             Signed in as <span className="font-mono text-zinc-300">{runtimeStatus.currentUserEmail}</span>
           </div>
         </div>
       </header>
 
       <Tabs defaultValue="profile">
-        <TabsList>
+        <TabsList className="w-full justify-start overflow-x-auto">
           <TabsTrigger value="profile">
             <UserIcon className="size-3.5" />
             Profile
@@ -282,13 +282,13 @@ function DeepSeekBalance({ balance }: { balance: RuntimeStatus["deepSeekBalance"
 
 function MailboxRow({ mailbox }: { mailbox: MailboxStatus }) {
   return (
-    <div className="v2-tile flex items-center justify-between gap-4 p-4 transition hover:border-white/[0.12]">
-      <div className="flex items-center gap-3">
+    <div className="v2-tile flex flex-col gap-4 p-4 transition hover:border-white/[0.12] sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex min-w-0 items-center gap-3">
         <div className={`flex h-10 w-10 items-center justify-center rounded-lg border ${mailbox.connected ? "border-emerald-400/30 bg-emerald-400/[0.08]" : "border-zinc-700 bg-black/30"}`}>
           {mailbox.connected ? <CheckCircle2 className="h-4 w-4 text-emerald-300" /> : <XCircle className="h-4 w-4 text-zinc-500" />}
         </div>
-        <div>
-          <div className="font-mono text-sm text-white">{mailbox.email}</div>
+        <div className="min-w-0">
+          <div className="truncate font-mono text-sm text-white">{mailbox.email}</div>
           <div className="mt-0.5 text-[11px] text-zinc-500">
             {mailbox.connected ? `Connected · ${mailbox.status?.toLowerCase() ?? "warming"}` : "Not connected"}
           </div>
@@ -301,7 +301,7 @@ function MailboxRow({ mailbox }: { mailbox: MailboxStatus }) {
       ) : (
         <a
           href={`/api/outreach/gmail/connect?email=${encodeURIComponent(mailbox.email)}`}
-          className="v2-btn-primary inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold cursor-pointer whitespace-nowrap"
+          className="v2-btn-primary inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap sm:w-auto cursor-pointer"
         >
           <Mail className="h-4 w-4" />
           Connect Gmail
@@ -312,7 +312,7 @@ function MailboxRow({ mailbox }: { mailbox: MailboxStatus }) {
 }
 
 function Panel({ children }: { children: ReactNode }) {
-  return <div className="v2-card p-5">{children}</div>;
+  return <div className="v2-card p-4 sm:p-5">{children}</div>;
 }
 
 function SectionTitle({
@@ -337,7 +337,7 @@ function SectionTitle({
 
 function StatusRow({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-xl border border-white/[0.06] bg-black/25 p-3">
+    <div className="flex flex-col gap-2 rounded-xl border border-white/[0.06] bg-black/25 p-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
       <span className="text-zinc-300">{label}</span>
       {children}
     </div>

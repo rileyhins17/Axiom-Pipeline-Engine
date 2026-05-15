@@ -125,9 +125,9 @@ function formatMonthlyMoney(value: number | null | undefined) {
 
 function FieldRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="flex items-start justify-between gap-4 border-b border-white/[0.05] py-2.5 last:border-0">
+    <div className="flex flex-col gap-1.5 border-b border-white/[0.05] py-2.5 last:border-0 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
       <dt className="text-[11px] uppercase tracking-[0.14em] text-zinc-600">{label}</dt>
-      <dd className="max-w-[68%] text-right text-sm text-zinc-300">{value || <span className="text-zinc-600">Not set</span>}</dd>
+      <dd className="min-w-0 break-words text-sm text-zinc-300 sm:max-w-[68%] sm:text-right">{value || <span className="text-zinc-600">Not set</span>}</dd>
     </div>
   );
 }
@@ -145,8 +145,8 @@ function Section({
 }) {
   return (
     <section className="v2-card overflow-hidden">
-      <header className="flex items-center justify-between gap-3 border-b border-white/[0.06] px-4 py-3.5">
-        <div className="flex items-center gap-2">
+      <header className="flex flex-col gap-2 border-b border-white/[0.06] px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+        <div className="flex min-w-0 items-center gap-2">
           <span className="text-zinc-500">{icon}</span>
           <h2 className="text-sm font-semibold text-white">{title}</h2>
         </div>
@@ -212,7 +212,7 @@ function ContactLink({
       href={href}
       target={href.startsWith("http") ? "_blank" : undefined}
       rel={href.startsWith("http") ? "noopener noreferrer" : undefined}
-      className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-white/[0.08] bg-white/[0.025] px-3 text-xs font-medium text-zinc-300 transition hover:border-white/[0.16] hover:bg-white/[0.06] hover:text-white"
+      className="inline-flex min-h-10 w-full min-w-0 items-center justify-center gap-2 rounded-lg border border-white/[0.08] bg-white/[0.025] px-3 text-xs font-medium text-zinc-300 transition hover:border-white/[0.16] hover:bg-white/[0.06] hover:text-white sm:w-auto sm:justify-start"
     >
       {icon}
       <span className="max-w-[220px] truncate">{label}</span>
@@ -374,7 +374,7 @@ export function ClientProfile({ lead, initialActivities, outreachEmails, sequenc
   };
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-5 sm:gap-6">
       <ConfirmDialog
         open={!!deleteActivity}
         onOpenChange={(v) => { if (!v) setDeleteActivity(null); }}
@@ -395,7 +395,7 @@ export function ClientProfile({ lead, initialActivities, outreachEmails, sequenc
             Client board
           </Link>
           <div className="flex flex-wrap items-center gap-2.5">
-            <h1 className="text-xl font-semibold text-white">{lead.businessName}</h1>
+            <h1 className="min-w-0 text-xl font-semibold text-white sm:text-2xl">{lead.businessName}</h1>
             {stageMeta ? (
               <span className={cn("rounded-md border px-2 py-1 text-[11px] font-semibold", stageMeta.classes)}>
                 {stageMeta.label}
@@ -421,7 +421,7 @@ export function ClientProfile({ lead, initialActivities, outreachEmails, sequenc
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="grid gap-2 sm:flex sm:flex-wrap">
           {lead.email ? <ContactLink href={`mailto:${lead.email}`} icon={<Mail className="size-3.5" />} label={lead.email} /> : null}
           {lead.phone ? <ContactLink href={`tel:${lead.phone}`} icon={<Phone className="size-3.5" />} label={lead.phone} /> : null}
           {lead.websiteUrl ? (
@@ -430,7 +430,7 @@ export function ClientProfile({ lead, initialActivities, outreachEmails, sequenc
         </div>
       </header>
 
-      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <div className="v2-card p-4">
           <div className="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-[0.14em] text-zinc-500">
             <Clock className="size-3.5" />
@@ -473,7 +473,7 @@ export function ClientProfile({ lead, initialActivities, outreachEmails, sequenc
         </div>
       </section>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)]">
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)] xl:gap-6">
         <div className="flex flex-col gap-6">
           <Section title="Deal Record" icon={<BriefcaseBusiness className="size-4" />}>
             <dl>
@@ -507,9 +507,9 @@ export function ClientProfile({ lead, initialActivities, outreachEmails, sequenc
                   { label: "Address", field: "address", value: lead.address },
                 ] as const
               ).map((row) => (
-                <div key={row.label} className="flex items-start justify-between gap-4 border-b border-white/[0.05] py-2.5 last:border-0">
+                <div key={row.label} className="flex flex-col gap-1.5 border-b border-white/[0.05] py-2.5 last:border-0 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                   <dt className="text-[11px] uppercase tracking-[0.14em] text-zinc-600">{row.label}</dt>
-                  <dd className="max-w-[68%] text-right text-sm text-zinc-300">
+                  <dd className="min-w-0 break-words text-sm text-zinc-300 sm:max-w-[68%] sm:text-right">
                     {editingField === row.field ? (
                       <div className="flex items-center gap-1.5">
                         <input
@@ -681,7 +681,7 @@ export function ClientProfile({ lead, initialActivities, outreachEmails, sequenc
         <div className="flex flex-col gap-6">
           <Section title="Log Activity" icon={<Plus className="size-4" />}>
             <form onSubmit={handleAddActivity} className="flex flex-col gap-3">
-              <div className="grid grid-cols-[140px_1fr] gap-3">
+              <div className="grid gap-3 sm:grid-cols-[140px_1fr]">
                 <select
                   value={activityType}
                   onChange={(event) => setActivityType(event.target.value as CrmActivityType)}

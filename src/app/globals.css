@@ -1376,6 +1376,31 @@ body::after {
   }
 }
 
+@media (max-width: 767px) {
+  body::before,
+  body::after {
+    animation: none;
+    opacity: 0.45;
+  }
+
+  .v2-card,
+  .v2-stat,
+  .v2-tile {
+    border-radius: 12px;
+    box-shadow: none;
+  }
+
+  .v2-card:hover,
+  .v2-stat:hover {
+    transform: none;
+    box-shadow: none;
+  }
+
+  .v2-header {
+    background: rgba(6, 16, 26, 0.96);
+  }
+}
+
 /* v2 ring badge for status dots */
 .v2-dot {
   display: inline-block;

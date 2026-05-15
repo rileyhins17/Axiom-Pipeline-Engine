@@ -152,7 +152,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </header>
 
         <HotkeyProvider>
-          <div className="flex-1 px-4 py-6 pb-28 md:px-7 md:py-7">{children}</div>
+          <div className="flex-1 px-3 py-4 pb-28 sm:px-4 sm:py-6 md:px-7 md:py-7">{children}</div>
         </HotkeyProvider>
 
         <MobileTabBar pathname={pathname} />

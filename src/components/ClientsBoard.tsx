@@ -7,7 +7,6 @@ import {
   AlertCircle,
   Building2,
   Calendar,
-  ChevronRight,
   Clock,
   CopyIcon,
   DollarSign,
@@ -130,11 +129,11 @@ function DealCard({
   return (
     <button
       type="button"
-      draggable
+      draggable={Boolean(onDragStart)}
       onDragStart={(e) => onDragStart?.(e, lead.id)}
       onDragEnd={() => onDragEnd?.()}
       onClick={() => onEdit(lead)}
-      className="group w-full text-left rounded-xl border border-white/[0.08] bg-white/[0.025] hover:bg-white/[0.05] hover:border-white/[0.14] transition-all p-3.5 cursor-grab active:cursor-grabbing"
+      className="group w-full text-left rounded-xl border border-white/[0.08] bg-white/[0.025] p-3.5 transition-all hover:border-white/[0.14] hover:bg-white/[0.05] md:cursor-grab md:active:cursor-grabbing"
     >
       <div className="flex items-start justify-between gap-2 mb-2.5">
         <div className="min-w-0 flex-1">
@@ -350,6 +349,45 @@ function KanbanColumn({
   );
 }
 
+function MobileStageSection({
+  label,
+  description,
+  leads,
+  onEdit,
+  onDelete,
+}: {
+  label: string;
+  description: string;
+  leads: CrmLead[];
+  onEdit: (lead: CrmLead) => void;
+  onDelete?: (lead: CrmLead) => void;
+}) {
+  return (
+    <section className="rounded-xl border border-white/[0.06] bg-black/20 p-3">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold text-white">{label}</h2>
+          <p className="mt-0.5 text-[11px] text-zinc-600">{description}</p>
+        </div>
+        <span className="rounded-md border border-white/[0.09] bg-black/30 px-2 py-1 font-mono text-[10px] text-zinc-400">
+          {leads.length}
+        </span>
+      </div>
+      <div className="space-y-2">
+        {leads.length ? (
+          leads.map((lead) => (
+            <DealCard key={lead.id} lead={lead} onEdit={onEdit} onDelete={onDelete} />
+          ))
+        ) : (
+          <div className="rounded-lg border border-dashed border-white/[0.06] px-3 py-6 text-center text-[11px] text-zinc-700">
+            Empty
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 // ---------- Deal Drawer ----------
 
 function DealDrawer({
@@ -423,11 +461,11 @@ function DealDrawer({
     <div className="fixed inset-0 z-50 flex items-start justify-end" onClick={onClose}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
       <div
-        className="relative h-full w-full max-w-md bg-[#070d14] border-l border-white/[0.08] shadow-2xl flex flex-col overflow-y-auto animate-in slide-in-from-right duration-200"
+        className="relative flex h-[100dvh] w-full flex-col overflow-y-auto bg-[#070d14] shadow-2xl animate-in slide-in-from-bottom duration-200 sm:max-w-md sm:border-l sm:border-white/[0.08] sm:slide-in-from-right"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-start justify-between gap-4 px-6 pt-6 pb-4 border-b border-white/[0.06]">
+        <div className="flex items-start justify-between gap-4 border-b border-white/[0.06] px-4 pb-4 pt-[calc(env(safe-area-inset-top)+1rem)] sm:px-6 sm:pt-6">
           <div className="min-w-0">
             <h2 className="text-base font-semibold text-white truncate">{lead.businessName}</h2>
             <p className="text-xs text-zinc-500 mt-0.5">{lead.city} · {lead.niche}</p>
@@ -442,7 +480,7 @@ function DealDrawer({
         </div>
 
         {/* Contact info */}
-        <div className="px-6 py-3 border-b border-white/[0.06] flex flex-col gap-1.5">
+        <div className="flex flex-col gap-1.5 border-b border-white/[0.06] px-4 py-3 sm:px-6">
           {lead.email && (
             <a
               href={`mailto:${lead.email}`}
@@ -467,7 +505,7 @@ function DealDrawer({
         </div>
 
         {/* Deal fields */}
-        <div className="flex flex-col gap-4 px-6 py-5 flex-1">
+        <div className="flex flex-1 flex-col gap-4 px-4 py-5 sm:px-6">
 
           {/* Stage + Priority row */}
           <div className="grid grid-cols-2 gap-3">
@@ -522,7 +560,7 @@ function DealDrawer({
           </div>
 
           {/* Monthly Value */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
               <label className="text-[10.5px] uppercase tracking-[0.15em] text-zinc-500 font-semibold">
                 Project Value
@@ -559,7 +597,7 @@ function DealDrawer({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
               <label className="text-[10.5px] uppercase tracking-[0.15em] text-zinc-500 font-semibold">
                 Proposal Status
@@ -665,7 +703,7 @@ function DealDrawer({
           </div>
 
           {/* Project Start / Launch dates */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
               <label className="text-[10.5px] uppercase tracking-[0.15em] text-zinc-500 font-semibold">
                 Project Start
@@ -697,7 +735,7 @@ function DealDrawer({
           </div>
 
           {/* Owner / Renewal */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
               <label className="text-[10.5px] uppercase tracking-[0.15em] text-zinc-500 font-semibold">
                 Project Owner
@@ -756,8 +794,8 @@ function DealDrawer({
         </div>
 
         {/* Footer */}
-        <div className="sticky bottom-0 flex flex-col gap-2 px-6 py-4 border-t border-white/[0.06] bg-[#070d14]">
-          <div className="flex items-center justify-between gap-3">
+        <div className="sticky bottom-0 flex flex-col gap-2 border-t border-white/[0.06] bg-[#070d14]/96 px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-4 backdrop-blur sm:px-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-col gap-1">
               <div className="text-[10.5px] text-zinc-600">
                 {lead.firstContactedAt ? `First contact ${formatDate(lead.firstContactedAt)}` : "Not yet contacted"}
@@ -774,7 +812,7 @@ function DealDrawer({
               type="button"
               disabled={saving}
               onClick={handleSave}
-              className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-200 hover:bg-emerald-500/20 hover:border-emerald-500/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-200 transition-all hover:border-emerald-500/50 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto cursor-pointer"
             >
               <Save className="size-3.5" />
               {saving ? "Saving…" : "Save"}
@@ -1275,8 +1313,8 @@ export function ClientsBoard({ initialLeads }: { initialLeads: CrmLead[] }) {
       />
 
       {/* Search + Add Client */}
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1 max-w-sm">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="relative flex-1 sm:max-w-sm">
           <SearchIcon className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-zinc-500" />
           <input
             type="text"
@@ -1290,7 +1328,7 @@ export function ClientsBoard({ initialLeads }: { initialLeads: CrmLead[] }) {
           type="button"
           onClick={() => setShowAddDialog(true)}
           data-hotkey="add"
-          className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-200 transition hover:border-emerald-500/50 hover:bg-emerald-500/20 cursor-pointer"
+          className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-200 transition hover:border-emerald-500/50 hover:bg-emerald-500/20 cursor-pointer"
         >
           <Plus className="size-3.5" />
           Add Client
@@ -1298,7 +1336,7 @@ export function ClientsBoard({ initialLeads }: { initialLeads: CrmLead[] }) {
       </div>
 
       {/* Stats bar + export */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="grid flex-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
           <StatTile
             icon={<MessageSquare className="size-3.5" />}
@@ -1340,7 +1378,7 @@ export function ClientsBoard({ initialLeads }: { initialLeads: CrmLead[] }) {
           <button
             type="button"
             onClick={() => exportClientsCsv(clientLeads)}
-            className="shrink-0 mt-1 flex items-center gap-2 rounded-lg border border-white/[0.08] bg-white/[0.025] px-3 py-2 text-xs font-medium text-zinc-400 transition hover:border-white/[0.16] hover:bg-white/[0.06] hover:text-white cursor-pointer"
+            className="mt-1 flex min-h-10 w-full shrink-0 items-center justify-center gap-2 rounded-lg border border-white/[0.08] bg-white/[0.025] px-3 py-2 text-xs font-medium text-zinc-400 transition hover:border-white/[0.16] hover:bg-white/[0.06] hover:text-white lg:w-auto cursor-pointer"
           >
             <Download className="size-3.5" />
             Export CSV
@@ -1357,8 +1395,21 @@ export function ClientsBoard({ initialLeads }: { initialLeads: CrmLead[] }) {
 
       <InboxSection leads={filteredInbox} onEdit={setEditing} onQuickUpdate={handleSave} onReset={handleResetInbox} onDismiss={handleDismissInbox} saving={saving} />
 
+      <div className="flex flex-col gap-3 md:hidden">
+        {DEAL_KANBAN_COLUMNS.map((col) => (
+          <MobileStageSection
+            key={col.stage}
+            label={col.label}
+            description={col.description}
+            leads={filteredLeadsByStage.get(col.stage) ?? []}
+            onEdit={setEditing}
+            onDelete={setDeleteConfirm}
+          />
+        ))}
+      </div>
+
       {/* Kanban board with drag-and-drop */}
-      <div className="flex gap-4 overflow-x-auto pb-4">
+      <div className="hidden gap-4 overflow-x-auto pb-4 md:flex">
         {DEAL_KANBAN_COLUMNS.map((col) => (
           <KanbanColumn
             key={col.stage}

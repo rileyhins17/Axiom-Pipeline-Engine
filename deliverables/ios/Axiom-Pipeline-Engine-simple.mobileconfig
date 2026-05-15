@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>PayloadContent</key>
+  <array>
+    <dict>
+      <key>FullScreen</key>
+      <true/>
+      <key>IgnoreManifestScope</key>
+      <false/>
+      <key>IsRemovable</key>
+      <true/>
+      <key>Label</key>
+      <string>Axiom Ops</string>
+      <key>PayloadDescription</key>
+      <string>Adds Axiom Pipeline Engine as a full-screen Home Screen web app.</string>
+      <key>PayloadDisplayName</key>
+      <string>Axiom Ops</string>
+      <key>PayloadIdentifier</key>
+      <string>ca.getaxiom.operations.webclip.simple.20260514</string>
+      <key>PayloadType</key>
+      <string>com.apple.webClip.managed</string>
+      <key>PayloadUUID</key>
+      <string>2D8603CF-77D2-451C-B7C4-A6B27647636D</string>
+      <key>PayloadVersion</key>
+      <integer>1</integer>
+      <key>Precomposed</key>
+      <true/>
+      <key>URL</key>
+      <string>https://operations.getaxiom.ca/</string>
+    </dict>
+  </array>
+  <key>PayloadDescription</key>
+  <string>Installs Axiom Pipeline Engine as a private iPhone web app.</string>
+  <key>PayloadDisplayName</key>
+  <string>Axiom Ops</string>
+  <key>PayloadIdentifier</key>
+  <string>ca.getaxiom.operations.profile.simple.20260514</string>
+  <key>PayloadOrganization</key>
+  <string>Axiom Infrastructure</string>
+  <key>PayloadRemovalDisallowed</key>
+  <false/>
+  <key>PayloadType</key>
+  <string>Configuration</string>
+  <key>PayloadUUID</key>
+  <string>877C1836-5F27-40B0-BA74-576524337696</string>
+  <key>PayloadVersion</key>
+  <integer>1</integer>
+</dict>
+</plist>
