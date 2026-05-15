@@ -4,6 +4,7 @@ import { BarChart3, Bot, Clock3, Mail, Pause, Play, Reply, TrendingUp } from "lu
 import { AUTOMATION_SETTINGS_DEFAULTS, MAILBOX_DAILY_SEND_TARGET } from "@/lib/automation-policy";
 import { EmergencyControlCard } from "@/components/emergency-control-card";
 import { IntakeControlCard } from "@/components/intake-control-card";
+import { SchedulerHealthCard } from "@/components/scheduler-health-card";
 import { listAutomationOverview } from "@/lib/outreach-automation";
 import { getDatabase } from "@/lib/cloudflare";
 import { requireSession } from "@/lib/session";
@@ -300,6 +301,7 @@ export default async function AutomationPage() {
           initialPaused={overview.settings.intakePaused}
           initialPausedBy={overview.settings.intakePausedBy}
         />
+        <SchedulerHealthCard />
       </section>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

@@ -3637,7 +3637,7 @@ async function sendScheduledStep(
   }
 }
 
-async function recoverStaleClaims(prisma: PrismaLike) {
+export async function recoverStaleClaims(prisma: PrismaLike) {
   const staleThreshold = addMinutes(new Date(), -2);
   const staleClaims = await prisma.outreachSequenceStep.findMany({
     where: {
@@ -3685,7 +3685,7 @@ const TRANSIENT_BLOCKER_REASONS = new Set([
   "stale_sender_claim_recovered",
 ]);
 
-async function healStaleSchedulerState(prisma: PrismaLike) {
+export async function healStaleSchedulerState(prisma: PrismaLike) {
   const now = new Date();
   let healed = { steps: 0, sequences: 0 };
 
