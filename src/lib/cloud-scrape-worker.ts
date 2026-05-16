@@ -10,10 +10,12 @@ import { shouldPauseIntakeForScrapeQualityGate } from "@/lib/scrape-quality-paus
 import { ScrapeQualityGateError } from "@/lib/scrape-quality";
 import {
   appendScrapeJobEvent,
+  cancelScrapeJob,
   claimNextScrapeJob,
   completeScrapeJob,
   failScrapeJob,
   getScrapeJob,
+  resetScrapeJobForRetry,
   touchScrapeJobHeartbeat,
   type ScrapeJobEventPayload,
   type ScrapeJobRecord,
@@ -23,6 +25,13 @@ import { markScrapeTargetCompleted } from "@/lib/scrape-targets";
 
 const DEFAULT_CLOUD_WORKER_NAME = "cloudflare-browser";
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 15_000;
+
+class CloudScrapeTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`Cloud scrape exceeded ${Math.round(timeoutMs / 1000)}s timeout.`);
+    this.name = "CloudScrapeTimeoutError";
+  }
+}
 
 type ExistingLeadDedupeCandidate = {
   axiomScore?: number | null;
@@ -156,10 +165,35 @@ async function claimCloudJob(workerName: string) {
   return job;
 }
 
+export function shouldSkipCloudMapsDetailPages(env: Pick<ReturnType<typeof getServerEnv>, "CLOUD_SCRAPE_DETAIL_PAGES_ENABLED">) {
+  return isEnabled(env.CLOUD_SCRAPE_DETAIL_PAGES_ENABLED, false) === false;
+}
+
+export function isTransientCloudBrowserError(message: string) {
+  return /browser.*429|429.*browser|rate limit exceeded/i.test(message);
+}
+
+async function withCloudScrapeTimeout<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+  onTimeout: () => void,
+): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      onTimeout();
+      reject(new CloudScrapeTimeoutError(timeoutMs));
+    }, timeoutMs);
+  });
+
+  return Promise.race([operation, timeout]).finally(() => {
+    if (timeoutId) clearTimeout(timeoutId);
+  });
+}
+
 async function runClaimedJob(job: ScrapeJobRecord, existingDedupeKeys: string[]) {
   const env = getServerEnv();
   let cancelRequested = false;
-  let timedOut = false;
   let jobFinished = false;
 
   const heartbeatTimer = setInterval(() => {
@@ -183,11 +217,6 @@ async function runClaimedJob(job: ScrapeJobRecord, existingDedupeKeys: string[])
     })();
   }, DEFAULT_HEARTBEAT_INTERVAL_MS);
 
-  const timeoutTimer = setTimeout(() => {
-    timedOut = true;
-    cancelRequested = true;
-  }, env.CLOUD_SCRAPE_TIMEOUT_MS);
-
   try {
     await touchScrapeJobHeartbeat(job.id, job.claimedBy || DEFAULT_CLOUD_WORKER_NAME);
     await appendScrapeJobEvent(job.id, "status", {
@@ -196,21 +225,24 @@ async function runClaimedJob(job: ScrapeJobRecord, existingDedupeKeys: string[])
       message: "[JOB] Running in Cloudflare Browser Rendering",
     });
 
-    const result = await executeScrapeJob({
-      city: job.city,
-      existingDedupeKeys,
-      jobId: job.id,
-      maxDepth: job.maxDepth,
-      niche: job.niche,
-      persistLead: (lead: ScrapeLeadWriteInput) => persistScrapeJobLead({ jobId: job.id, lead }).then(() => undefined),
-      radius: job.radius,
-      sendEvent: (payload: ScrapeJobEventPayload) => sendEvent(job, payload),
-      shouldAbort: () => cancelRequested,
-    });
-
-    if (timedOut) {
-      throw new Error(`Cloud scrape exceeded ${Math.round(env.CLOUD_SCRAPE_TIMEOUT_MS / 1000)}s timeout.`);
-    }
+    const result = await withCloudScrapeTimeout(
+      executeScrapeJob({
+        city: job.city,
+        existingDedupeKeys,
+        jobId: job.id,
+        maxDepth: job.maxDepth,
+        niche: job.niche,
+        persistLead: (lead: ScrapeLeadWriteInput) => persistScrapeJobLead({ jobId: job.id, lead }).then(() => undefined),
+        radius: job.radius,
+        sendEvent: (payload: ScrapeJobEventPayload) => sendEvent(job, payload),
+        shouldAbort: () => cancelRequested,
+        skipMapsDetailPages: shouldSkipCloudMapsDetailPages(env),
+      }),
+      env.CLOUD_SCRAPE_TIMEOUT_MS,
+      () => {
+        cancelRequested = true;
+      },
+    );
 
     if (result.aborted || cancelRequested) {
       await appendScrapeJobEvent(job.id, "status", {
@@ -218,6 +250,8 @@ async function runClaimedJob(job: ScrapeJobRecord, existingDedupeKeys: string[])
         jobStatus: "canceled",
         message: "[JOB] Cloud scrape canceled",
       }).catch(() => undefined);
+      await cancelScrapeJob(job.id, "Cloud scrape canceled before completion.");
+      jobFinished = true;
       return;
     }
 
@@ -294,6 +328,17 @@ async function runClaimedJob(job: ScrapeJobRecord, existingDedupeKeys: string[])
           }).catch(() => undefined);
         }
       }
+      if (isTransientCloudBrowserError(message)) {
+        await appendScrapeJobEvent(job.id, "error", {
+          error: message,
+          jobId: job.id,
+          jobStatus: "pending",
+          message: `[RETRY] Browser Rendering temporarily rate-limited; job will retry on a later cron: ${message}`,
+        }).catch(() => undefined);
+        await resetScrapeJobForRetry(job.id);
+        jobFinished = true;
+        return;
+      }
       await appendScrapeJobEvent(job.id, "error", {
         error: message,
         jobId: job.id,
@@ -307,7 +352,6 @@ async function runClaimedJob(job: ScrapeJobRecord, existingDedupeKeys: string[])
     }
   } finally {
     clearInterval(heartbeatTimer);
-    clearTimeout(timeoutTimer);
   }
 }
 

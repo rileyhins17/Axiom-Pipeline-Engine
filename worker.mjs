@@ -9,17 +9,22 @@ import { runCloudScrapeWorker } from "./src/lib/cloud-scrape-worker";
 import { runAutonomousIntake } from "./src/lib/autonomous-intake";
 import { maybeRunDailyDigest } from "./src/lib/daily-digest";
 import { setCloudflareBindings } from "./src/lib/cloudflare";
+import { getCronTimeoutBudgets } from "./src/lib/cron-timeouts";
 
 const worker = openNextWorkerModule;
 
 export { BucketCachePurge, DOQueueHandler, DOShardedTagCache };
 
 function withTimeout(promise, ms, label) {
+  const startedAt = Date.now();
   let timeoutId;
   const timeout = new Promise((_, reject) => {
     timeoutId = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
   });
-  return Promise.race([promise, timeout]).finally(() => clearTimeout(timeoutId));
+  return Promise.race([promise, timeout]).finally(() => {
+    clearTimeout(timeoutId);
+    console.log(`[cron:${label}] durationMs=${Date.now() - startedAt} timeoutMs=${ms}`);
+  });
 }
 
 export default {
@@ -29,12 +34,13 @@ export default {
   },
   async scheduled(_controller, env, ctx) {
     setCloudflareBindings(env);
+    const timeouts = getCronTimeoutBudgets(env);
     ctx.waitUntil(
       Promise.allSettled([
-        withTimeout(runAutonomousIntake(), 120_000, "intake"),
-        withTimeout(runCloudScrapeWorker(), 120_000, "scrape"),
-        withTimeout(runAutomationScheduler(), 270_000, "scheduler"),
-        withTimeout(maybeRunDailyDigest(), 60_000, "digest"),
+        withTimeout(runAutonomousIntake(), timeouts.intake, "intake"),
+        withTimeout(runCloudScrapeWorker(), timeouts.scrape, "scrape"),
+        withTimeout(runAutomationScheduler(), timeouts.scheduler, "scheduler"),
+        withTimeout(maybeRunDailyDigest(), timeouts.digest, "digest"),
       ]).then((results) => {
         const labels = ["intake", "scrape", "scheduler", "digest"];
         for (let i = 0; i < results.length; i++) {

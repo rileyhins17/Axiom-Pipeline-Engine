@@ -70,6 +70,13 @@ type TriggerResult = {
   skipped: number;
 };
 
+type ErrorPayload = { error?: string };
+
+function getPayloadError(payload: unknown, fallback: string) {
+  const error = (payload as ErrorPayload | null)?.error;
+  return typeof error === "string" && error.length > 0 ? error : fallback;
+}
+
 export function SchedulerHealthCard({ compact = false }: Props) {
   const router = useRouter();
   const [health, setHealth] = useState<SchedulerHealthData | null>(null);
@@ -113,7 +120,7 @@ export function SchedulerHealthCard({ compact = false }: Props) {
       });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error((payload as any).error || "Repair failed");
+        throw new Error(getPayloadError(payload, "Repair failed"));
       }
       const result = payload as RepairResult;
       setRepairResult(result);
@@ -139,7 +146,7 @@ export function SchedulerHealthCard({ compact = false }: Props) {
       });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error((payload as any).error || "Trigger failed");
+        throw new Error(getPayloadError(payload, "Trigger failed"));
       }
       setTriggerResult(payload as TriggerResult);
       await fetchHealth();
@@ -178,9 +185,9 @@ export function SchedulerHealthCard({ compact = false }: Props) {
       <div className={`h-1 bg-gradient-to-r ${topGradient}`} />
       <div className={compact ? "p-4" : "p-5"}>
         {/* Header */}
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex flex-col gap-4">
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span
                 className={`v2-pill ${hasIssues ? "border-amber-400/30 bg-amber-500/[0.12] text-amber-200" : "v2-pill-accent"}`}
               >
@@ -208,7 +215,7 @@ export function SchedulerHealthCard({ compact = false }: Props) {
             </p>
           </div>
 
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={runRepair}
@@ -257,7 +264,8 @@ export function SchedulerHealthCard({ compact = false }: Props) {
               Reset {repairResult.healedSteps} blocked steps,{" "}
               {repairResult.healedSequences} sequences,{" "}
               {repairResult.recoveredClaims} stuck claims,{" "}
-              {repairResult.clearedStaleRuns} stale runs — all ready to send on next tick
+              {repairResult.clearedStaleRuns} stale runs,{" "}
+              {repairResult.clearedSchedulerLeases} scheduler locks - all ready to send on next tick
             </span>
           </div>
         )}

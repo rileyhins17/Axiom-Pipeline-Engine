@@ -58,7 +58,7 @@ export function IntakeControlCard({ initialPaused, initialPausedBy }: Props) {
     <div className={`v2-card overflow-hidden ${shellTone}`}>
       <div className={`h-1 bg-gradient-to-r ${topTone}`} />
       <div className="p-4">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <span className={`v2-pill ${paused ? "border-amber-400/30 bg-amber-500/[0.12] text-amber-200" : "v2-pill-accent"}`}>
@@ -77,7 +77,7 @@ export function IntakeControlCard({ initialPaused, initialPausedBy }: Props) {
             ) : null}
           </div>
 
-          <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
             <button
               type="button"
               onClick={toggle}

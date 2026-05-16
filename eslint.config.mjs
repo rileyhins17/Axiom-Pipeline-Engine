@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     ".open-next/**",
     ".wrangler/**",
     ".playwright-mcp/**",
+    ".claude/**",
+    "Axiom-Pipeline-Engine/**",
     "axiom-pipeline-engine/**",
     "out/**",
     "build/**",

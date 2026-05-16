@@ -72,6 +72,7 @@ test_maps.js
 verify.js
 
 # Local scratch workspaces and audit captures
+/.claude/
 /.playwright-mcp/
 /axiom-pipeline-engine/
 /axiom-signin-*.png

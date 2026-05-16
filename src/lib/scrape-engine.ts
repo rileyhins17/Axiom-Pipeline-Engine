@@ -77,6 +77,7 @@ export interface ExecuteScrapeJobInput {
   radius: string;
   sendEvent: (data: ScrapeJobEventPayload) => Promise<void>;
   shouldAbort?: () => boolean;
+  skipMapsDetailPages?: boolean;
 }
 
 export interface ExecuteScrapeJobResult {
@@ -99,6 +100,8 @@ const MAPS_NO_LISTINGS_RETRY_WAIT_MS = 5000;
 const MAPS_DETAIL_READY_TIMEOUT_MS = 14000;
 const MAPS_DETAIL_SETTLE_AFTER_SIGNAL_MS = 3500;
 const MAPS_DETAIL_POLL_MS = 750;
+const MAPS_DETAIL_PAGE_TIMEOUT_MS = 35_000;
+const MAPS_DETAIL_PAGE_CLOSE_TIMEOUT_MS = 3_000;
 
 export type MapsDetailSnapshot = {
   addressText: string;
@@ -803,6 +806,11 @@ async function collectMapsListings(page: AutomationPage): Promise<MapsListing[]>
   }
 
   const seen = new Set<string>();
+  return normalizeMapsListings(listings);
+}
+
+function normalizeMapsListings(listings: MapsListing[]): MapsListing[] {
+  const seen = new Set<string>();
   return listings
     .map((listing) => ({
       ...listing,
@@ -964,6 +972,96 @@ async function waitForMapsDetailSnapshot(detailPage: AutomationPage, fallbackTit
   }
 
   return bestSnapshot;
+}
+
+async function withMapsOperationTimeout<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+  label: string,
+): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
+  });
+
+  return Promise.race([operation, timeout]).finally(() => {
+    if (timeoutId) clearTimeout(timeoutId);
+  });
+}
+
+async function closeMapsDetailPage(detailPage: AutomationPage) {
+  await withMapsOperationTimeout(
+    detailPage.close(),
+    MAPS_DETAIL_PAGE_CLOSE_TIMEOUT_MS,
+    "maps detail page close",
+  ).catch(() => undefined);
+}
+
+async function collectMapsDetailTarget(
+  context: AutomationBrowserContext,
+  place: MapsListing,
+  sendEvent: (data: ScrapeJobEventPayload) => Promise<void>,
+  directFailureSamples: { count: number },
+): Promise<CollectedMapsTarget> {
+  const fallbackTitle = normalizeWhitespace(place.name);
+  const listingFallback = buildMapsListingFallback(place);
+  let detailPage: AutomationPage | null = null;
+
+  try {
+    detailPage = await withMapsOperationTimeout(
+      context.newPage(),
+      8_000,
+      `new Maps detail page for ${place.name}`,
+    );
+    await withMapsOperationTimeout(
+      detailPage.goto(place.url, {
+        timeout: 15000,
+        waitUntil: "commit",
+      }),
+      18_000,
+      `Maps detail navigation for ${place.name}`,
+    );
+    // "commit" only means navigation started; the readiness loop below waits
+    // for Maps contact fields to settle before extraction.
+    await withMapsOperationTimeout(
+      detailPage.waitForSelector("body", { timeout: 8000 }).catch(() => detailPage?.waitForTimeout(4000)),
+      12_000,
+      `Maps detail body wait for ${place.name}`,
+    );
+    await withMapsOperationTimeout(
+      detailPage.waitForTimeout(MAPS_DETAIL_POLL_MS),
+      2_000,
+      `Maps detail settle wait for ${place.name}`,
+    );
+
+    return await withMapsOperationTimeout(
+      extractMapsDetailFromPage(detailPage, place, fallbackTitle, {
+        address: listingFallback.address,
+        category: listingFallback.category,
+        phone: listingFallback.phone,
+        ratingText: listingFallback.ratingText,
+        title: listingFallback.title,
+        website: listingFallback.website,
+      }),
+      MAPS_DETAIL_PAGE_TIMEOUT_MS,
+      `Maps detail extraction for ${place.name}`,
+    );
+  } catch (error) {
+    if (directFailureSamples.count < 3) {
+      directFailureSamples.count++;
+      await sendEvent({
+        message: `[MAPS] Direct detail scrape failed for ${place.name}: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
+    return {
+      ...listingFallback,
+      detailMode: "fallback" as const,
+    };
+  } finally {
+    if (detailPage) {
+      await closeMapsDetailPage(detailPage);
+    }
+  }
 }
 
 function extractMapsDetailFromSnapshot(
@@ -1360,6 +1458,7 @@ async function collectTargets(
   maxDepth: number,
   sendEvent: (data: ScrapeJobEventPayload) => Promise<void>,
   shouldAbort?: () => boolean,
+  skipMapsDetailPages = false,
 ): Promise<Target[]> {
   const page = await context.newPage();
   let missingTitleCount = 0;
@@ -1389,6 +1488,7 @@ async function collectTargets(
 
     let lastHeight = 0;
     let lastListingCount = 0;
+    let lastListings: MapsListing[] = [];
     let scrollAttempts = 0;
     let stableScrollAttempts = 0;
     while (scrollAttempts < maxDepth) {
@@ -1398,19 +1498,64 @@ async function collectTargets(
 
       const scrollState = await page.evaluate(function () {
         const feed = document.querySelector('div[role="feed"]');
+        const anchors = Array.from(document.querySelectorAll<HTMLAnchorElement>("a.hfpxzc, a[href*='/maps/place/']"));
+        const listings = anchors.slice(0, 80).map((anchor) => {
+          const card = anchor.closest<HTMLElement>("[role='article'], .Nv2PK, div[jsaction*='mouseover:pane']") || anchor.parentElement;
+          const cardText = (card?.innerText || "").slice(0, 4000);
+          const title = (card?.querySelector<HTMLElement>(".qBF1Pd")?.innerText || anchor.getAttribute("aria-label") || "").trim();
+          let websiteUrl = "";
+          if (card) {
+            const controls = Array.from(card.querySelectorAll<HTMLElement>(
+              "a[href], [data-item-id='authority'], [aria-label*='Website'], [aria-label*='website'], [data-tooltip*='Website'], [data-tooltip*='website']",
+            ));
+            for (const control of controls) {
+              const href =
+                control.getAttribute("href") ||
+                control.getAttribute("data-url") ||
+                control.getAttribute("data-href") ||
+                control.getAttribute("data-value") ||
+                "";
+              const label = [
+                control.getAttribute("aria-label"),
+                control.getAttribute("data-tooltip"),
+                control.getAttribute("data-value"),
+                control.getAttribute("data-item-id"),
+                control.innerText,
+              ].filter(Boolean).join(" ").toLowerCase();
+              if (href && !href.includes("/maps/") && !href.includes("google.") && /website|visit|authority/.test(label)) {
+                websiteUrl = href;
+                break;
+              }
+            }
+          }
+          return {
+            ariaLabel: anchor.getAttribute("aria-label") || title,
+            cardText,
+            name: anchor.getAttribute("aria-label") || title,
+            url: anchor.href,
+            websiteUrl,
+          };
+        });
         if (feed) {
           feed.scrollBy(0, 5000);
           return {
             height: feed.scrollHeight,
             listingCount: document.querySelectorAll("a.hfpxzc, a[href*='/maps/place/']").length,
+            listings,
           };
         }
         const body = document.body;
         return {
           height: body ? body.scrollHeight : 0,
           listingCount: document.querySelectorAll("a.hfpxzc, a[href*='/maps/place/']").length,
+          listings,
         };
       });
+
+      const currentListings = normalizeMapsListings(scrollState.listings || []);
+      if (currentListings.length >= lastListings.length) {
+        lastListings = currentListings;
+      }
 
       if (scrollState.height <= lastHeight && scrollState.listingCount <= lastListingCount) {
         stableScrollAttempts++;
@@ -1426,15 +1571,23 @@ async function collectTargets(
       await sendEvent({ message: `[MAPS] Depth ${scrollAttempts}/${maxDepth}` });
     }
 
-    let placeLinks = await collectMapsListings(page);
+    let placeLinks = lastListings;
     if (placeLinks.length === 0) {
       await sendEvent({ message: "[MAPS] No listings on first pass, retrying once..." });
       await page.waitForTimeout(MAPS_NO_LISTINGS_RETRY_WAIT_MS);
-      placeLinks = await collectMapsListings(page);
+      placeLinks = await withMapsOperationTimeout(
+        collectMapsListings(page),
+        10_000,
+        "Maps listing retry collection",
+      );
     }
 
     if (placeLinks.length === 0) {
-      placeLinks = await collectCurrentPlaceListing(page);
+      placeLinks = await withMapsOperationTimeout(
+        collectCurrentPlaceListing(page),
+        8_000,
+        "Maps current place collection",
+      );
       if (placeLinks.length > 0) {
         await sendEvent({ message: "[MAPS] Search resolved to a direct place detail; extracting current place." });
       }
@@ -1449,12 +1602,50 @@ async function collectTargets(
     await sendEvent({
       message: `[MAPS] Listings with visible website: ${placeLinks.filter((place) => Boolean(place.websiteUrl)).length}`,
     });
+
+    if (skipMapsDetailPages) {
+      await sendEvent({
+        message: "[MAPS] Detail pages disabled for cloud reliability; using listing-card data",
+      });
+      const targets = placeLinks
+        .map((place) => buildMapsListingFallback(place))
+        .filter((target) => Boolean(target.title))
+        .map((target) => {
+          const { rating, reviewCount } = parseMapsRatingAndReviews(target.ratingText);
+          return {
+            address: normalizeWhitespace(target.address),
+            businessName: target.title,
+            category: normalizeCategory(target.category, niche, target.title),
+            phone: normalizePhoneText(target.phone),
+            rating,
+            reviewCount,
+            website: normalizeWebsiteUrl(target.website),
+          };
+        });
+      const targetsWithWebsite = targets.filter((target) => Boolean(target.website)).length;
+      const targetsWithCategory = targets.filter((target) => Boolean(target.category)).length;
+      const targetsWithPhone = targets.filter((target) => Boolean(target.phone)).length;
+      const targetsWithRatingReviews = targets.filter((target) => target.rating > 0 || target.reviewCount > 0).length;
+
+      await sendEvent({ message: `[MAPS] Detail fallback count: ${targets.length}` });
+      await sendEvent({ message: `[MAPS] Targets with website: ${targetsWithWebsite}` });
+      await sendEvent({ message: `[MAPS] Targets with category: ${targetsWithCategory}` });
+      await sendEvent({ message: `[MAPS] Targets with phone: ${targetsWithPhone}` });
+      await sendEvent({ message: `[MAPS] Targets with rating/reviews: ${targetsWithRatingReviews}` });
+      await sendEvent({ message: `[MAPS] Final targets entering enrichment: ${targets.length}` });
+      await sendEvent({
+        message: `[MAPS] Detail extraction complete: ${targets.length}/${placeLinks.length} usable`,
+      });
+
+      return targets;
+    }
+
     await sendEvent({ message: `[MAPS] Detail extraction started` });
 
     const targets: Target[] = [];
     let directDetailCount = 0;
     let fallbackDetailCount = 0;
-    let directFailureSamples = 0;
+    const directFailureSamples = { count: 0 };
     const chunkSize = process.platform === "win32" ? 1 : 5;
 
     for (let index = 0; index < placeLinks.length; index += chunkSize) {
@@ -1468,43 +1659,7 @@ async function collectTargets(
       });
 
       const chunkResults = await Promise.all(
-        chunk.map(async (place) => {
-          const detailPage = await context.newPage();
-          const fallbackTitle = normalizeWhitespace(place.name);
-          const listingFallback = buildMapsListingFallback(place);
-          try {
-            await detailPage.goto(place.url, {
-              timeout: 15000,
-              waitUntil: "commit",
-            });
-            // "commit" only means navigation started; the readiness loop
-            // below waits for Maps contact fields to settle before extraction.
-            await detailPage.waitForSelector("body", { timeout: 8000 }).catch(() => detailPage.waitForTimeout(4000));
-            await detailPage.waitForTimeout(MAPS_DETAIL_POLL_MS);
-
-            return await extractMapsDetailFromPage(detailPage, place, fallbackTitle, {
-              address: listingFallback.address,
-              category: listingFallback.category,
-              phone: listingFallback.phone,
-              ratingText: listingFallback.ratingText,
-              title: listingFallback.title,
-              website: listingFallback.website,
-            });
-          } catch (error) {
-            if (directFailureSamples < 3) {
-              directFailureSamples++;
-              await sendEvent({
-                message: `[MAPS] Direct detail scrape failed for ${place.name}: ${error instanceof Error ? error.message : String(error)}`,
-              });
-            }
-            return {
-              ...listingFallback,
-              detailMode: "fallback" as const,
-            };
-          } finally {
-            await detailPage.close();
-          }
-        }),
+        chunk.map((place) => collectMapsDetailTarget(context, place, sendEvent, directFailureSamples)),
       );
 
       for (const result of chunkResults as Array<CollectedMapsTarget>) {
@@ -1777,6 +1932,7 @@ export async function executeScrapeJob(input: ExecuteScrapeJobInput): Promise<Ex
       input.maxDepth,
       input.sendEvent,
       shouldAbort,
+      input.skipMapsDetailPages,
     );
 
     if (shouldAbort()) {

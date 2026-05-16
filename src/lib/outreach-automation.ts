@@ -280,6 +280,7 @@ const MAILBOX_SENDABLE_STATUSES = ["ACTIVE", "WARMING"] as const;
 const OPEN_FIRST_TOUCH_STEP_STATUSES = ["SCHEDULED", "CLAIMED", "SENDING"] as const;
 const D1_IN_CLAUSE_CHUNK_SIZE = 40;
 const SCHEDULER_TOTAL_TIMEOUT_MS = 240_000;
+const SCHEDULER_LEASE_TTL_MS = 5 * 60 * 1000;
 const SCHEDULER_PIPELINE_TIMEOUT_MS = 120_000;
 const SCHEDULER_REPLY_SYNC_TIMEOUT_MS = 60_000;
 const SCHEDULER_BOUNCE_SYNC_TIMEOUT_MS = 60_000;
@@ -3692,7 +3693,7 @@ const TRANSIENT_BLOCKER_REASONS = new Set([
 
 export async function healStaleSchedulerState(prisma: PrismaLike) {
   const now = new Date();
-  let healed = { steps: 0, sequences: 0 };
+  const healed = { steps: 0, sequences: 0 };
 
   const overdueSteps = await prisma.outreachSequenceStep.findMany({
     where: {
@@ -3759,7 +3760,7 @@ export async function healStaleSchedulerState(prisma: PrismaLike) {
 
 export async function forceResetAllBlockedState(prisma: PrismaLike) {
   const now = new Date();
-  let result = { steps: 0, sequences: 0, claims: 0 };
+  const result = { steps: 0, sequences: 0, claims: 0 };
 
   const blockedSteps = await prisma.outreachSequenceStep.findMany({
     where: {
@@ -4277,6 +4278,69 @@ async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: numbe
   return { claims, diagnostics, claimDiagnostics };
 }
 
+async function ensureSchedulerLeaseTable() {
+  const { getDatabase } = await import("@/lib/cloudflare");
+  await getDatabase()
+    .prepare(
+      `CREATE TABLE IF NOT EXISTS "SchedulerLease" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "holder" TEXT,
+        "expiresAt" DATETIME NOT NULL,
+        "acquiredAt" DATETIME NOT NULL,
+        "updatedAt" DATETIME NOT NULL
+      )`,
+    )
+    .run();
+}
+
+async function acquireSchedulerLease(holder: string, ttlMs = SCHEDULER_LEASE_TTL_MS) {
+  const { getDatabase } = await import("@/lib/cloudflare");
+  await ensureSchedulerLeaseTable();
+
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + ttlMs);
+  const db = getDatabase();
+  const update = await db
+    .prepare(
+      `UPDATE "SchedulerLease"
+       SET "holder" = ?, "expiresAt" = ?, "acquiredAt" = ?, "updatedAt" = ?
+       WHERE "id" = 'outreach-automation'
+         AND datetime("expiresAt") <= datetime(?)`,
+    )
+    .bind(holder, expiresAt.toISOString(), now.toISOString(), now.toISOString(), now.toISOString())
+    .run();
+
+  if (Number(update.meta?.changes || 0) > 0) {
+    return true;
+  }
+
+  const insert = await db
+    .prepare(
+      `INSERT OR IGNORE INTO "SchedulerLease" ("id", "holder", "expiresAt", "acquiredAt", "updatedAt")
+       VALUES ('outreach-automation', ?, ?, ?, ?)`,
+    )
+    .bind(holder, expiresAt.toISOString(), now.toISOString(), now.toISOString())
+    .run();
+
+  return Number(insert.meta?.changes || 0) > 0;
+}
+
+async function releaseSchedulerLease(holder: string) {
+  const { getDatabase } = await import("@/lib/cloudflare");
+  const now = new Date().toISOString();
+  await getDatabase()
+    .prepare(
+      `UPDATE "SchedulerLease"
+       SET "holder" = NULL, "expiresAt" = ?, "updatedAt" = ?
+       WHERE "id" = 'outreach-automation' AND "holder" = ?`,
+    )
+    .bind(now, now, holder)
+    .run()
+    .catch((error) => {
+      console.warn("[scheduler] Failed to release scheduler lease:", error);
+    });
+}
+
 async function rescheduleClaimStep(
   prisma: PrismaLike,
   claim: SchedulerClaim,
@@ -4368,6 +4432,37 @@ async function setSequenceBlocked(
 }
 
 export async function runAutomationScheduler(options: { immediate?: boolean } = {}) {
+  const holder = crypto.randomUUID();
+  const acquired = await acquireSchedulerLease(holder).catch((error) => {
+    console.warn("[scheduler] Failed to acquire scheduler lease:", error);
+    return false;
+  });
+
+  if (!acquired) {
+    console.log("[scheduler] Skipped because another scheduler lease is active");
+    return {
+      runId: "skipped-active-lease",
+      claimed: 0,
+      sent: 0,
+      failed: 0,
+      skipped: 0,
+      pipeline: { enriched: 0, enrichFailed: 0, qualified: 0, queued: 0, queueSkipped: 0 },
+      replySync: { checked: 0, stopped: 0 },
+      bounceSync: { scanned: 0, suppressed: 0 },
+    };
+  }
+
+  try {
+    return await runAutomationSchedulerUnlocked({
+      ...options,
+      onRunClosed: () => releaseSchedulerLease(holder),
+    });
+  } finally {
+    await releaseSchedulerLease(holder);
+  }
+}
+
+async function runAutomationSchedulerUnlocked(options: { immediate?: boolean; onRunClosed?: () => Promise<void> } = {}) {
   const { runAutoPipeline } = await import("@/lib/auto-pipeline");
   const { getServerEnv } = await import("@/lib/env");
   const env = getServerEnv();
@@ -4500,6 +4595,7 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
           }),
         },
       });
+      runClosed = true;
       return {
         runId: run.id,
         claimed: 0,
@@ -4529,6 +4625,7 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
             }),
           },
         });
+        runClosed = true;
         return {
           runId: run.id,
           claimed: 0,
@@ -4541,8 +4638,16 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
         };
       }
 
-      fastForwardedCount = await fastForwardInitialTouches(prisma, now);
-      const claimResult = await claimDueSteps(prisma, run.id, settings.schedulerClaimBatch);
+      fastForwardedCount = await withSchedulerTimeout(
+        fastForwardInitialTouches(prisma, now),
+        20_000,
+        "fast-forward initial touches",
+      );
+      const claimResult = await withSchedulerTimeout(
+        claimDueSteps(prisma, run.id, settings.schedulerClaimBatch),
+        45_000,
+        "claim due steps",
+      );
       const claims = claimResult.claims;
       const firstTouchDiagnostics = {
         ...createFirstTouchDiagnostics(pipeline.firstTouchDiagnostics),
@@ -4708,6 +4813,9 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
         },
       });
       runClosed = true;
+      await options.onRunClosed?.().catch((error) => {
+        console.warn("[scheduler] Failed to release scheduler lease after run close:", error);
+      });
 
       let postReplySync = { checked: 0, stopped: 0 };
       let postBounceSync = { scanned: 0, suppressed: 0 };
@@ -4851,6 +4959,7 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
           }),
         },
       });
+      runClosed = true;
       return {
         runId: run.id,
         claimed: 0,
@@ -4893,6 +5002,24 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
       replySync: { checked: 0, stopped: 0 },
       bounceSync: { scanned: 0, suppressed: 0 },
     };
+  } finally {
+    if (!runClosed) {
+      await prisma.outreachRun.update({
+        where: { id: run.id },
+        data: {
+          finishedAt: new Date(),
+          status: "FAILED",
+          claimedCount: 0,
+          sentCount,
+          failedCount: failedCount + 1,
+          skippedCount,
+          metadata: JSON.stringify({
+            source: "scheduler",
+            error: "scheduler exited before closing outreach run",
+          }),
+        },
+      }).catch(() => null);
+    }
   }
 }
 

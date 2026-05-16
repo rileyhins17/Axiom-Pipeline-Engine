@@ -493,6 +493,7 @@ const globalForPrisma = globalThis as {
 const tableColumnsCache = new Map<string, string[]>();
 let leadSchemaEnsurePromise: Promise<void> | null = null;
 let crmActivitySchemaEnsurePromise: Promise<void> | null = null;
+let rateLimitWindowSchemaEnsurePromise: Promise<void> | null = null;
 
 const leadTable: TableSpec<LeadRecord> = {
   autoIncrementId: true,
@@ -1041,12 +1042,39 @@ async function ensureCrmActivityTable() {
   await crmActivitySchemaEnsurePromise;
 }
 
+async function ensureRateLimitWindowTable() {
+  if (!rateLimitWindowSchemaEnsurePromise) {
+    rateLimitWindowSchemaEnsurePromise = (async () => {
+      await runStatement(`
+        CREATE TABLE IF NOT EXISTS "RateLimitWindow" (
+          "id" TEXT NOT NULL PRIMARY KEY,
+          "key" TEXT NOT NULL,
+          "windowStart" DATETIME NOT NULL,
+          "count" INTEGER NOT NULL DEFAULT 0,
+          "updatedAt" DATETIME NOT NULL
+        )
+      `);
+      await runStatement(`CREATE UNIQUE INDEX IF NOT EXISTS "RateLimitWindow_key_key" ON "RateLimitWindow"("key")`);
+      await runStatement(`CREATE INDEX IF NOT EXISTS "RateLimitWindow_windowStart_idx" ON "RateLimitWindow"("windowStart")`);
+      tableColumnsCache.delete("RateLimitWindow");
+    })().catch((error) => {
+      rateLimitWindowSchemaEnsurePromise = null;
+      throw error;
+    });
+  }
+
+  await rateLimitWindowSchemaEnsurePromise;
+}
+
 async function ensureTableSchema<T extends Record<string, unknown>>(spec: TableSpec<T>) {
   if (spec.tableName === "Lead") {
     await ensureLeadQualityColumns();
   }
   if (spec.tableName === "CrmActivity") {
     await ensureCrmActivityTable();
+  }
+  if (spec.tableName === "RateLimitWindow") {
+    await ensureRateLimitWindowTable();
   }
 }
 

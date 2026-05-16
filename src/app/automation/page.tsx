@@ -266,42 +266,47 @@ export default async function AutomationPage() {
         <EngineBadge mode={overview.engine.mode} />
       </header>
 
-      <section className="grid gap-4 xl:grid-cols-[1.3fr_0.7fr]">
-        <div className="v2-card overflow-hidden p-5">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <div className="v2-eyebrow">Live posture</div>
-              <div className="mt-2 text-sm text-zinc-300">
-                {overview.settings.emergencyPaused
-                  ? "The engine is halted at the settings gate."
-                  : "Automation is live and the scheduler can send on the next eligible tick."}
+      <section className="grid items-start gap-4 xl:grid-cols-[1.3fr_0.7fr]">
+        <div className="grid gap-4">
+          <div className="v2-card overflow-hidden p-5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="v2-eyebrow">Live posture</div>
+                <div className="mt-2 text-sm text-zinc-300">
+                  {overview.settings.emergencyPaused
+                    ? "The engine is halted at the settings gate."
+                    : "Automation is live and the scheduler can send on the next eligible tick."}
+                </div>
               </div>
+              <span className={`v2-pill ${overview.settings.emergencyPaused ? "border-red-400/30 bg-red-500/[0.12] text-red-200" : "v2-pill-accent"}`}>
+                {overview.settings.emergencyPaused ? "Emergency stop" : "Live"}
+              </span>
             </div>
-            <span className={`v2-pill ${overview.settings.emergencyPaused ? "border-red-400/30 bg-red-500/[0.12] text-red-200" : "v2-pill-accent"}`}>
-              {overview.settings.emergencyPaused ? "Emergency stop" : "Live"}
-            </span>
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <MiniStat label="Queued" value={overview.engine.queuedCount} tone="cyan" />
+              <MiniStat label="Waiting" value={overview.engine.waitingCount} tone="violet" />
+              <MiniStat label="Blocked" value={overview.engine.blockedCount} tone={overview.engine.blockedCount > 0 ? "amber" : "zinc"} />
+            </div>
           </div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-3">
-            <MiniStat label="Queued" value={overview.engine.queuedCount} tone="cyan" />
-            <MiniStat label="Waiting" value={overview.engine.waitingCount} tone="violet" />
-            <MiniStat label="Blocked" value={overview.engine.blockedCount} tone={overview.engine.blockedCount > 0 ? "amber" : "zinc"} />
-          </div>
+
+          <IntakeControlCard
+            initialPaused={overview.settings.intakePaused}
+            initialPausedBy={overview.settings.intakePausedBy}
+          />
         </div>
 
-        <EmergencyControlCard
-          compact
-          initialState={{
-            emergencyPaused: overview.settings.emergencyPaused,
-            emergencyPausedAt: overview.settings.emergencyPausedAt ? overview.settings.emergencyPausedAt.toISOString() : null,
-            emergencyPausedBy: overview.settings.emergencyPausedBy,
-            emergencyPauseReason: overview.settings.emergencyPauseReason,
-          }}
-        />
-        <IntakeControlCard
-          initialPaused={overview.settings.intakePaused}
-          initialPausedBy={overview.settings.intakePausedBy}
-        />
-        <SchedulerHealthCard />
+        <div className="grid gap-4">
+          <EmergencyControlCard
+            compact
+            initialState={{
+              emergencyPaused: overview.settings.emergencyPaused,
+              emergencyPausedAt: overview.settings.emergencyPausedAt ? overview.settings.emergencyPausedAt.toISOString() : null,
+              emergencyPausedBy: overview.settings.emergencyPausedBy,
+              emergencyPauseReason: overview.settings.emergencyPauseReason,
+            }}
+          />
+          <SchedulerHealthCard compact />
+        </div>
       </section>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

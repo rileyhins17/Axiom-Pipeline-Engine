@@ -49,7 +49,10 @@ export type RepairResult = {
   healedSequences: number;
   recoveredClaims: number;
   clearedStaleRuns: number;
+  clearedSchedulerLeases: number;
 };
+
+const STALE_SCHEDULER_MINUTES = 2;
 
 async function getHealthDiagnostics(): Promise<SchedulerHealthData> {
   const db = getDatabase();
@@ -102,7 +105,14 @@ async function getHealthDiagnostics(): Promise<SchedulerHealthData> {
         finishedAt: string | null;
         metadata: string | null;
       }>()
-      .catch(() => ({ results: [] as any[] })),
+      .catch(() => ({
+        results: [] as Array<{
+          id: string;
+          startedAt: string | null;
+          finishedAt: string | null;
+          metadata: string | null;
+        }>,
+      })),
 
     db
       .prepare(
@@ -115,7 +125,7 @@ async function getHealthDiagnostics(): Promise<SchedulerHealthData> {
          LIMIT 20`,
       )
       .all<{ reason: string; count: number }>()
-      .catch(() => ({ results: [] as any[] })),
+      .catch(() => ({ results: [] as Array<{ reason: string; count: number }> })),
 
     db
       .prepare(
@@ -155,7 +165,15 @@ async function getHealthDiagnostics(): Promise<SchedulerHealthData> {
         dailyLimit: number;
         sentToday: number;
       }>()
-      .catch(() => ({ results: [] as any[] })),
+      .catch(() => ({
+        results: [] as Array<{
+          address: string;
+          status: string;
+          connected: number;
+          dailyLimit: number;
+          sentToday: number;
+        }>,
+      })),
 
     db
       .prepare(
@@ -292,7 +310,22 @@ export async function POST(request: Request) {
              "finishedAt" = datetime('now'),
              "metadata" = json_set(COALESCE("metadata", '{}'), '$.error', 'cleared by manual repair')
          WHERE "status" = 'RUNNING'
-           AND datetime("startedAt") < datetime('now', '-5 minutes')`,
+           AND datetime("startedAt") < datetime('now', '-${STALE_SCHEDULER_MINUTES} minutes')`,
+      )
+      .run()
+      .catch(() => ({ meta: { changes: 0 } }));
+
+    const leaseResult = await db
+      .prepare(
+        `UPDATE "SchedulerLease"
+         SET "holder" = NULL,
+             "expiresAt" = datetime('now'),
+             "updatedAt" = datetime('now')
+         WHERE "id" = 'outreach-automation'
+           AND (
+             "holder" IS NOT NULL
+             OR datetime("expiresAt") > datetime('now')
+           )`,
       )
       .run()
       .catch(() => ({ meta: { changes: 0 } }));
@@ -302,6 +335,7 @@ export async function POST(request: Request) {
       healedSequences: forceResult.sequences,
       recoveredClaims: forceResult.claims,
       clearedStaleRuns: staleRunResult.meta?.changes ?? 0,
+      clearedSchedulerLeases: leaseResult.meta?.changes ?? 0,
     };
 
     await writeAuditEvent({
