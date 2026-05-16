@@ -253,6 +253,7 @@ export async function POST(request: Request) {
   if (body.action === "trigger") {
     try {
       const schedulerResult = await runAutomationScheduler({ immediate: true });
+      if (!schedulerResult) throw new Error("Scheduler returned no result");
       await writeAuditEvent({
         action: "automation.manual_trigger",
         actorUserId: authResult.session.user.id,
