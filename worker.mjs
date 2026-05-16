@@ -14,6 +14,14 @@ const worker = openNextWorkerModule;
 
 export { BucketCachePurge, DOQueueHandler, DOShardedTagCache };
 
+function withTimeout(promise, ms, label) {
+  let timeoutId;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timeoutId));
+}
+
 export default {
   async fetch(request, env, ctx) {
     setCloudflareBindings(env);
@@ -23,10 +31,10 @@ export default {
     setCloudflareBindings(env);
     ctx.waitUntil(
       Promise.allSettled([
-        runAutonomousIntake(),
-        runCloudScrapeWorker(),
-        runAutomationScheduler(),
-        maybeRunDailyDigest(),
+        withTimeout(runAutonomousIntake(), 120_000, "intake"),
+        withTimeout(runCloudScrapeWorker(), 120_000, "scrape"),
+        withTimeout(runAutomationScheduler(), 270_000, "scheduler"),
+        withTimeout(maybeRunDailyDigest(), 60_000, "digest"),
       ]).then((results) => {
         const labels = ["intake", "scrape", "scheduler", "digest"];
         for (let i = 0; i < results.length; i++) {
