@@ -158,7 +158,9 @@ export function SchedulerHealthCard({ compact = false }: Props) {
     (health?.staleClaimedSteps ?? 0) > 0 ||
     (health?.blockedSequences ?? 0) > 0 ||
     health?.lastRun?.status === "FAILED" ||
-    health?.mailboxes.some((m) => !m.connected);
+    health?.mailboxes.some((m) => !m.connected) ||
+    health?.emergencyPaused ||
+    health?.intakePaused;
 
   const statusTone = health
     ? hasIssues
@@ -297,8 +299,14 @@ export function SchedulerHealthCard({ compact = false }: Props) {
               />
               <MiniStat
                 label="Last run sent"
-                value={String(health.lastRun?.sent ?? 0)}
-                tone="cyan"
+                value={`${health.lastRun?.sent ?? 0}/${health.lastRun?.claimed ?? 0}`}
+                tone={
+                  (health.lastRun?.sent ?? 0) > 0
+                    ? "cyan"
+                    : (health.lastRun?.claimed ?? 0) > 0
+                      ? "amber"
+                      : "zinc"
+                }
               />
               <MiniStat
                 label="Scheduled steps"
@@ -318,6 +326,20 @@ export function SchedulerHealthCard({ compact = false }: Props) {
                 <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-zinc-500">
                   Issues
                 </div>
+
+                {/* Emergency / Intake pause */}
+                {health.emergencyPaused && (
+                  <div className="flex items-center gap-2 rounded-md border border-red-500/20 bg-red-500/[0.08] p-3 text-sm font-medium text-red-200">
+                    <XCircle className="size-3.5 shrink-0" />
+                    Emergency kill switch is ACTIVE — all sends halted
+                  </div>
+                )}
+                {health.intakePaused && (
+                  <div className="flex items-center gap-2 rounded-md border border-amber-500/20 bg-amber-500/[0.08] p-3 text-sm text-amber-200">
+                    <AlertTriangle className="size-3.5 shrink-0" />
+                    Intake paused — no new leads being queued
+                  </div>
+                )}
 
                 {/* Stuck steps by blocker */}
                 {health.stuckSteps.length > 0 && (
