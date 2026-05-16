@@ -3705,7 +3705,7 @@ export async function healStaleSchedulerState(prisma: PrismaLike) {
   for (const chunk of chunkArray(staleSteps.map((s) => s.id))) {
     const updated = await prisma.outreachSequenceStep.updateMany({
       where: { id: { in: chunk }, status: "SCHEDULED" },
-      data: { errorMessage: null },
+      data: { errorMessage: null, scheduledFor: now },
     });
     healed.steps += updated.count;
   }
@@ -3764,6 +3764,92 @@ export async function healStaleSchedulerState(prisma: PrismaLike) {
   }
 
   return healed;
+}
+
+export async function forceResetAllBlockedState(prisma: PrismaLike) {
+  const now = new Date();
+  let result = { steps: 0, sequences: 0, claims: 0 };
+
+  const blockedSteps = await prisma.outreachSequenceStep.findMany({
+    where: {
+      status: "SCHEDULED",
+      errorMessage: { not: null },
+    },
+    take: 2000,
+  }) as OutreachSequenceStepRecord[];
+
+  const transientSteps = blockedSteps.filter(
+    (s) => s.errorMessage && TRANSIENT_BLOCKER_REASONS.has(s.errorMessage),
+  );
+
+  for (const chunk of chunkArray(transientSteps.map((s) => s.id))) {
+    const updated = await prisma.outreachSequenceStep.updateMany({
+      where: { id: { in: chunk }, status: "SCHEDULED" },
+      data: { errorMessage: null, scheduledFor: now },
+    });
+    result.steps += updated.count;
+  }
+
+  const staleClaims = await prisma.outreachSequenceStep.findMany({
+    where: {
+      status: { in: ["CLAIMED", "SENDING"] },
+    },
+    take: 500,
+  }) as OutreachSequenceStepRecord[];
+
+  for (const step of staleClaims) {
+    await prisma.outreachSequenceStep.update({
+      where: { id: step.id },
+      data: {
+        status: "SCHEDULED",
+        claimedAt: null,
+        claimedByRunId: null,
+        scheduledFor: now,
+        errorMessage: null,
+      },
+    }).catch(() => null);
+    result.claims += 1;
+  }
+
+  const allAffectedSequenceIds = Array.from(new Set([
+    ...transientSteps.map((s) => s.sequenceId),
+    ...staleClaims.map((s) => s.sequenceId),
+  ]));
+
+  for (const chunk of chunkArray(allAffectedSequenceIds)) {
+    const updated = await prisma.outreachSequence.updateMany({
+      where: {
+        id: { in: chunk },
+        status: { in: [...CLAIMABLE_SEQUENCE_STATUSES] },
+      },
+      data: { stopReason: null, nextScheduledAt: now },
+    });
+    result.sequences += updated.count;
+  }
+
+  const driftedSequences = await prisma.outreachSequence.findMany({
+    where: {
+      status: { in: [...CLAIMABLE_SEQUENCE_STATUSES] },
+      stopReason: { not: null },
+    },
+    select: { id: true },
+    take: 1000,
+  }) as Array<{ id: string }>;
+
+  if (driftedSequences.length > 0) {
+    for (const chunk of chunkArray(driftedSequences.map((s) => s.id))) {
+      const updated = await prisma.outreachSequence.updateMany({
+        where: {
+          id: { in: chunk },
+          status: { in: [...CLAIMABLE_SEQUENCE_STATUSES] },
+        },
+        data: { stopReason: null, nextScheduledAt: now },
+      });
+      result.sequences += updated.count;
+    }
+  }
+
+  return result;
 }
 
 async function cleanupTerminalSequenceSteps(prisma: PrismaLike) {

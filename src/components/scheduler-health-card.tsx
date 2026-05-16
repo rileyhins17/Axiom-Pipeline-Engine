@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   Loader2,
   Mail,
+  Play,
   RefreshCcw,
   Wrench,
   XCircle,
@@ -60,6 +61,15 @@ function relativeAgo(date: string | null | undefined): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
+type TriggerResult = {
+  triggered: boolean;
+  runId: string;
+  claimed: number;
+  sent: number;
+  failed: number;
+  skipped: number;
+};
+
 export function SchedulerHealthCard({ compact = false }: Props) {
   const router = useRouter();
   const [health, setHealth] = useState<SchedulerHealthData | null>(null);
@@ -67,6 +77,8 @@ export function SchedulerHealthCard({ compact = false }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [repairing, setRepairing] = useState(false);
   const [repairResult, setRepairResult] = useState<RepairResult | null>(null);
+  const [triggering, setTriggering] = useState(false);
+  const [triggerResult, setTriggerResult] = useState<TriggerResult | null>(null);
 
   const fetchHealth = useCallback(async () => {
     setLoading(true);
@@ -89,17 +101,15 @@ export function SchedulerHealthCard({ compact = false }: Props) {
 
   async function runRepair() {
     setRepairResult(null);
+    setTriggerResult(null);
     setError(null);
-    const confirmed = window.confirm(
-      "Run pipeline repair? This clears stale blockers, recovers stuck claims, and resets stale runs.",
-    );
-    if (!confirmed) return;
 
     setRepairing(true);
     try {
       const res = await fetch("/api/outreach/automation/health", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "repair" }),
       });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -113,6 +123,31 @@ export function SchedulerHealthCard({ compact = false }: Props) {
       setError(e instanceof Error ? e.message : "Repair failed");
     } finally {
       setRepairing(false);
+    }
+  }
+
+  async function runTrigger() {
+    setTriggerResult(null);
+    setError(null);
+
+    setTriggering(true);
+    try {
+      const res = await fetch("/api/outreach/automation/health", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "trigger" }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error((payload as any).error || "Trigger failed");
+      }
+      setTriggerResult(payload as TriggerResult);
+      await fetchHealth();
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Trigger failed");
+    } finally {
+      setTriggering(false);
     }
   }
 
@@ -175,7 +210,7 @@ export function SchedulerHealthCard({ compact = false }: Props) {
             <button
               type="button"
               onClick={runRepair}
-              disabled={repairing || loading}
+              disabled={repairing || triggering || loading}
               className="inline-flex items-center justify-center gap-2 rounded-lg border border-amber-400/40 bg-amber-400/[0.14] px-4 py-2 text-sm font-semibold text-amber-200 transition hover:bg-amber-400/[0.22] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {repairing ? (
@@ -184,6 +219,19 @@ export function SchedulerHealthCard({ compact = false }: Props) {
                 <Wrench className="size-4" />
               )}
               Repair
+            </button>
+            <button
+              type="button"
+              onClick={runTrigger}
+              disabled={triggering || repairing || loading}
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-400/40 bg-emerald-400/[0.14] px-4 py-2 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-400/[0.22] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {triggering ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Play className="size-4" />
+              )}
+              Force Run
             </button>
             <button
               type="button"
@@ -204,10 +252,22 @@ export function SchedulerHealthCard({ compact = false }: Props) {
           <div className="mt-3 flex items-start gap-2 rounded-lg border border-emerald-400/20 bg-emerald-400/[0.08] px-3 py-2 text-sm text-emerald-200">
             <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
             <span>
-              Repaired {repairResult.healedSteps} steps,{" "}
+              Reset {repairResult.healedSteps} blocked steps,{" "}
               {repairResult.healedSequences} sequences,{" "}
-              {repairResult.recoveredClaims} stale claims,{" "}
-              {repairResult.clearedStaleRuns} stale runs
+              {repairResult.recoveredClaims} stuck claims,{" "}
+              {repairResult.clearedStaleRuns} stale runs — all ready to send on next tick
+            </span>
+          </div>
+        )}
+
+        {/* Trigger result banner */}
+        {triggerResult && (
+          <div className="mt-3 flex items-start gap-2 rounded-lg border border-cyan-400/20 bg-cyan-400/[0.08] px-3 py-2 text-sm text-cyan-200">
+            <Play className="mt-0.5 size-4 shrink-0" />
+            <span>
+              Scheduler ran: claimed {triggerResult.claimed}, sent{" "}
+              {triggerResult.sent}, failed {triggerResult.failed}, skipped{" "}
+              {triggerResult.skipped}
             </span>
           </div>
         )}

@@ -3,9 +3,9 @@ import { NextResponse } from "next/server";
 import { writeAuditEvent } from "@/lib/audit";
 import { getDatabase } from "@/lib/cloudflare";
 import {
+  forceResetAllBlockedState,
   getAutomationSettings,
-  healStaleSchedulerState,
-  recoverStaleClaims,
+  runAutomationScheduler,
 } from "@/lib/outreach-automation";
 import { getPrisma } from "@/lib/prisma";
 import { requireAdminApiSession } from "@/lib/session";
@@ -120,7 +120,7 @@ async function getHealthDiagnostics(): Promise<SchedulerHealthData> {
     db
       .prepare(
         `SELECT COUNT(*) AS count FROM "OutreachSequence"
-         WHERE "status" IN ('QUEUED', 'WAITING', 'BLOCKED')
+         WHERE "status" IN ('QUEUED', 'ACTIVE', 'SENDING', 'WAITING', 'BLOCKED')
            AND "stopReason" IS NOT NULL`,
       )
       .first<{ count: number }>()
@@ -168,7 +168,7 @@ async function getHealthDiagnostics(): Promise<SchedulerHealthData> {
     db
       .prepare(
         `SELECT COUNT(*) AS count FROM "OutreachSequence"
-         WHERE "status" IN ('QUEUED', 'WAITING', 'BLOCKED')`,
+         WHERE "status" IN ('QUEUED', 'ACTIVE', 'SENDING', 'WAITING', 'BLOCKED')`,
       )
       .first<{ count: number }>()
       .catch(() => null),
@@ -248,14 +248,41 @@ export async function POST(request: Request) {
     return authResult.response;
   }
 
+  const body = await request.json().catch(() => ({})) as { action?: string };
+
+  if (body.action === "trigger") {
+    try {
+      const schedulerResult = await runAutomationScheduler({ immediate: true });
+      await writeAuditEvent({
+        action: "automation.manual_trigger",
+        actorUserId: authResult.session.user.id,
+        ipAddress: request.headers.get("x-forwarded-for") || "api",
+        targetType: "scheduler",
+        targetId: "manual_trigger",
+        metadata: { runId: schedulerResult.runId, sent: schedulerResult.sent },
+      });
+      return NextResponse.json({
+        triggered: true,
+        runId: schedulerResult.runId,
+        claimed: schedulerResult.claimed,
+        sent: schedulerResult.sent,
+        failed: schedulerResult.failed,
+        skipped: schedulerResult.skipped,
+      });
+    } catch (error: unknown) {
+      console.error("[health] Manual trigger failed:", error);
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Trigger failed" },
+        { status: 500 },
+      );
+    }
+  }
+
   try {
     const prisma = getPrisma();
     const db = getDatabase();
 
-    const [healed, recoveredClaims] = await Promise.all([
-      healStaleSchedulerState(prisma),
-      recoverStaleClaims(prisma),
-    ]);
+    const forceResult = await forceResetAllBlockedState(prisma);
 
     const staleRunResult = await db
       .prepare(
@@ -264,15 +291,15 @@ export async function POST(request: Request) {
              "finishedAt" = datetime('now'),
              "metadata" = json_set(COALESCE("metadata", '{}'), '$.error', 'cleared by manual repair')
          WHERE "status" = 'RUNNING'
-           AND datetime("startedAt") < datetime('now', '-15 minutes')`,
+           AND datetime("startedAt") < datetime('now', '-5 minutes')`,
       )
       .run()
       .catch(() => ({ meta: { changes: 0 } }));
 
     const result: RepairResult = {
-      healedSteps: healed.steps,
-      healedSequences: healed.sequences,
-      recoveredClaims,
+      healedSteps: forceResult.steps,
+      healedSequences: forceResult.sequences,
+      recoveredClaims: forceResult.claims,
       clearedStaleRuns: staleRunResult.meta?.changes ?? 0,
     };
 
