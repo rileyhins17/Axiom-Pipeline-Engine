@@ -35,23 +35,31 @@ export default {
   async scheduled(_controller, env, ctx) {
     setCloudflareBindings(env);
     const timeouts = getCronTimeoutBudgets(env);
+    const CRON_WALL_CLOCK_BUDGET_MS = 14 * 60 * 1000;
     ctx.waitUntil(
-      Promise.allSettled([
-        withTimeout(runAutonomousIntake(), timeouts.intake, "intake"),
-        withTimeout(runCloudScrapeWorker(), timeouts.scrape, "scrape"),
-        withTimeout(runAutomationScheduler(), timeouts.scheduler, "scheduler"),
-        withTimeout(maybeRunDailyDigest(), timeouts.digest, "digest"),
-      ]).then((results) => {
-        const labels = ["intake", "scrape", "scheduler", "digest"];
-        for (let i = 0; i < results.length; i++) {
-          const result = results[i];
-          if (result.status === "rejected") {
-            console.error(`[cron:${labels[i]}] failed:`, result.reason);
-          } else {
-            console.log(`[cron:${labels[i]}] ok`, result.value);
+      (async () => {
+        const deadline = Date.now() + CRON_WALL_CLOCK_BUDGET_MS;
+        const tasks = [
+          { fn: runAutonomousIntake, timeout: timeouts.intake, label: "intake" },
+          { fn: runCloudScrapeWorker, timeout: timeouts.scrape, label: "scrape" },
+          { fn: runAutomationScheduler, timeout: timeouts.scheduler, label: "scheduler" },
+          { fn: maybeRunDailyDigest, timeout: timeouts.digest, label: "digest" },
+        ];
+        for (const task of tasks) {
+          const remaining = deadline - Date.now();
+          if (remaining <= 0) {
+            console.warn(`[cron:${task.label}] skipped — wall-clock budget exhausted`);
+            continue;
+          }
+          const effectiveTimeout = Math.min(task.timeout, remaining);
+          try {
+            const value = await withTimeout(task.fn(), effectiveTimeout, task.label);
+            console.log(`[cron:${task.label}] ok`, value);
+          } catch (error) {
+            console.error(`[cron:${task.label}] failed:`, error);
           }
         }
-      }),
+      })(),
     );
   },
 };
