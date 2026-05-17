@@ -75,8 +75,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <SidebarProvider>
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-md focus:border focus:border-emerald-400/40 focus:bg-[#07111c] focus:px-3 focus:py-2 focus:text-sm focus:font-semibold focus:text-emerald-100"
+      >
+        Skip to main content
+      </a>
       <AppSidebar />
-      <main className="flex min-h-screen w-full flex-1 flex-col bg-background">
+      <main id="main-content" className="flex min-h-screen w-full flex-1 flex-col bg-background">
         <header className="v2-header sticky top-0 z-40">
           <div className="flex h-[64px] items-center gap-3 px-4 md:px-6">
             <SidebarTrigger className="v2-focus-ring rounded-md text-zinc-400 transition-colors hover:text-white" />

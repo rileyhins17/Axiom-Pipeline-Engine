@@ -168,13 +168,18 @@ export function SchedulerHealthCard({ compact = false }: Props) {
     health?.mailboxes.some((m) => !m.connected) ||
     health?.emergencyPaused ||
     health?.intakePaused;
+  const healthUnavailable = Boolean(error && !health);
 
-  const statusTone = health
+  const statusTone = healthUnavailable
+    ? "border-red-400/30 bg-red-500/[0.06]"
+    : health
     ? hasIssues
       ? "border-amber-400/30 bg-amber-500/[0.06]"
       : "border-emerald-400/25 bg-emerald-500/[0.06]"
     : "border-white/[0.06] bg-[#0b131d]";
-  const topGradient = health
+  const topGradient = healthUnavailable
+    ? "from-red-400/40 via-rose-400/18 to-transparent"
+    : health
     ? hasIssues
       ? "from-amber-400/40 via-orange-400/20 to-transparent"
       : "from-emerald-400/30 via-cyan-400/20 to-transparent"
@@ -194,7 +199,9 @@ export function SchedulerHealthCard({ compact = false }: Props) {
                 <Activity className="size-3.5" />
                 {loading
                   ? "Loading"
-                  : hasIssues
+                  : healthUnavailable
+                    ? "Unavailable"
+                    : hasIssues
                     ? "Issues detected"
                     : "Healthy"}
               </span>
@@ -209,7 +216,9 @@ export function SchedulerHealthCard({ compact = false }: Props) {
             <p className="mt-1 text-sm leading-6 text-zinc-400">
               {loading
                 ? "Checking scheduler health..."
-                : hasIssues
+                : healthUnavailable
+                  ? "Diagnostics could not load. Refresh or use Repair if sends appear stalled."
+                  : hasIssues
                   ? "Issues found that may slow or stop sends. Use Repair to clear stale state."
                   : "No issues detected. The scheduler is operating normally."}
             </p>

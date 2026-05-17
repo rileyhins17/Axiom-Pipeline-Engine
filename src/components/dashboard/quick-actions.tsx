@@ -30,25 +30,25 @@ export function QuickActions() {
         onOpenChange={setShowAddLead}
         onCreated={() => setShowAddLead(false)}
       />
-      <div className="flex flex-wrap gap-2">
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         <button
           type="button"
           onClick={() => setShowAddLead(true)}
-          className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-2 text-xs font-medium text-emerald-200 transition hover:border-emerald-500/50 hover:bg-emerald-500/20 cursor-pointer"
+          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-emerald-500/35 bg-emerald-500/12 px-3.5 py-2 text-sm font-semibold text-emerald-100 transition hover:border-emerald-400/60 hover:bg-emerald-500/20 cursor-pointer"
         >
           <PlusIcon className="size-3.5" />
           Add Lead
         </button>
         <Link
           href="/vault"
-          className="inline-flex items-center gap-2 rounded-lg border border-white/[0.08] bg-white/[0.025] px-3.5 py-2 text-xs font-medium text-zinc-300 transition hover:border-white/[0.16] hover:bg-white/[0.06] hover:text-white"
+          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-white/[0.09] bg-white/[0.025] px-3.5 py-2 text-sm font-semibold text-zinc-300 transition hover:border-white/[0.16] hover:bg-white/[0.06] hover:text-white"
         >
           <DatabaseIcon className="size-3.5" />
           View Vault
         </Link>
         <Link
           href="/clients"
-          className="inline-flex items-center gap-2 rounded-lg border border-white/[0.08] bg-white/[0.025] px-3.5 py-2 text-xs font-medium text-zinc-300 transition hover:border-white/[0.16] hover:bg-white/[0.06] hover:text-white"
+          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-white/[0.09] bg-white/[0.025] px-3.5 py-2 text-sm font-semibold text-zinc-300 transition hover:border-white/[0.16] hover:bg-white/[0.06] hover:text-white"
         >
           <UsersIcon className="size-3.5" />
           Client Board
@@ -57,7 +57,7 @@ export function QuickActions() {
           type="button"
           onClick={handleSendDigest}
           disabled={digestState === "sending"}
-          className="inline-flex items-center gap-2 rounded-lg border border-white/[0.08] bg-white/[0.025] px-3.5 py-2 text-xs font-medium text-zinc-300 transition hover:border-white/[0.16] hover:bg-white/[0.06] hover:text-white disabled:opacity-50 cursor-pointer"
+          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-white/[0.09] bg-white/[0.025] px-3.5 py-2 text-sm font-semibold text-zinc-300 transition hover:border-white/[0.16] hover:bg-white/[0.06] hover:text-white disabled:opacity-50 cursor-pointer"
         >
           <MailIcon className="size-3.5" />
           {digestState === "sending" ? "Sending..." : digestState === "sent" ? "Sent!" : digestState === "error" ? "Failed" : "Send Digest"}

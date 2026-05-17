@@ -14,12 +14,17 @@ import {
   Filter,
   Mail,
   MailCheck,
+  PlugZap,
   Radar,
   Reply,
+  Route as RouteIcon,
   ScrollText,
+  Send,
+  ShieldAlert,
   Target,
   TrendingUp,
   Users,
+  Zap,
 } from "lucide-react";
 
 import { QuickActions } from "@/components/dashboard/quick-actions";
@@ -555,6 +560,68 @@ export default async function DashboardPage() {
   const connectedSet = new Set(connectedRows.filter(isSendableMailbox).map((r) => (r.gmailAddress || "").toLowerCase()));
   const aidanConnected = connectedSet.has("aidan@getaxiom.ca");
   const rileyConnected = connectedSet.has("riley@getaxiom.ca");
+  const connectedMailboxCount = [aidanConnected, rileyConnected].filter(Boolean).length;
+  const mailboxGapCount = EXPECTED_MAILBOX_COUNT - connectedMailboxCount;
+  const followUpAttentionCount = followUps.overdue.length + followUps.dueToday.length;
+  const sendCapacityRemaining = Math.max(0, globalSendCap - sendsToday.total);
+  const operatingMode = automation.settings.emergencyPaused
+    ? "Emergency stop"
+    : automation.engine.mode === "ACTIVE"
+      ? "Autonomous"
+      : automation.engine.mode;
+  const riskItems = [
+    automation.settings.emergencyPaused ? "Emergency stop blocks all automation" : null,
+    mailboxGapCount > 0 ? `${mailboxGapCount} sender${mailboxGapCount === 1 ? "" : "s"} disconnected` : null,
+    automation.engine.blockedCount > 0 ? `${automation.engine.blockedCount} blocked sequence${automation.engine.blockedCount === 1 ? "" : "s"}` : null,
+    followUpAttentionCount > 0 ? `${followUpAttentionCount} client follow-up${followUpAttentionCount === 1 ? "" : "s"} due` : null,
+  ].filter((item): item is string => Boolean(item));
+  const runbookItems = [
+    mailboxGapCount > 0
+      ? {
+          label: "Connect Gmail senders",
+          detail: "Restore full outbound capacity before the next send window.",
+          href: "/settings" as Route,
+          icon: <PlugZap className="size-4" />,
+          tone: "amber" as ToneKey,
+        }
+      : {
+          label: "Mailboxes armed",
+          detail: `${connectedMailboxCount}/${EXPECTED_MAILBOX_COUNT} sender accounts available.`,
+          href: "/settings" as Route,
+          icon: <MailCheck className="size-4" />,
+          tone: "emerald" as ToneKey,
+        },
+    automation.engine.blockedCount > 0
+      ? {
+          label: "Clear blocked sequences",
+          detail: "Use Automation diagnostics to repair stale blockers.",
+          href: "/automation" as Route,
+          icon: <ShieldAlert className="size-4" />,
+          tone: "amber" as ToneKey,
+        }
+      : {
+          label: "Scheduler clear",
+          detail: `${automation.engine.queuedCount} queued, ${automation.engine.waitingCount} waiting.`,
+          href: "/automation" as Route,
+          icon: <Bot className="size-4" />,
+          tone: "cyan" as ToneKey,
+        },
+    followUpAttentionCount > 0
+      ? {
+          label: "Work client replies",
+          detail: `${followUpAttentionCount} follow-up${followUpAttentionCount === 1 ? "" : "s"} due now.`,
+          href: "/clients" as Route,
+          icon: <Reply className="size-4" />,
+          tone: "violet" as ToneKey,
+        }
+      : {
+          label: "Advance lead supply",
+          detail: `${adequateToday}/${intakeCap} adequate leads captured today.`,
+          href: "/vault" as Route,
+          icon: <RouteIcon className="size-4" />,
+          tone: "emerald" as ToneKey,
+        },
+  ];
 
   return (
     <div className="mx-auto flex max-w-[1440px] flex-col gap-5">
@@ -564,9 +631,9 @@ export default async function DashboardPage() {
             <span className="v2-dot text-emerald-400" />
             Autonomous Pipeline · live
           </span>
-          <h1 className="mt-2 text-[34px] font-semibold tracking-[-0.025em] text-white">Dashboard</h1>
+          <h1 className="mt-2 text-[34px] font-semibold tracking-[-0.025em] text-white">Command center</h1>
           <p className="mt-1 text-sm text-zinc-400">
-            Autonomous pipeline monitoring and command center.
+            Live operating surface for intake, enrichment, sending, replies, and revenue movement.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -581,6 +648,23 @@ export default async function DashboardPage() {
           </div>
         </div>
       </header>
+
+      <ControlRoomHero
+        mode={operatingMode}
+        hasRisk={riskItems.length > 0}
+        risks={riskItems}
+        sentToday={sendsToday.total}
+        sendCap={globalSendCap}
+        sendCapacityRemaining={sendCapacityRemaining}
+        adequateToday={adequateToday}
+        intakeCap={intakeCap}
+        queued={automation.engine.queuedCount}
+        waiting={automation.engine.waitingCount}
+        blocked={automation.engine.blockedCount}
+        nextSendAt={automation.engine.nextSendAt}
+        nextTarget={nextTarget ? `${nextTarget.niche} in ${nextTarget.city}` : "No active target"}
+        runbookItems={runbookItems}
+      />
 
       {/* Quick Actions */}
       <QuickActions />
@@ -834,6 +918,185 @@ export default async function DashboardPage() {
 
       {/* Follow-Ups panel */}
       <FollowUpsPanel data={followUps} />
+    </div>
+  );
+}
+
+function ControlRoomHero({
+  mode,
+  hasRisk,
+  risks,
+  sentToday,
+  sendCap,
+  sendCapacityRemaining,
+  adequateToday,
+  intakeCap,
+  queued,
+  waiting,
+  blocked,
+  nextSendAt,
+  nextTarget,
+  runbookItems,
+}: {
+  mode: string;
+  hasRisk: boolean;
+  risks: string[];
+  sentToday: number;
+  sendCap: number;
+  sendCapacityRemaining: number;
+  adequateToday: number;
+  intakeCap: number;
+  queued: number;
+  waiting: number;
+  blocked: number;
+  nextSendAt: Date | string | null;
+  nextTarget: string;
+  runbookItems: Array<{
+    label: string;
+    detail: string;
+    href: Route;
+    icon: ReactNode;
+    tone: ToneKey;
+  }>;
+}) {
+  const statusTone = hasRisk
+    ? "border-amber-400/30 bg-amber-400/[0.07] text-amber-100"
+    : "border-emerald-400/30 bg-emerald-400/[0.08] text-emerald-100";
+  const sendPct = Math.min(100, (sentToday / Math.max(1, sendCap)) * 100);
+  const intakePct = Math.min(100, (adequateToday / Math.max(1, intakeCap)) * 100);
+
+  return (
+    <section className="v2-card overflow-hidden">
+      <div className="grid gap-0 xl:grid-cols-[minmax(0,1.1fr)_minmax(420px,0.9fr)]">
+        <div className="border-b border-white/[0.06] p-5 xl:border-b-0 xl:border-r">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
+              <span className={`inline-flex items-center gap-2 rounded-md border px-2.5 py-1 text-xs font-semibold ${statusTone}`}>
+                {hasRisk ? <ShieldAlert className="size-3.5" /> : <Zap className="size-3.5" />}
+                {mode}
+              </span>
+              <h2 className="mt-4 max-w-3xl text-2xl font-semibold tracking-[-0.02em] text-white md:text-3xl">
+                {hasRisk ? "Pipeline needs operator attention" : "Pipeline is ready to keep moving"}
+              </h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">
+                {hasRisk
+                  ? risks.join(". ")
+                  : "Lead capture, sequencing, reply handling, and CRM movement are available from this surface."}
+              </p>
+            </div>
+            <div className="grid min-w-[240px] grid-cols-2 gap-2">
+              <HeroMetric label="Send capacity" value={sendCapacityRemaining} suffix="left" tone="cyan" />
+              <HeroMetric label="Queue load" value={queued + waiting + blocked} suffix="steps" tone={blocked > 0 ? "amber" : "emerald"} />
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 md:grid-cols-3">
+            <ProgressTile
+              icon={<Send className="size-4" />}
+              label="Sends today"
+              value={`${sentToday}/${sendCap}`}
+              pct={sendPct}
+              tone="cyan"
+            />
+            <ProgressTile
+              icon={<Target className="size-4" />}
+              label="Adequate leads"
+              value={`${adequateToday}/${intakeCap}`}
+              pct={intakePct}
+              tone="emerald"
+            />
+            <div className="v2-tile flex flex-col justify-between p-4">
+              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                <Clock3 className="size-4" />
+                Next send
+              </div>
+              <div className="mt-3 text-sm font-semibold text-white">{relativeAgo(nextSendAt)}</div>
+              <div className="mt-1 truncate text-xs text-zinc-500">{nextTarget}</div>
+            </div>
+          </div>
+        </div>
+
+        <aside className="p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-white">Operator runbook</div>
+              <div className="mt-0.5 text-xs text-zinc-500">Highest-value next moves</div>
+            </div>
+            <span className="rounded-md border border-white/[0.08] bg-black/20 px-2 py-1 font-mono text-[10px] text-zinc-500">
+              live
+            </span>
+          </div>
+          <div className="mt-4 space-y-2">
+            {runbookItems.map((item) => (
+              <Link
+                key={item.label}
+                href={item.href}
+                className="group flex min-h-16 items-center gap-3 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3 transition hover:border-white/[0.14] hover:bg-white/[0.045]"
+              >
+                <span className={`grid size-9 shrink-0 place-items-center rounded-md border ${TONE[item.tone].border} ${TONE[item.tone].bg} ${TONE[item.tone].text}`}>
+                  {item.icon}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold text-zinc-100">{item.label}</span>
+                  <span className="mt-0.5 block text-xs leading-5 text-zinc-500">{item.detail}</span>
+                </span>
+                <ArrowRight className="size-4 shrink-0 text-zinc-600 transition group-hover:translate-x-0.5 group-hover:text-zinc-300" />
+              </Link>
+            ))}
+          </div>
+        </aside>
+      </div>
+    </section>
+  );
+}
+
+function HeroMetric({
+  label,
+  value,
+  suffix,
+  tone,
+}: {
+  label: string;
+  value: number;
+  suffix: string;
+  tone: ToneKey;
+}) {
+  return (
+    <div className="v2-tile p-3">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">{label}</div>
+      <div className={`mt-1 font-mono text-2xl font-semibold tabular-nums ${TONE[tone].text}`}>
+        {value.toLocaleString()}
+      </div>
+      <div className="text-[10px] text-zinc-600">{suffix}</div>
+    </div>
+  );
+}
+
+function ProgressTile({
+  icon,
+  label,
+  value,
+  pct,
+  tone,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+  pct: number;
+  tone: ToneKey;
+}) {
+  return (
+    <div className="v2-tile p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+          <span className={TONE[tone].text}>{icon}</span>
+          {label}
+        </div>
+        <span className="font-mono text-xs text-zinc-300">{value}</span>
+      </div>
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/[0.05]">
+        <div className={`h-full rounded-full ${TONE[tone].bar}`} style={{ width: `${pct}%` }} />
+      </div>
     </div>
   );
 }

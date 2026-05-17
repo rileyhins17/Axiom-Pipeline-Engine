@@ -1104,8 +1104,8 @@ body::after {
   inset: 0;
   z-index: -1;
   background:
-    radial-gradient(ellipse 30% 22% at 8% 22%, rgba(52, 211, 153, 0.07), transparent 60%),
-    radial-gradient(ellipse 26% 22% at 96% 78%, rgba(34, 211, 238, 0.05), transparent 60%);
+    linear-gradient(180deg, rgba(52, 211, 153, 0.035), transparent 22rem),
+    linear-gradient(90deg, rgba(34, 211, 238, 0.025), transparent 36%, rgba(167, 139, 250, 0.018));
   pointer-events: none;
   opacity: 1;
   animation: none;
@@ -1147,13 +1147,13 @@ body::after {
   border: 1px solid var(--v2-border-soft);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.022), rgba(255, 255, 255, 0.006)),
     rgba(10, 17, 26, 0.7);
-  border-radius: 14px;
+  border-radius: 8px;
 }
 
 .app-section-flat {
   border: 1px solid var(--v2-border-soft);
   background: #0a121c;
-  border-radius: 14px;
+  border-radius: 8px;
 }
 
 .app-divider {
@@ -1170,14 +1170,14 @@ body::after {
   border: 1px solid var(--v2-border-soft);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.028), rgba(255, 255, 255, 0.006)),
     rgba(11, 18, 28, 0.72);
-  border-radius: 14px;
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 12px 48px rgba(0, 0, 0, 0.22);
+  border-radius: 8px;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 10px 32px rgba(0, 0, 0, 0.18);
   transition: border-color 200ms ease, box-shadow 200ms ease, transform 200ms ease;
 }
 
 .v2-card:hover {
   border-color: var(--v2-border-strong);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 18px 60px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 14px 40px rgba(0, 0, 0, 0.24);
 }
 
 .v2-card-interactive:hover {
@@ -1187,7 +1187,7 @@ body::after {
 .v2-tile {
   border: 1px solid var(--v2-border-subtle);
   background: rgba(255, 255, 255, 0.022);
-  border-radius: 12px;
+  border-radius: 8px;
   transition: border-color 180ms ease, background 180ms ease;
 }
 
@@ -1281,7 +1281,7 @@ body::after {
   border: 1px solid var(--v2-border-soft);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.026), rgba(255, 255, 255, 0.006)),
     rgba(11, 18, 28, 0.7);
-  border-radius: 14px;
+  border-radius: 8px;
   padding: 18px 18px 16px;
   position: relative;
   overflow: hidden;
@@ -1333,7 +1333,7 @@ body::after {
 .v2-nav-item {
   position: relative;
   border: 1px solid transparent;
-  border-radius: 10px;
+  border-radius: 8px;
   transition: background 180ms ease, border-color 180ms ease, color 180ms ease;
 }
 
@@ -1386,7 +1386,7 @@ body::after {
   .v2-card,
   .v2-stat,
   .v2-tile {
-    border-radius: 12px;
+    border-radius: 8px;
     box-shadow: none;
   }
 

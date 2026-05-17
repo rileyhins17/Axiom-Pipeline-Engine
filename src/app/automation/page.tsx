@@ -1,5 +1,17 @@
 import type { ReactNode } from "react";
-import { BarChart3, Bot, Clock3, Mail, Pause, Play, Reply, TrendingUp } from "lucide-react";
+import {
+  Activity,
+  BarChart3,
+  Bot,
+  CheckCircle2,
+  Clock3,
+  Mail,
+  Pause,
+  Play,
+  Reply,
+  ShieldAlert,
+  TrendingUp,
+} from "lucide-react";
 
 import { AUTOMATION_SETTINGS_DEFAULTS, MAILBOX_DAILY_SEND_TARGET } from "@/lib/automation-policy";
 import { EmergencyControlCard } from "@/components/emergency-control-card";
@@ -228,6 +240,15 @@ function relativeAgo(date: Date | string | null | undefined): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
+function parseRunMetadata(metadata: string | null | undefined) {
+  if (!metadata) return {} as { phase?: string; phaseStatus?: string; error?: string };
+  try {
+    return JSON.parse(metadata) as { phase?: string; phaseStatus?: string; error?: string };
+  } catch {
+    return {} as { phase?: string; phaseStatus?: string; error?: string };
+  }
+}
+
 export default async function AutomationPage() {
   await requireSession();
 
@@ -308,6 +329,8 @@ export default async function AutomationPage() {
           <SchedulerHealthCard compact />
         </div>
       </section>
+
+      <SchedulerRunLedger runs={overview.recentRuns} />
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Stat label="Queued" value={overview.engine.queuedCount} icon={<Clock3 className="size-4" />} tone="cyan" />
@@ -507,6 +530,113 @@ export default async function AutomationPage() {
         Last engine run: {formatAppDateTime(overview.recentRuns?.[0]?.startedAt ?? null, undefined, "—")}.
       </footer>
     </div>
+  );
+}
+
+function SchedulerRunLedger({
+  runs,
+}: {
+  runs: Array<{
+    id: string;
+    startedAt: Date | string;
+    finishedAt: Date | string | null;
+    status: string;
+    claimedCount: number;
+    sentCount: number;
+    failedCount: number;
+    skippedCount: number;
+    metadata: string | null;
+  }>;
+}) {
+  const latest = runs[0] ?? null;
+  const latestMetadata = parseRunMetadata(latest?.metadata);
+  const latestStatus = latest?.status ?? "NO RUN";
+  const statusTone =
+    latestStatus === "FAILED"
+      ? "border-red-400/30 bg-red-500/[0.08] text-red-200"
+      : latestStatus === "RUNNING"
+        ? "border-cyan-400/30 bg-cyan-500/[0.08] text-cyan-200"
+        : latestStatus === "COMPLETED"
+          ? "border-emerald-400/30 bg-emerald-500/[0.08] text-emerald-200"
+          : "border-white/[0.08] bg-white/[0.03] text-zinc-300";
+
+  return (
+    <section className="v2-card overflow-hidden">
+      <header className="flex flex-col gap-3 border-b border-white/[0.06] p-4 md:flex-row md:items-center md:justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <Activity className="size-4 text-cyan-300" />
+            <h2 className="text-sm font-semibold text-white">Scheduler run ledger</h2>
+          </div>
+          <p className="mt-1 text-xs leading-5 text-zinc-500">
+            Cron visibility for lease, pre-run phase, claim, send, and failure states.
+          </p>
+        </div>
+        <span className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-semibold ${statusTone}`}>
+          {latestStatus === "FAILED" ? <ShieldAlert className="size-3.5" /> : <CheckCircle2 className="size-3.5" />}
+          Latest: {latestStatus.toLowerCase()}
+          {latestMetadata.phase ? ` / ${latestMetadata.phase}` : ""}
+        </span>
+      </header>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[760px] text-left text-sm">
+          <thead className="border-b border-white/[0.06] text-[10px] uppercase tracking-[0.16em] text-zinc-500">
+            <tr>
+              <th className="px-4 py-3 font-semibold">Run</th>
+              <th className="px-4 py-3 font-semibold">Status</th>
+              <th className="px-4 py-3 font-semibold">Phase</th>
+              <th className="px-4 py-3 font-semibold">Claimed</th>
+              <th className="px-4 py-3 font-semibold">Sent</th>
+              <th className="px-4 py-3 font-semibold">Failed</th>
+              <th className="px-4 py-3 font-semibold">Skipped</th>
+              <th className="px-4 py-3 font-semibold">Finished</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-white/[0.05]">
+            {runs.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="px-4 py-8 text-center text-xs text-zinc-600">
+                  No scheduler runs recorded yet.
+                </td>
+              </tr>
+            ) : (
+              runs.slice(0, 8).map((run) => {
+                const metadata = parseRunMetadata(run.metadata);
+                const failed = run.status === "FAILED";
+                const running = run.status === "RUNNING";
+                const rowTone = failed
+                  ? "text-red-200"
+                  : running
+                    ? "text-cyan-200"
+                    : "text-zinc-200";
+                return (
+                  <tr key={run.id} className="align-top hover:bg-white/[0.025]">
+                    <td className="px-4 py-3">
+                      <div className="font-mono text-xs text-zinc-300">{String(run.id).slice(0, 8)}</div>
+                      <div className="mt-0.5 text-[11px] text-zinc-600">{relativeAgo(run.startedAt)}</div>
+                    </td>
+                    <td className={`px-4 py-3 font-semibold ${rowTone}`}>{run.status.toLowerCase()}</td>
+                    <td className="px-4 py-3">
+                      <div className="text-xs text-zinc-300">{metadata.phase ?? "send loop"}</div>
+                      {metadata.error ? (
+                        <div className="mt-1 max-w-[260px] truncate text-[11px] text-red-300">{metadata.error}</div>
+                      ) : (
+                        <div className="mt-1 text-[11px] text-zinc-600">{metadata.phaseStatus ?? "complete"}</div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 font-mono tabular-nums text-zinc-300">{run.claimedCount}</td>
+                    <td className="px-4 py-3 font-mono tabular-nums text-emerald-300">{run.sentCount}</td>
+                    <td className="px-4 py-3 font-mono tabular-nums text-red-300">{run.failedCount}</td>
+                    <td className="px-4 py-3 font-mono tabular-nums text-zinc-400">{run.skippedCount}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-zinc-500">{relativeAgo(run.finishedAt)}</td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
