@@ -2,6 +2,24 @@ import {
   generateSequenceStepEmail,
   type OutreachSequenceStepType,
 } from "@/lib/outreach-email-generator";
+
+// Re-export state machine types and error classes from the extracted module
+// so existing consumers can import from either location.
+export type {
+  AutomationCanonicalState as AutomationCanonicalStateExported,
+  AutomationBlockerReason as AutomationBlockerReasonExported,
+} from "@/lib/scheduler-state";
+export {
+  AutomationSkipError as AutomationSkipErrorExported,
+  AutomationRetryableSendError as AutomationRetryableSendErrorExported,
+  AutomationStoppedError as AutomationStoppedErrorExported,
+  classifySendFailure as classifySendFailureExported,
+  getBlockerMeta as getBlockerMetaExported,
+  getPrimaryBlocker as getPrimaryBlockerExported,
+  isTerminalSendBlocker as isTerminalSendBlockerExported,
+  normalizeBlockerReason as normalizeBlockerReasonExported,
+  TRANSIENT_BLOCKER_REASONS as TRANSIENT_BLOCKER_REASONS_EXPORTED,
+} from "@/lib/scheduler-state";
 import { getValidAccessToken, getGmailThreadMetadata, normalizeGmailAddress, sendGmailEmail, searchGmailMessages, getGmailMessageMetadata } from "@/lib/gmail";
 import {
   AUTOMATION_SETTINGS_DEFAULTS,
@@ -2191,10 +2209,13 @@ export async function queueLeadsForAutomation(input: {
       },
     });
 
+    const stepIds: string[] = [];
     for (let index = 0; index < timeline.length; index++) {
+      const stepId = crypto.randomUUID();
+      stepIds.push(stepId);
       await prisma.outreachSequenceStep.create({
         data: {
-          id: crypto.randomUUID(),
+          id: stepId,
           sequenceId: sequence.id,
           stepNumber: index + 1,
           stepType: getStepType(index + 1),
@@ -2203,6 +2224,31 @@ export async function queueLeadsForAutomation(input: {
           updatedAt: now,
         },
       });
+    }
+
+    // Pre-generate the initial email at queue time so send-time doesn't depend
+    // on DeepSeek availability. Non-fatal — send-time will generate on-demand.
+    if (stepIds.length > 0 && lead.enrichmentData) {
+      try {
+        const senderName = getSenderName(allocation.mailbox);
+        const pregenEmail = await generateSequenceStepEmail(
+          lead,
+          config.enrichmentSnapshot as Parameters<typeof generateSequenceStepEmail>[1],
+          senderName,
+          "INITIAL" as OutreachSequenceStepType,
+        );
+        await prisma.outreachSequenceStep.update({
+          where: { id: stepIds[0] },
+          data: {
+            subject: pregenEmail.subject,
+            bodyHtml: pregenEmail.bodyHtml,
+            bodyPlain: pregenEmail.bodyPlain,
+            generationModel: "deepseek-chat-pregen",
+          },
+        });
+      } catch (pregenError) {
+        console.warn(`[automation] Pre-generation failed for lead ${lead.id} (non-fatal):`, pregenError);
+      }
     }
 
     result.queued.push({
@@ -3175,11 +3221,18 @@ function classifySendFailure(error: unknown) {
     return { kind: "blocked" as const, reason: "mailbox_disconnected" as AutomationBlockerReason };
   }
 
+  // Gmail 429 / rate limit: trigger per-mailbox backpressure cooldown
+  if (
+    message.includes("rate limit") ||
+    message.includes("too many requests") ||
+    message.includes("429")
+  ) {
+    return { kind: "rate_limited" as const, reason: "mailbox_cooldown" as AutomationBlockerReason };
+  }
+
   if (
     message.includes("timeout") ||
     message.includes("abort") ||
-    message.includes("rate limit") ||
-    message.includes("too many requests") ||
     message.includes("temporar") ||
     message.includes("network")
   ) {
@@ -3532,6 +3585,16 @@ async function sendScheduledStep(
 
   const senderName = getSenderName(claim.mailbox);
   let email: Awaited<ReturnType<typeof generateSequenceStepEmail>>;
+
+  // Use pre-generated email if available (cached at queue time for initial touch)
+  const hasPregeneratedEmail = claim.step.subject && claim.step.bodyHtml && claim.step.bodyPlain;
+  if (hasPregeneratedEmail) {
+    email = {
+      subject: claim.step.subject!,
+      bodyHtml: claim.step.bodyHtml!,
+      bodyPlain: claim.step.bodyPlain!,
+    };
+  } else {
   try {
     email = await generateSequenceStepEmail(
       context.lead,
@@ -3546,7 +3609,22 @@ async function sendScheduledStep(
           }
         : undefined,
     );
-  } catch {
+  } catch (genError) {
+    const latestGenStep = await prisma.outreachSequenceStep.findUnique({
+      where: { id: claim.step.id },
+    }) as OutreachSequenceStepRecord | null;
+    const genAttemptCount = latestGenStep?.attemptCount || claim.step.attemptCount || 0;
+
+    // After 2+ failed generation attempts, the LLM is likely down.
+    // generateSequenceStepEmail already has built-in plan-based fallback
+    // templates — the throw above means the fallback itself failed, which
+    // is extremely rare. Retry once, then block to avoid infinite loops.
+    if (genAttemptCount >= 2) {
+      console.warn(`[scheduler] Generation failed ${genAttemptCount}x for step ${claim.step.id} — blocking sequence`);
+      await setSequenceBlocked(prisma, claim, "generation_failed_retryable");
+      throw new AutomationRetryableSendError("generation_failed_retryable");
+    }
+
     await prisma.outreachSequenceStep.update({
       where: { id: claim.step.id },
       data: {
@@ -3558,6 +3636,18 @@ async function sendScheduledStep(
     });
     throw new AutomationRetryableSendError("generation_failed_retryable");
   }
+  } // close else block for pre-generated email check
+
+  // Persist generated content in the task queue so a crashed worker
+  // doesn't lose the generation work. The next tick can resume from here.
+  const { advanceTaskPhase: _advancePhase } = await import("@/lib/scheduler-queue");
+  await _advancePhase(claim.step.id, "GENERATED", {
+    generatedSubject: email.subject,
+    generatedBodyHtml: email.bodyHtml,
+    generatedBodyPlain: email.bodyPlain,
+  }).catch(() => null);
+
+  await _advancePhase(claim.step.id, "SENDING").catch(() => null);
 
   let sendResult: Awaited<ReturnType<typeof sendGmailEmail>>;
   try {
@@ -3573,6 +3663,9 @@ async function sendScheduledStep(
     });
   } catch (error) {
     const classification = classifySendFailure(error);
+    if (classification.kind === "rate_limited") {
+      throw new AutomationRetryableSendError(classification.reason);
+    }
     if (classification.kind === "retryable") {
       throw new AutomationRetryableSendError(classification.reason);
     }
@@ -3620,6 +3713,8 @@ async function sendScheduledStep(
       claimedByRunId: runId,
     },
   });
+
+  await _advancePhase(claim.step.id, "COMPLETED").catch(() => null);
 
   const nextStep = await prisma.outreachSequenceStep.findFirst({
     where: {
@@ -3880,6 +3975,42 @@ export async function forceResetAllBlockedState(prisma: PrismaLike) {
       });
       result.sequences += updated.count;
     }
+  }
+
+  return result;
+}
+
+export async function cleanupOrphanedRecords(prisma: PrismaLike) {
+  const { getDatabase } = await import("@/lib/cloudflare");
+  const db = getDatabase();
+  const result = { orphanedSteps: 0, orphanedEmails: 0 };
+
+  // Clean up sequence steps whose parent sequence no longer exists
+  const orphanSteps = await db
+    .prepare(
+      `UPDATE "OutreachSequenceStep"
+       SET "status" = 'SKIPPED', "errorMessage" = 'orphaned_sequence_deleted'
+       WHERE "status" IN ('SCHEDULED', 'CLAIMED', 'SENDING')
+         AND "sequenceId" NOT IN (SELECT "id" FROM "OutreachSequence")`,
+    )
+    .run()
+    .catch(() => ({ meta: { changes: 0 } }));
+  result.orphanedSteps = orphanSteps.meta?.changes ?? 0;
+
+  // Clean up outreach emails referencing non-existent leads
+  const orphanEmails = await db
+    .prepare(
+      `UPDATE "OutreachEmail"
+       SET "status" = 'orphaned'
+       WHERE "status" = 'draft'
+         AND "leadId" NOT IN (SELECT "id" FROM "Lead")`,
+    )
+    .run()
+    .catch(() => ({ meta: { changes: 0 } }));
+  result.orphanedEmails = orphanEmails.meta?.changes ?? 0;
+
+  if (result.orphanedSteps > 0 || result.orphanedEmails > 0) {
+    console.log(`[scheduler] Orphan cleanup: ${result.orphanedSteps} steps, ${result.orphanedEmails} emails`);
   }
 
   return result;
@@ -4157,6 +4288,9 @@ async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: numbe
   // Track mailboxes that are known to be rate-limited this tick so we
   // can skip remaining steps for them without redundant DB queries.
   const blockedMailboxIds = new Set<string>();
+  // Track sequences that already have a claimed step this tick to prevent
+  // two concurrent ticks from claiming different steps of the same sequence.
+  const claimedSequenceIds = new Set<string>();
   // Collect all sendable mailbox IDs so we can early-exit when every
   // mailbox is blocked (prevents O(N) rescheduling from burning CPU).
   const sendableMailboxIds = new Set(
@@ -4181,6 +4315,26 @@ async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: numbe
       where: { id: step.sequenceId },
     }) as OutreachSequenceRecord | null;
     if (!sequence || !sequence.assignedMailboxId) {
+      continue;
+    }
+
+    // Prevent claiming multiple steps from the same sequence in one tick.
+    // This closes a race where two concurrent ticks claim different steps.
+    if (claimedSequenceIds.has(sequence.id)) {
+      continue;
+    }
+
+    // Also check if any step for this sequence is already claimed by another run.
+    const existingClaim = await prisma.outreachSequenceStep.findFirst({
+      where: {
+        sequenceId: sequence.id,
+        status: { in: ["CLAIMED", "SENDING"] },
+        id: { not: step.id },
+      },
+      select: { id: true },
+    });
+    if (existingClaim) {
+      claimedSequenceIds.add(sequence.id);
       continue;
     }
 
@@ -4302,6 +4456,7 @@ async function claimDueSteps(prisma: PrismaLike, runId: string, batchSize: numbe
     const updated = { ...step, status: "CLAIMED" as const, claimedAt: now, claimedByRunId: runId };
     claims.push({ sequence, step: updated, mailbox });
     mailboxClaimCounts.set(mailbox.id, currentMailboxClaims + 1);
+    claimedSequenceIds.add(sequence.id);
     if (updated.stepNumber === 1) {
       claimDiagnostics.claimedInitialCount += 1;
     } else {
@@ -4338,12 +4493,15 @@ async function acquireSchedulerLease(holder: string, ttlMs = SCHEDULER_LEASE_TTL
   const now = new Date();
   const expiresAt = new Date(now.getTime() + ttlMs);
   const db = getDatabase();
+
+  // Atomic compare-and-swap: only acquire if no holder owns it OR the lease expired.
+  // The WHERE clause ensures two concurrent workers cannot both succeed.
   const update = await db
     .prepare(
       `UPDATE "SchedulerLease"
        SET "holder" = ?, "expiresAt" = ?, "acquiredAt" = ?, "updatedAt" = ?
        WHERE "id" = 'outreach-automation'
-         AND datetime("expiresAt") <= datetime(?)`,
+         AND ("holder" IS NULL OR datetime("expiresAt") <= datetime(?))`,
     )
     .bind(holder, expiresAt.toISOString(), now.toISOString(), now.toISOString(), now.toISOString())
     .run();
@@ -4352,6 +4510,7 @@ async function acquireSchedulerLease(holder: string, ttlMs = SCHEDULER_LEASE_TTL
     return true;
   }
 
+  // First-time creation: INSERT OR IGNORE ensures only one row can ever exist.
   const insert = await db
     .prepare(
       `INSERT OR IGNORE INTO "SchedulerLease" ("id", "holder", "expiresAt", "acquiredAt", "updatedAt")
@@ -4766,6 +4925,48 @@ async function runAutomationSchedulerUnlocked(options: { immediate?: boolean; on
       }
 
       const { recordSendDecision } = await import("@/lib/send-decisions");
+      const {
+        createSchedulerTask,
+        advanceTaskPhase,
+        getIncompleteTasksFromPriorRuns,
+        failStaleTasks,
+        cleanupCompletedTasks,
+      } = await import("@/lib/scheduler-queue");
+
+      // Recover stale tasks from prior ticks that died mid-processing.
+      const recoveredStaleTasks = await failStaleTasks(10).catch(() => 0);
+      if (recoveredStaleTasks > 0) {
+        console.log(`[scheduler] Recovered ${recoveredStaleTasks} stale task queue entries`);
+      }
+
+      // Resume incomplete tasks from prior runs that have pre-generated content.
+      const priorTasks = await getIncompleteTasksFromPriorRuns(run.id).catch(() => []);
+      for (const task of priorTasks) {
+        if (task.phase === "GENERATED" && task.generatedSubject) {
+          // This task generated content but died before sending. Inject the
+          // generated content into the step so sendScheduledStep picks it up.
+          await prisma.outreachSequenceStep.update({
+            where: { id: task.stepId },
+            data: {
+              subject: task.generatedSubject,
+              bodyHtml: task.generatedBodyHtml,
+              bodyPlain: task.generatedBodyPlain,
+            },
+          }).catch(() => null);
+          console.log(`[scheduler] Resumed pre-generated content for step ${task.stepId} from prior task ${task.id}`);
+        }
+        // Mark recovered — these steps will be re-claimed if still due.
+        await advanceTaskPhase(task.stepId, "FAILED", {
+          errorMessage: "recovered_by_next_run",
+        }).catch(() => null);
+      }
+
+      // Create task queue entries for all newly claimed steps.
+      await Promise.allSettled(
+        claims.map((claim) =>
+          createSchedulerTask(claim.step.id, claim.sequence.id, claim.mailbox.id, run.id),
+        ),
+      );
 
       for (const claim of claims) {
         const decisionLead = await prisma.lead.findUnique({
@@ -4795,6 +4996,7 @@ async function runAutomationSchedulerUnlocked(options: { immediate?: boolean; on
             `send step ${claim.step.id}`,
           );
           sentCount += 1;
+          await advanceTaskPhase(claim.step.id, "COMPLETED").catch(() => null);
           await recordSendDecision({
             ...baseDecision,
             decision: "SENT",
@@ -4804,6 +5006,7 @@ async function runAutomationSchedulerUnlocked(options: { immediate?: boolean; on
         } catch (error) {
           if (error instanceof AutomationSkipError) {
             skippedCount += 1;
+            await advanceTaskPhase(claim.step.id, "FAILED", { errorMessage: error.reason }).catch(() => null);
             if (error.reason === "mailbox_disconnected") {
               await markMailboxDisconnected(prisma, claim.mailbox.id);
             }
@@ -4826,6 +5029,7 @@ async function runAutomationSchedulerUnlocked(options: { immediate?: boolean; on
 
           if (error instanceof AutomationStoppedError) {
             skippedCount += 1;
+            await advanceTaskPhase(claim.step.id, "FAILED", { errorMessage: error.reason }).catch(() => null);
             await recordSendDecision({
               ...baseDecision,
               decision: "SKIPPED",
@@ -4836,6 +5040,7 @@ async function runAutomationSchedulerUnlocked(options: { immediate?: boolean; on
 
           if (error instanceof AutomationRetryableSendError) {
             failedCount += 1;
+            await advanceTaskPhase(claim.step.id, "FAILED", { errorMessage: error.reason }).catch(() => null);
             const latestStep = await prisma.outreachSequenceStep.findUnique({
               where: { id: claim.step.id },
             }) as OutreachSequenceStepRecord | null;
@@ -4851,6 +5056,22 @@ async function runAutomationSchedulerUnlocked(options: { immediate?: boolean; on
           }
 
           const classification = classifySendFailure(error);
+          await advanceTaskPhase(claim.step.id, "FAILED", { errorMessage: classification.reason }).catch(() => null);
+
+          // Gmail 429 backpressure: pause the mailbox for 15 minutes instead of
+          // burning retries. This prevents cascading rate-limit failures.
+          if (classification.kind === "rate_limited") {
+            failedCount += 1;
+            const cooldownUntil = addMinutes(new Date(), 15);
+            await prisma.outreachMailbox.update({
+              where: { id: claim.mailbox.id },
+              data: { lastSentAt: cooldownUntil, updatedAt: new Date() },
+            }).catch(() => null);
+            await rescheduleClaimStep(prisma, claim, 15, classification.reason);
+            console.warn(`[scheduler] Gmail 429 for mailbox ${claim.mailbox.gmailAddress} — backpressure cooldown 15min`);
+            continue;
+          }
+
           if (classification.kind === "retryable") {
             failedCount += 1;
             const latestStep = await prisma.outreachSequenceStep.findUnique({
@@ -4955,6 +5176,28 @@ async function runAutomationSchedulerUnlocked(options: { immediate?: boolean; on
         );
       } catch (bounceError) {
         console.error("[scheduler] Bounce sync error (non-fatal):", bounceError);
+      }
+
+      // Periodic orphan cleanup — runs every scheduler tick but only touches
+      // records that are genuinely orphaned (no parent sequence/lead).
+      try {
+        await withSchedulerTimeout(
+          cleanupOrphanedRecords(prisma),
+          15_000,
+          "orphan cleanup",
+        );
+      } catch (orphanError) {
+        console.error("[scheduler] Orphan cleanup error (non-fatal):", orphanError);
+      }
+
+      // Purge completed/failed task queue entries older than 1 hour.
+      try {
+        const purged = await cleanupCompletedTasks(60);
+        if (purged > 0) {
+          console.log(`[scheduler] Purged ${purged} completed task queue entries`);
+        }
+      } catch (taskCleanupError) {
+        console.error("[scheduler] Task queue cleanup error (non-fatal):", taskCleanupError);
       }
 
       await prisma.outreachRun.update({

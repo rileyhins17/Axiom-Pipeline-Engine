@@ -122,6 +122,12 @@ export interface ScrapeLeadWriteInput {
   emailType: string;
   enrichedAt?: Date | string | null;
   enrichmentData?: string | null;
+  enrichmentValueProp?: string | null;
+  enrichmentPitchAngle?: string | null;
+  enrichmentKeyPainPoint?: string | null;
+  enrichmentEmailTone?: string | null;
+  enrichmentPersonalizedHook?: string | null;
+  enrichmentRecommendedCTA?: string | null;
   followUpQuestion: string;
   isArchived: boolean;
   lastUpdated: Date;

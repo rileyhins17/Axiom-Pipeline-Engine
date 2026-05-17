@@ -53,8 +53,21 @@ export type RepairResult = {
 };
 
 const STALE_SCHEDULER_MINUTES = 2;
+const HEALTH_CACHE_TTL_MS = 30_000;
+let healthCache: { data: SchedulerHealthData; expiresAt: number } | null = null;
 
 async function getHealthDiagnostics(): Promise<SchedulerHealthData> {
+  const now = Date.now();
+  if (healthCache && healthCache.expiresAt > now) {
+    return healthCache.data;
+  }
+
+  const data = await getHealthDiagnosticsUncached();
+  healthCache = { data, expiresAt: now + HEALTH_CACHE_TTL_MS };
+  return data;
+}
+
+async function getHealthDiagnosticsUncached(): Promise<SchedulerHealthData> {
   const db = getDatabase();
   const settings = await getAutomationSettings();
 
@@ -266,6 +279,8 @@ export async function POST(request: Request) {
     return authResult.response;
   }
 
+  // Invalidate health cache on any mutation
+  healthCache = null;
   const body = await request.json().catch(() => ({})) as { action?: string };
 
   if (body.action === "trigger") {

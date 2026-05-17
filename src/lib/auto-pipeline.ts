@@ -151,6 +151,13 @@ async function autoEnrich(
           enrichedAt: new Date(),
           enrichmentData: JSON.stringify(result),
           outreachStatus: READY_FOR_FIRST_TOUCH_STATUS,
+          // Normalized enrichment columns for direct querying
+          enrichmentValueProp: result.valueProposition || null,
+          enrichmentPitchAngle: result.pitchAngle || null,
+          enrichmentKeyPainPoint: result.keyPainPoint || null,
+          enrichmentEmailTone: result.emailTone || null,
+          enrichmentPersonalizedHook: result.personalizedHook || null,
+          enrichmentRecommendedCTA: result.recommendedCTA || null,
         },
       });
       enriched++;

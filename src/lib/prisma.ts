@@ -84,6 +84,12 @@ export type LeadRecord = {
   outreachNotes: string | null;
   enrichedAt: Date | null;
   enrichmentData: string | null;
+  enrichmentValueProp?: string | null;
+  enrichmentPitchAngle?: string | null;
+  enrichmentKeyPainPoint?: string | null;
+  enrichmentEmailTone?: string | null;
+  enrichmentPersonalizedHook?: string | null;
+  enrichmentRecommendedCTA?: string | null;
   source: string | null;
   isArchived: boolean;
   createdAt: Date;
@@ -541,6 +547,12 @@ const leadTable: TableSpec<LeadRecord> = {
     "outreachNotes",
     "enrichedAt",
     "enrichmentData",
+    "enrichmentValueProp",
+    "enrichmentPitchAngle",
+    "enrichmentKeyPainPoint",
+    "enrichmentEmailTone",
+    "enrichmentPersonalizedHook",
+    "enrichmentRecommendedCTA",
     "source",
     "isArchived",
     "createdAt",
@@ -600,6 +612,12 @@ const leadTable: TableSpec<LeadRecord> = {
     "outreachChannel",
     "outreachNotes",
     "enrichmentData",
+    "enrichmentValueProp",
+    "enrichmentPitchAngle",
+    "enrichmentKeyPainPoint",
+    "enrichmentEmailTone",
+    "enrichmentPersonalizedHook",
+    "enrichmentRecommendedCTA",
     "source",
     "dealStage",
     "engagementType",
