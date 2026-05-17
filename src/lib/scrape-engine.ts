@@ -1491,6 +1491,10 @@ async function collectTargets(
     let lastListings: MapsListing[] = [];
     let scrollAttempts = 0;
     let stableScrollAttempts = 0;
+    const scrollStartTime = Date.now();
+    // Adaptive timeout: abort scrolling if we've spent > 60s without new listings
+    const ADAPTIVE_SCROLL_STALL_MS = 60_000;
+    let lastNewListingTime = Date.now();
     while (scrollAttempts < maxDepth) {
       if (shouldAbort?.()) {
         throw new ScrapeCanceledError("Scrape canceled during Maps extraction.");
@@ -1554,6 +1558,9 @@ async function collectTargets(
 
       const currentListings = normalizeMapsListings(scrollState.listings || []);
       if (currentListings.length >= lastListings.length) {
+        if (currentListings.length > lastListings.length) {
+          lastNewListingTime = Date.now();
+        }
         lastListings = currentListings;
       }
 
@@ -1562,6 +1569,12 @@ async function collectTargets(
         if (stableScrollAttempts >= 2) break;
       } else {
         stableScrollAttempts = 0;
+      }
+
+      // Adaptive timeout: if no new listings for 60s, Maps is likely exhausted
+      if (Date.now() - lastNewListingTime > ADAPTIVE_SCROLL_STALL_MS) {
+        await sendEvent({ message: `[MAPS] Adaptive timeout: no new listings for ${Math.round(ADAPTIVE_SCROLL_STALL_MS / 1000)}s — stopping scroll` });
+        break;
       }
 
       lastHeight = Math.max(lastHeight, scrollState.height);
@@ -1684,6 +1697,24 @@ async function collectTargets(
           reviewCount,
           website: normalizeWebsiteUrl(result.website),
         });
+      }
+
+      // Incremental quality gate: check every 10 targets for extraction drift.
+      // Catches bad scrapes early instead of waiting for the full job to finish.
+      if (targets.length >= 10 && targets.length % 10 < chunkSize) {
+        const incrementalQuality = evaluateScrapeExtractionQuality({
+          targetsFound: targets.length,
+          targetsWithCategory: targets.filter((t) => Boolean(t.category)).length,
+          targetsWithPhone: targets.filter((t) => Boolean(t.phone)).length,
+          targetsWithRatingReviews: targets.filter((t) => t.rating > 0 || t.reviewCount > 0).length,
+          targetsWithWebsite: targets.filter((t) => Boolean(t.website)).length,
+        });
+        if (incrementalQuality.shouldFailJob) {
+          await sendEvent({
+            message: `[QUALITY] Incremental quality gate CRITICAL at ${targets.length} targets — aborting early`,
+          });
+          throw new ScrapeQualityGateError(incrementalQuality);
+        }
       }
     }
 
@@ -2220,6 +2251,12 @@ export async function executeScrapeJob(input: ExecuteScrapeJobInput): Promise<Ex
         emailType: contactValidation.emailType,
         enrichedAt: new Date(),
         enrichmentData: JSON.stringify(preVaultEnrichment),
+        enrichmentValueProp: preVaultEnrichment.valueProposition || null,
+        enrichmentPitchAngle: preVaultEnrichment.pitchAngle || null,
+        enrichmentKeyPainPoint: preVaultEnrichment.keyPainPoint || null,
+        enrichmentEmailTone: preVaultEnrichment.emailTone || null,
+        enrichmentPersonalizedHook: preVaultEnrichment.personalizedHook || null,
+        enrichmentRecommendedCTA: preVaultEnrichment.recommendedCTA || null,
         followUpQuestion: personalization.followUpQuestion,
         isArchived,
         lastUpdated: new Date(),

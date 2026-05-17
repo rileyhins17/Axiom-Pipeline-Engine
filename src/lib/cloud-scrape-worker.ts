@@ -328,6 +328,31 @@ async function runClaimedJob(job: ScrapeJobRecord, existingDedupeKeys: string[])
           }).catch(() => undefined);
         }
       }
+      // Quarantine leads ingested from this failed quality-gate job so they
+      // don't enter outreach before a human reviews the scrape quality.
+      if (qualityGateError) {
+        const { getDatabase: _getDb } = await import("@/lib/cloudflare");
+        await _getDb()
+          .prepare(
+            `UPDATE "Lead"
+             SET "outreachStatus" = 'QUARANTINED',
+                 "disqualificationReason" = 'scrape_quality_gate_failed'
+             WHERE "scrapeJobId" = ?
+               AND "outreachStatus" NOT IN ('OUTREACHED', 'REPLIED', 'BOUNCED')`,
+          )
+          .bind(job.id)
+          .run()
+          .then((r) => {
+            const count = r.meta?.changes ?? 0;
+            if (count > 0) {
+              console.log(`[cloud-scrape] Quarantined ${count} leads from failed QG job ${job.id}`);
+            }
+          })
+          .catch((qErr) => {
+            console.error(`[cloud-scrape] Failed to quarantine leads for ${job.id}:`, qErr);
+          });
+      }
+
       if (isTransientCloudBrowserError(message)) {
         await appendScrapeJobEvent(job.id, "error", {
           error: message,
