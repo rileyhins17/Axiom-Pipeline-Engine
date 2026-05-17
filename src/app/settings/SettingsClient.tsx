@@ -117,30 +117,30 @@ export function SettingsClient({
       </header>
 
       <Tabs defaultValue="profile">
-        <TabsList className="w-full justify-start overflow-x-auto">
-          <TabsTrigger value="profile">
-            <UserIcon className="size-3.5" />
+        <TabsList className="w-full justify-start overflow-x-auto" aria-label="Settings sections">
+          <TabsTrigger value="profile" title="Your account and password">
+            <UserIcon className="size-3.5" aria-hidden="true" />
             Profile
           </TabsTrigger>
-          <TabsTrigger value="mailboxes">
-            <Mail className="size-3.5" />
+          <TabsTrigger value="mailboxes" title="Sender mailbox connections and limits">
+            <Mail className="size-3.5" aria-hidden="true" />
             Mailboxes
           </TabsTrigger>
           {isAdmin && (
-            <TabsTrigger value="system">
-              <Monitor className="size-3.5" />
+            <TabsTrigger value="system" title="Runtime posture and scrape engine">
+              <Monitor className="size-3.5" aria-hidden="true" />
               System
             </TabsTrigger>
           )}
           {isAdmin && (
-            <TabsTrigger value="users">
-              <UsersIcon className="size-3.5" />
+            <TabsTrigger value="users" title="Manage team access">
+              <UsersIcon className="size-3.5" aria-hidden="true" />
               Users
             </TabsTrigger>
           )}
           {isAdmin && (
-            <TabsTrigger value="security">
-              <ShieldCheck className="size-3.5" />
+            <TabsTrigger value="security" title="Emergency stop and audit controls">
+              <ShieldCheck className="size-3.5" aria-hidden="true" />
               Security
             </TabsTrigger>
           )}
@@ -281,17 +281,25 @@ function DeepSeekBalance({ balance }: { balance: RuntimeStatus["deepSeekBalance"
 }
 
 function MailboxRow({ mailbox }: { mailbox: MailboxStatus }) {
+  const statusLabel = mailbox.connected
+    ? `Connected · ${mailbox.status?.toLowerCase() ?? "warming"}`
+    : "Not connected";
   return (
-    <div className="v2-tile flex flex-col gap-4 p-4 transition hover:border-white/[0.12] sm:flex-row sm:items-center sm:justify-between">
+    <div
+      className="v2-tile flex flex-col gap-4 p-4 transition hover:border-white/[0.12] sm:flex-row sm:items-center sm:justify-between"
+      role="group"
+      aria-label={`Mailbox ${mailbox.email} — ${statusLabel}`}
+    >
       <div className="flex min-w-0 items-center gap-3">
-        <div className={`flex h-10 w-10 items-center justify-center rounded-lg border ${mailbox.connected ? "border-emerald-400/30 bg-emerald-400/[0.08]" : "border-zinc-700 bg-black/30"}`}>
+        <div
+          className={`flex h-10 w-10 items-center justify-center rounded-lg border ${mailbox.connected ? "border-emerald-400/30 bg-emerald-400/[0.08]" : "border-zinc-700 bg-black/30"}`}
+          aria-hidden="true"
+        >
           {mailbox.connected ? <CheckCircle2 className="h-4 w-4 text-emerald-300" /> : <XCircle className="h-4 w-4 text-zinc-500" />}
         </div>
         <div className="min-w-0">
           <div className="truncate font-mono text-sm text-white">{mailbox.email}</div>
-          <div className="mt-0.5 text-[11px] text-zinc-500">
-            {mailbox.connected ? `Connected · ${mailbox.status?.toLowerCase() ?? "warming"}` : "Not connected"}
-          </div>
+          <div className="mt-0.5 text-[11px] text-zinc-400">{statusLabel}</div>
         </div>
       </div>
       {mailbox.connected ? (
@@ -301,9 +309,10 @@ function MailboxRow({ mailbox }: { mailbox: MailboxStatus }) {
       ) : (
         <a
           href={`/api/outreach/gmail/connect?email=${encodeURIComponent(mailbox.email)}`}
-          className="v2-btn-primary inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap sm:w-auto cursor-pointer"
+          aria-label={`Connect ${mailbox.email} via Google OAuth`}
+          className="v2-btn-primary v2-focus-ring inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap sm:w-auto cursor-pointer"
         >
-          <Mail className="h-4 w-4" />
+          <Mail className="h-4 w-4" aria-hidden="true" />
           Connect Gmail
         </a>
       )}

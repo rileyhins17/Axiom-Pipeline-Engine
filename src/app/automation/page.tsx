@@ -278,32 +278,43 @@ export default async function AutomationPage() {
       <header className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
           <span className="v2-eyebrow inline-flex items-center gap-2 text-[10px]">
-            <span className="v2-dot text-cyan-400" />
-            Automation · read-only
+            <span
+              className={`v2-dot ${overview.settings.emergencyPaused ? "text-red-400" : "text-cyan-400"}`}
+              aria-hidden="true"
+            />
+            Automation · {overview.settings.emergencyPaused ? "halted" : "live"}
           </span>
-          <h1 className="mt-2 text-[34px] font-semibold tracking-[-0.025em] text-white">Sequences & sends</h1>
-          <p className="mt-1 text-sm text-zinc-400">Engine state, mailbox load, queue and recent activity.</p>
+          <h1 className="mt-2 text-[34px] font-semibold tracking-[-0.025em] text-white">Sequences &amp; sends</h1>
+          <p className="mt-1 text-sm text-zinc-400">
+            Operator status, queue management, and diagnostics for outbound sequencing.
+          </p>
         </div>
         <EngineBadge mode={overview.engine.mode} />
       </header>
 
-      <section className="grid items-start gap-4 xl:grid-cols-[1.3fr_0.7fr]">
+      <section
+        className="grid items-start gap-4 xl:grid-cols-[1.3fr_0.7fr]"
+        aria-label="Operator status and emergency controls"
+      >
         <div className="grid gap-4">
-          <div className="v2-card overflow-hidden p-5">
+          <div className="v2-card overflow-hidden p-5" role="status" aria-live="polite">
             <div className="flex items-center justify-between gap-3">
-              <div>
+              <div className="min-w-0">
                 <div className="v2-eyebrow">Live posture</div>
                 <div className="mt-2 text-sm text-zinc-300">
                   {overview.settings.emergencyPaused
-                    ? "The engine is halted at the settings gate."
-                    : "Automation is live and the scheduler can send on the next eligible tick."}
+                    ? "The engine is halted at the emergency-stop gate. Clear the stop in Settings to resume."
+                    : "Automation is live — the scheduler can send on the next eligible tick."}
                 </div>
               </div>
-              <span className={`v2-pill ${overview.settings.emergencyPaused ? "border-red-400/30 bg-red-500/[0.12] text-red-200" : "v2-pill-accent"}`}>
+              <span
+                className={`v2-pill shrink-0 ${overview.settings.emergencyPaused ? "border-red-400/30 bg-red-500/[0.12] text-red-200" : "v2-pill-accent"}`}
+                aria-label={overview.settings.emergencyPaused ? "Engine halted by emergency stop" : "Engine live"}
+              >
                 {overview.settings.emergencyPaused ? "Emergency stop" : "Live"}
               </span>
             </div>
-            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <div className="mt-4 grid gap-3 sm:grid-cols-3" role="list" aria-label="Queue summary">
               <MiniStat label="Queued" value={overview.engine.queuedCount} tone="cyan" />
               <MiniStat label="Waiting" value={overview.engine.waitingCount} tone="violet" />
               <MiniStat label="Blocked" value={overview.engine.blockedCount} tone={overview.engine.blockedCount > 0 ? "amber" : "zinc"} />

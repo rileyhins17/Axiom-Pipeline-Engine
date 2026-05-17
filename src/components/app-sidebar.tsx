@@ -94,8 +94,10 @@ export function AppSidebar() {
                         href={item.url}
                         prefetch
                         data-active={isActive ? "true" : "false"}
+                        aria-current={isActive ? "page" : undefined}
+                        title={`${item.title} — ${item.description} (${item.shortcut})`}
                         className={cn(
-                          "v2-nav-item group flex items-center gap-3 px-3 py-2.5 text-sm",
+                          "v2-nav-item v2-focus-ring group flex items-center gap-3 px-3 py-2.5 text-sm",
                           isActive ? "text-emerald-100" : "text-zinc-400 hover:text-white",
                         )}
                       >
@@ -104,10 +106,12 @@ export function AppSidebar() {
                             "size-4 shrink-0 transition-colors",
                             isActive ? "text-emerald-300" : "text-zinc-500 group-hover:text-zinc-200",
                           )}
+                          aria-hidden="true"
                         />
                         <span className="min-w-0 flex-1 truncate font-medium">{item.title}</span>
                         {badgeValue > 0 ? (
                           <span
+                            aria-label={`${badgeValue} ${item.title} items`}
                             className={cn(
                               "rounded-md border px-1.5 py-0.5 font-mono text-[10px] tabular-nums",
                               isActive
@@ -118,7 +122,7 @@ export function AppSidebar() {
                             {badgeValue > 99 ? "99+" : badgeValue}
                           </span>
                         ) : null}
-                        <span className="font-mono text-[10px] text-zinc-600 group-hover:text-zinc-500">
+                        <span aria-hidden="true" className="font-mono text-[10px] text-zinc-600 group-hover:text-zinc-500">
                           {item.shortcut}
                         </span>
                       </Link>
@@ -147,24 +151,30 @@ export function AppSidebar() {
           </div>
           <div className="grid grid-cols-2 divide-x divide-white/[0.06]">
             <SidebarStat
-              icon={<Database className="size-3.5" />}
-              label="Leads"
+              icon={<Database className="size-3.5" aria-hidden="true" />}
+              label="Records"
               value={stats ? stats.total.toLocaleString() : "--"}
+              title="Total lead records in Vault"
             />
             <SidebarStat
-              icon={<Activity className="size-3.5" />}
-              label="Today"
+              icon={<Activity className="size-3.5" aria-hidden="true" />}
+              label="New today"
               value={stats ? `+${stats.todayLeads}` : "--"}
               accent
+              title="New leads captured today"
             />
           </div>
-          <div className="flex items-center justify-between border-t border-white/[0.06] px-3 py-2 text-[11px]">
-            <span className="flex items-center gap-1.5 text-emerald-300">
-              <CheckCircle2 className="size-3.5" />
+          <div
+            className="flex items-center justify-between border-t border-white/[0.06] px-3 py-2 text-[11px]"
+            role="status"
+            aria-label="Workspace status"
+          >
+            <span className="flex items-center gap-1.5 text-emerald-300" title="System healthy">
+              <CheckCircle2 className="size-3.5" aria-hidden="true" />
               Healthy
             </span>
-            <span className="flex items-center gap-1.5 text-zinc-500">
-              <Radio className="size-3.5 animate-pulse text-emerald-400/70" />
+            <span className="flex items-center gap-1.5 text-zinc-400" title="Receiving live updates every 30s">
+              <Radio className="size-3.5 animate-pulse text-emerald-400/70" aria-hidden="true" />
               Live
             </span>
           </div>
@@ -179,15 +189,17 @@ function SidebarStat({
   label,
   value,
   accent = false,
+  title,
 }: {
   icon: React.ReactNode;
   label: string;
   value: string;
   accent?: boolean;
+  title?: string;
 }) {
   return (
-    <div className="px-3 py-2.5">
-      <div className="flex items-center gap-1.5 text-[9.5px] uppercase tracking-[0.16em] text-zinc-500">
+    <div className="px-3 py-2.5" title={title}>
+      <div className="flex items-center gap-1.5 text-[9.5px] uppercase tracking-[0.16em] text-zinc-400">
         {icon}
         {label}
       </div>

@@ -22,6 +22,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 const PUBLIC_PATH_PREFIXES = ["/sign-in", "/sign-up", "/offline"];
 
@@ -92,14 +93,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
             <SearchTrigger />
             <div className="hidden items-center gap-2 md:flex">
-              <button
-                type="button"
-                aria-label="Settings"
-                onClick={() => router.push("/settings")}
-                className="v2-focus-ring relative flex size-9 items-center justify-center rounded-lg border border-white/[0.09] bg-white/[0.025] text-zinc-400 transition-all hover:border-white/[0.16] hover:bg-white/[0.06] hover:text-white cursor-pointer"
-              >
-                <Settings className="size-4" />
-              </button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="Open settings"
+                    onClick={() => router.push("/settings")}
+                    className="v2-focus-ring relative flex size-9 items-center justify-center rounded-lg border border-white/[0.09] bg-white/[0.025] text-zinc-400 transition-all hover:border-white/[0.16] hover:bg-white/[0.06] hover:text-white cursor-pointer"
+                  >
+                    <Settings className="size-4" aria-hidden="true" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Settings</TooltipContent>
+              </Tooltip>
             </div>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -199,14 +205,16 @@ function MobileTabBar({ pathname }: { pathname: string | null }) {
               key={item.url}
               href={item.url}
               prefetch
+              aria-current={active ? "page" : undefined}
+              aria-label={item.title}
               className={cn(
-                "flex min-h-12 flex-col items-center justify-center gap-1 rounded-lg px-1 text-[10px] font-medium transition-colors",
+                "v2-focus-ring flex min-h-12 flex-col items-center justify-center gap-1 rounded-lg px-1 text-[10px] font-medium transition-colors",
                 active
                   ? "bg-emerald-400/12 text-emerald-200"
                   : "text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200",
               )}
             >
-              <Icon className={cn("size-4", active ? "text-emerald-300" : "text-zinc-500")} />
+              <Icon className={cn("size-4", active ? "text-emerald-300" : "text-zinc-500")} aria-hidden="true" />
               <span className="max-w-full truncate">{item.title}</span>
             </Link>
           );

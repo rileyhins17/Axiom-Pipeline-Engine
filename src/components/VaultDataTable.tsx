@@ -1023,17 +1023,18 @@ export default function VaultDataTable({ totalCount }: { totalCount: number }) {
 
             <div className="hidden overflow-hidden rounded-lg border border-white/[0.06] bg-black/20 md:block">
                 <Table>
-                    <TableHeader className="bg-black/40">
+                    <TableHeader className="sticky top-0 z-10 bg-[#0a121c]/95 backdrop-blur supports-[backdrop-filter]:bg-[#0a121c]/85">
                         <TableRow className="border-white/[0.06] hover:bg-transparent">
                             <TableHead className="w-[40px]">
                                 <button
                                     type="button"
                                     onClick={(e) => { e.stopPropagation(); toggleSelectAll(); }}
-                                    className="flex items-center justify-center text-zinc-600 hover:text-white cursor-pointer"
+                                    aria-label={pagedLeads.length > 0 && pagedLeads.every((l) => selectedIds.has(l.id)) ? "Deselect all on this page" : "Select all on this page"}
+                                    className="v2-focus-ring flex items-center justify-center rounded text-zinc-500 hover:text-white cursor-pointer"
                                 >
                                     {pagedLeads.length > 0 && pagedLeads.every((l) => selectedIds.has(l.id))
-                                        ? <CheckSquare className="h-4 w-4 text-emerald-400" />
-                                        : <Square className="h-4 w-4" />}
+                                        ? <CheckSquare className="h-4 w-4 text-emerald-400" aria-hidden="true" />
+                                        : <Square className="h-4 w-4" aria-hidden="true" />}
                                 </button>
                             </TableHead>
                             {[
@@ -1043,36 +1044,47 @@ export default function VaultDataTable({ totalCount }: { totalCount: number }) {
                             ].map((column) => (
                                 <TableHead
                                     key={column.key}
-                                    onClick={() => handleSort(column.key)}
-                                    className="cursor-pointer select-none text-xs font-semibold text-zinc-500 hover:text-white"
+                                    aria-sort={sortKey === column.key ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
                                 >
-                                    <span className="flex items-center">
+                                    <button
+                                        type="button"
+                                        onClick={() => handleSort(column.key)}
+                                        className="v2-focus-ring -ml-1 inline-flex select-none items-center rounded px-1 text-xs font-semibold text-zinc-400 hover:text-white"
+                                    >
                                         {column.label}
                                         <SortIcon active={sortKey === column.key} dir={sortDir} />
-                                    </span>
+                                    </button>
                                 </TableHead>
                             ))}
-                            <TableHead className="text-xs font-semibold text-zinc-500">Contact</TableHead>
+                            <TableHead className="text-xs font-semibold text-zinc-400">Contact</TableHead>
                             <TableHead
-                                onClick={() => handleSort("rating")}
-                                className="w-[96px] cursor-pointer select-none text-xs font-semibold text-zinc-500 hover:text-white"
+                                aria-sort={sortKey === "rating" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
+                                className="w-[96px]"
                             >
-                                <span className="flex items-center">
+                                <button
+                                    type="button"
+                                    onClick={() => handleSort("rating")}
+                                    className="v2-focus-ring -ml-1 inline-flex select-none items-center rounded px-1 text-xs font-semibold text-zinc-400 hover:text-white"
+                                >
                                     Rating
                                     <SortIcon active={sortKey === "rating"} dir={sortDir} />
-                                </span>
+                                </button>
                             </TableHead>
                             <TableHead
-                                onClick={() => handleSort("reviewCount")}
-                                className="w-[110px] cursor-pointer select-none text-xs font-semibold text-zinc-500 hover:text-white"
+                                aria-sort={sortKey === "reviewCount" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
+                                className="w-[110px]"
                             >
-                                <span className="flex items-center">
+                                <button
+                                    type="button"
+                                    onClick={() => handleSort("reviewCount")}
+                                    className="v2-focus-ring -ml-1 inline-flex select-none items-center rounded px-1 text-xs font-semibold text-zinc-400 hover:text-white"
+                                >
                                     Reviews
                                     <SortIcon active={sortKey === "reviewCount"} dir={sortDir} />
-                                </span>
+                                </button>
                             </TableHead>
-                            <TableHead className="w-[160px] text-xs font-semibold text-zinc-500">Website</TableHead>
-                            <TableHead className="w-[60px] text-right text-xs font-semibold text-zinc-500">·</TableHead>
+                            <TableHead className="w-[160px] text-xs font-semibold text-zinc-400">Website</TableHead>
+                            <TableHead className="w-[60px] text-right text-xs font-semibold text-zinc-400" aria-label="Row actions">·</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>

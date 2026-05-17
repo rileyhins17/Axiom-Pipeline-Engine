@@ -146,13 +146,14 @@ export function CommandPalette({ open, onClose, onOpenShortcuts }: CommandPalett
                 >
                     {/* Search input */}
                     <div className="flex items-center gap-3 px-4 py-3 border-b border-white/[0.06]">
-                        <Search className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                        <Search className="w-4 h-4 text-emerald-400 flex-shrink-0" aria-hidden="true" />
                         <input
                             ref={inputRef}
                             type="text"
                             value={query}
                             onChange={e => setQuery(e.target.value)}
-                            placeholder="Type a command or search…"
+                            placeholder="Search leads, jump to a page, or run an action…"
+                            aria-label="Command palette search"
                             className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/50 outline-none font-medium"
                             autoComplete="off"
                             spellCheck={false}
@@ -165,9 +166,16 @@ export function CommandPalette({ open, onClose, onOpenShortcuts }: CommandPalett
                     {/* Results */}
                     <div ref={listRef} className="max-h-[360px] overflow-y-auto py-2">
                         {totalItems === 0 ? (
-                            <div className="px-4 py-8 text-center">
-                                <p className="text-sm text-muted-foreground/60">No commands found</p>
-                                <p className="text-[11px] text-muted-foreground/30 mt-1">Try a different search term</p>
+                            <div className="px-4 py-10 text-center">
+                                <Search className="mx-auto mb-3 size-5 text-muted-foreground/30" aria-hidden="true" />
+                                <p className="text-sm font-medium text-muted-foreground/70">
+                                    {query ? "No matches" : "Start typing to search"}
+                                </p>
+                                <p className="mt-1 text-[11px] text-muted-foreground/40">
+                                    {query
+                                        ? "Try a different search term — leads, page names, or actions."
+                                        : "Find a lead, jump to a page, or trigger an action."}
+                                </p>
                             </div>
                         ) : (
                             <>

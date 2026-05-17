@@ -670,20 +670,38 @@ export default async function DashboardPage() {
       <QuickActions />
 
       {automation.settings.emergencyPaused ? (
-        <div className="v2-card border-red-400/25 bg-red-500/[0.07] px-4 py-3">
-          <div className="flex items-center gap-3">
-            <span className="v2-pill border-red-400/30 bg-red-500/[0.12] text-red-200">Emergency stop active</span>
+        <div
+          className="v2-card border-red-400/25 bg-red-500/[0.07] px-4 py-3"
+          role="alert"
+          aria-live="polite"
+        >
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="v2-pill border-red-400/30 bg-red-500/[0.12] text-red-200">
+              <ShieldAlert className="size-3" aria-hidden="true" />
+              Emergency stop active
+            </span>
             <span className="text-sm text-red-100/80">
               Intake, queueing, and sending are blocked until the stop is cleared in Settings.
             </span>
+            <Link
+              href="/settings"
+              className="ml-auto inline-flex items-center gap-1 rounded-md border border-red-400/30 bg-red-500/[0.08] px-2 py-1 text-[11px] font-semibold text-red-200 transition hover:bg-red-500/[0.16]"
+            >
+              Open Settings
+              <ArrowRight className="size-3" aria-hidden="true" />
+            </Link>
           </div>
         </div>
       ) : null}
 
       {(!aidanConnected || !rileyConnected) ? (
-        <div className="flex items-center gap-3 rounded-md border border-amber-400/25 bg-amber-400/[0.05] px-4 py-3 text-sm">
-          <Activity className="size-4 text-amber-300" />
-          <div className="flex-1">
+        <div
+          className="flex flex-wrap items-center gap-3 rounded-md border border-amber-400/25 bg-amber-400/[0.05] px-4 py-3 text-sm"
+          role="alert"
+          aria-live="polite"
+        >
+          <Activity className="size-4 text-amber-300" aria-hidden="true" />
+          <div className="min-w-0 flex-1">
             <span className="font-medium text-amber-200">
               {[!aidanConnected && "aidan@getaxiom.ca", !rileyConnected && "riley@getaxiom.ca"]
                 .filter(Boolean)
@@ -691,9 +709,16 @@ export default async function DashboardPage() {
               not connected.
             </span>
             <span className="ml-2 text-amber-100/70">
-              Visit <a href="/settings" className="underline hover:text-white">Settings</a> to connect Gmail (one-time OAuth).
+              Connect Gmail in Settings to restore outbound capacity (one-time OAuth).
             </span>
           </div>
+          <Link
+            href="/settings"
+            className="inline-flex items-center gap-1 rounded-md border border-amber-400/30 bg-amber-500/[0.08] px-2 py-1 text-[11px] font-semibold text-amber-200 transition hover:bg-amber-500/[0.16]"
+          >
+            Connect now
+            <ArrowRight className="size-3" aria-hidden="true" />
+          </Link>
         </div>
       ) : null}
 
