@@ -280,7 +280,7 @@ const MAILBOX_SENDABLE_STATUSES = ["ACTIVE", "WARMING"] as const;
 const OPEN_FIRST_TOUCH_STEP_STATUSES = ["SCHEDULED", "CLAIMED", "SENDING"] as const;
 const D1_IN_CLAUSE_CHUNK_SIZE = 40;
 const SCHEDULER_TOTAL_TIMEOUT_MS = 240_000;
-const SCHEDULER_LEASE_TTL_MS = 5 * 60 * 1000;
+const SCHEDULER_LEASE_TTL_MS = 4 * 60 * 1000;
 const SCHEDULER_PIPELINE_TIMEOUT_MS = 120_000;
 const SCHEDULER_REPLY_SYNC_TIMEOUT_MS = 60_000;
 const SCHEDULER_BOUNCE_SYNC_TIMEOUT_MS = 60_000;
@@ -3213,27 +3213,13 @@ async function sendScheduledStep(
   }
 
   if (!hasValidPipelineEmail(context.lead)) {
-    await prisma.outreachSequenceStep.update({
-      where: { id: claim.step.id },
-      data: {
-        status: "SCHEDULED",
-        claimedAt: null,
-        claimedByRunId: null,
-      },
-    });
-    throw new AutomationSkipError("missing_valid_email");
+    await stopSequenceInternal(prisma, claim.sequence, "MISSING_VALID_EMAIL");
+    throw new AutomationStoppedError("missing_valid_email");
   }
 
   if (!isLeadOutreachEligible(context.lead)) {
-    await prisma.outreachSequenceStep.update({
-      where: { id: claim.step.id },
-      data: {
-        status: "SCHEDULED",
-        claimedAt: null,
-        claimedByRunId: null,
-      },
-    });
-    throw new AutomationSkipError("policy_ineligible");
+    await stopSequenceInternal(prisma, claim.sequence, "POLICY_INELIGIBLE");
+    throw new AutomationStoppedError("policy_ineligible");
   }
 
   const recipientEmail = normalizeEmail(context.lead.email);
@@ -3241,22 +3227,10 @@ async function sendScheduledStep(
     throw new AutomationSkipError("missing_valid_email");
   }
 
-  // Defense-in-depth: refuse to send to generic role inboxes
-  // (info@, contact@, sales@, etc.) at the moment of send, even if a sequence
-  // somehow got created for one. Auto-queue already filters these, but a
-  // legacy sequence could still exist.
   const sendEmailType = (context.lead.emailType || "").toLowerCase();
   if (sendEmailType === "generic" || isGenericRoleEmail(recipientEmail)) {
-    await prisma.outreachSequenceStep.update({
-      where: { id: claim.step.id },
-      data: {
-        status: "SCHEDULED",
-        claimedAt: null,
-        claimedByRunId: null,
-        errorMessage: "generic_email_blocked",
-      },
-    });
-    throw new AutomationSkipError("policy_ineligible");
+    await stopSequenceInternal(prisma, claim.sequence, "GENERIC_EMAIL");
+    throw new AutomationStoppedError("policy_ineligible");
   }
 
   // Send-time gate matches the adequate-lead threshold, so anything the
@@ -3266,16 +3240,8 @@ async function sendScheduledStep(
     !Number.isFinite(context.lead.axiomScore) ||
     context.lead.axiomScore < AUTONOMOUS_SEND_MIN_SCORE
   ) {
-    await prisma.outreachSequenceStep.update({
-      where: { id: claim.step.id },
-      data: {
-        status: "SCHEDULED",
-        claimedAt: null,
-        claimedByRunId: null,
-        errorMessage: "below_send_min_score",
-      },
-    });
-    throw new AutomationSkipError("below_send_min_score");
+    await stopSequenceInternal(prisma, claim.sequence, "BELOW_MIN_SCORE");
+    throw new AutomationStoppedError("below_send_min_score");
   }
 
   // Hard disqualifiers (gov / school / chain / blocked email domain).
@@ -3704,11 +3670,7 @@ export async function healStaleSchedulerState(prisma: PrismaLike) {
     take: 500,
   }) as OutreachSequenceStepRecord[];
 
-  const staleSteps = overdueSteps.filter(
-    (s) => s.errorMessage && TRANSIENT_BLOCKER_REASONS.has(s.errorMessage),
-  );
-
-  for (const chunk of chunkArray(staleSteps.map((s) => s.id))) {
+  for (const chunk of chunkArray(overdueSteps.map((s) => s.id))) {
     const updated = await prisma.outreachSequenceStep.updateMany({
       where: { id: { in: chunk }, status: "SCHEDULED" },
       data: { errorMessage: null, scheduledFor: now },
@@ -3717,7 +3679,7 @@ export async function healStaleSchedulerState(prisma: PrismaLike) {
   }
 
   const staleSequenceIds = Array.from(
-    new Set(staleSteps.map((s) => s.sequenceId)),
+    new Set(overdueSteps.map((s) => s.sequenceId)),
   );
   for (const chunk of chunkArray(staleSequenceIds)) {
     const updated = await prisma.outreachSequence.updateMany({
@@ -3770,11 +3732,7 @@ export async function forceResetAllBlockedState(prisma: PrismaLike) {
     take: 2000,
   }) as OutreachSequenceStepRecord[];
 
-  const transientSteps = blockedSteps.filter(
-    (s) => s.errorMessage && TRANSIENT_BLOCKER_REASONS.has(s.errorMessage),
-  );
-
-  for (const chunk of chunkArray(transientSteps.map((s) => s.id))) {
+  for (const chunk of chunkArray(blockedSteps.map((s) => s.id))) {
     const updated = await prisma.outreachSequenceStep.updateMany({
       where: { id: { in: chunk }, status: "SCHEDULED" },
       data: { errorMessage: null, scheduledFor: now },
@@ -3807,7 +3765,7 @@ export async function forceResetAllBlockedState(prisma: PrismaLike) {
   }
 
   const allAffectedSequenceIds = Array.from(new Set([
-    ...transientSteps.map((s) => s.sequenceId),
+    ...blockedSteps.map((s) => s.sequenceId),
     ...staleClaims.map((s) => s.sequenceId),
   ]));
 
@@ -4659,20 +4617,14 @@ async function runAutomationSchedulerUnlocked(options: { immediate?: boolean; on
       console.log(`[scheduler] Claim diagnostics: ${JSON.stringify(claimResult.claimDiagnostics)}`);
 
       if (claims.length === 0) {
-        const [scheduledCount, activeMailboxCount, activeSequenceCount] = await Promise.all([
-          prisma.outreachSequenceStep.count({
-            where: { status: "SCHEDULED" },
-          }),
-          prisma.outreachMailbox.count({
-            where: { status: { in: [...MAILBOX_SENDABLE_STATUSES] }, gmailConnectionId: { not: null } },
-          }),
-          prisma.outreachSequence.count({
-            where: { status: { in: [...CLAIMABLE_SEQUENCE_STATUSES] } },
-          }),
-        ]);
-        console.warn(
-          `[scheduler] ZERO CLAIMS — scheduledSteps=${scheduledCount} activeMailboxes=${activeMailboxCount} activeSequences=${activeSequenceCount} dueInitial=${claimResult.claimDiagnostics.dueInitialCount} dueFollowUp=${claimResult.claimDiagnostics.dueFollowUpCount}`,
-        );
+        const dueTotal = claimResult.claimDiagnostics.dueInitialCount + claimResult.claimDiagnostics.dueFollowUpCount;
+        if (dueTotal > 0) {
+          console.warn(
+            `[scheduler] ZERO CLAIMS from ${dueTotal} due steps — all mailboxes rate-limited or blocked`,
+          );
+        } else {
+          console.log("[scheduler] No due steps to claim");
+        }
       }
 
       const { recordSendDecision } = await import("@/lib/send-decisions");
