@@ -317,6 +317,86 @@ export function withSchedulerTimeout<T>(
   });
 }
 
+type SchedulerPhasePrisma = {
+  outreachRun: {
+    update(args: { where: { id: string }; data: Record<string, unknown> }): Promise<unknown>;
+  };
+};
+
+function buildSchedulerRunMetadata(
+  phase: string,
+  phaseStatus: "running" | "completed" | "failed",
+  extra: Record<string, unknown> = {},
+) {
+  return JSON.stringify({
+    source: "scheduler",
+    phase,
+    phaseStatus,
+    phaseUpdatedAt: new Date().toISOString(),
+    ...extra,
+  });
+}
+
+export async function runSchedulerRecordedPhase<T>(options: {
+  prisma: SchedulerPhasePrisma;
+  runId: string;
+  phase: string;
+  timeoutMs: number;
+  operation: () => Promise<T> | T;
+  failRunOnError?: boolean;
+}) {
+  const startedAt = new Date();
+  await options.prisma.outreachRun.update({
+    where: { id: options.runId },
+    data: {
+      metadata: buildSchedulerRunMetadata(options.phase, "running", {
+        phaseStartedAt: startedAt.toISOString(),
+      }),
+    },
+  });
+
+  try {
+    const result = await withSchedulerTimeout(
+      Promise.resolve().then(options.operation),
+      options.timeoutMs,
+      options.phase,
+    );
+    await options.prisma.outreachRun.update({
+      where: { id: options.runId },
+      data: {
+        metadata: buildSchedulerRunMetadata(options.phase, "completed", {
+          phaseStartedAt: startedAt.toISOString(),
+          phaseFinishedAt: new Date().toISOString(),
+        }),
+      },
+    });
+    return result;
+  } catch (error) {
+    if (error && typeof error === "object") {
+      (error as Error & { schedulerPhase?: string }).schedulerPhase = options.phase;
+    }
+    const metadata = buildSchedulerRunMetadata(options.phase, "failed", {
+      phaseStartedAt: startedAt.toISOString(),
+      phaseFinishedAt: new Date().toISOString(),
+      error: error instanceof Error ? error.message : String(error),
+    });
+    await options.prisma.outreachRun.update({
+      where: { id: options.runId },
+      data: {
+        ...(options.failRunOnError
+          ? {
+              status: "FAILED",
+              finishedAt: new Date(),
+              failedCount: 1,
+            }
+          : {}),
+        metadata,
+      },
+    });
+    throw error;
+  }
+}
+
 function normalizeEmail(email: string | null | undefined) {
   return normalizePipelineEmail(email);
 }
@@ -4420,108 +4500,18 @@ export async function runAutomationScheduler(options: { immediate?: boolean } = 
   }
 }
 
+
 async function runAutomationSchedulerUnlocked(options: { immediate?: boolean; onRunClosed?: () => Promise<void> } = {}) {
-  const { runAutoPipeline } = await import("@/lib/auto-pipeline");
-  const { getServerEnv } = await import("@/lib/env");
-  const env = getServerEnv();
   const prisma = getPrisma();
-  await syncMailboxesForGmailConnections().catch((error) => {
-    console.warn("[scheduler] Failed to sync Gmail mailboxes before run:", error);
-  });
-  const settings = await getSettings(prisma);
   const now = new Date();
-  const staleRunThreshold = addMinutes(now, -5);
-
-  const staleRuns = await prisma.outreachRun.findMany({
-    where: {
-      status: "RUNNING",
-      startedAt: { lte: staleRunThreshold },
-    },
-  }) as OutreachRunRecord[];
-  await Promise.all(staleRuns.map((staleRun) => prisma.outreachRun.update({
-    where: { id: staleRun.id },
-    data: {
-      status: "FAILED",
-      finishedAt: now,
-      metadata: JSON.stringify({
-        source: "scheduler",
-        error: "stale running run recovered before scheduler start",
-      }),
-    },
-  }))).catch((error) => {
-    console.warn("[scheduler] Failed to recover stale running runs:", error);
-  });
-
-  const activeRun = await prisma.outreachRun.findFirst({
-    where: {
-      status: "RUNNING",
-      startedAt: { gt: staleRunThreshold },
-    },
-    orderBy: { startedAt: "desc" },
-  }) as OutreachRunRecord | null;
-
-  if (activeRun && !options.immediate) {
-    console.log(`[scheduler] Skipped because run ${activeRun.id} is still active`);
-    return {
-      runId: "skipped-active-run",
-      claimed: 0,
-      sent: 0,
-      failed: 0,
-      skipped: 0,
-      pipeline: { enriched: 0, enrichFailed: 0, qualified: 0, queued: 0, queueSkipped: 0 },
-      replySync: { checked: 0, stopped: 0 },
-      bounceSync: { scanned: 0, suppressed: 0 },
-    };
-  }
-
-  const healed = await healStaleSchedulerState(prisma).catch((error) => {
-    console.warn("[scheduler] Self-heal failed (non-fatal):", error);
-    return { steps: 0, sequences: 0 };
-  });
-  if (healed.steps > 0 || healed.sequences > 0) {
-    console.log(`[scheduler] Self-healed: ${healed.steps} steps, ${healed.sequences} sequences`);
-  }
-
-  // Master kill switch — when scheduler kill switch is off, no enrich /
-  // qualify / queue / send happens at all.
-  if (!env.AUTONOMOUS_QUEUE_ENABLED && !env.AUTONOMOUS_SEND_ENABLED) {
-    console.log("[scheduler] Skipped — both AUTONOMOUS_QUEUE_ENABLED and AUTONOMOUS_SEND_ENABLED are false");
-    return {
-      runId: "skipped",
-      claimed: 0,
-      sent: 0,
-      failed: 0,
-      skipped: 0,
-      pipeline: { enriched: 0, enrichFailed: 0, qualified: 0, queued: 0, queueSkipped: 0 },
-      replySync: { checked: 0, stopped: 0 },
-      bounceSync: { scanned: 0, suppressed: 0 },
-    };
-  }
-
-  if (settings.emergencyPaused) {
-    console.log("[scheduler] Skipped — emergency kill switch is active");
-    return {
-      runId: "skipped-emergency-stop",
-      claimed: 0,
-      sent: 0,
-      failed: 0,
-      skipped: 0,
-      pipeline: { enriched: 0, enrichFailed: 0, qualified: 0, queued: 0, queueSkipped: 0 },
-      replySync: { checked: 0, stopped: 0 },
-      bounceSync: { scanned: 0, suppressed: 0 },
-    };
-  }
-
-  console.log(
-    `[scheduler] Run starting at ${now.toISOString()} | enabled=${settings.enabled} paused=${settings.globalPaused} emergency=${settings.emergencyPaused}`,
-  );
-
   const run = await prisma.outreachRun.create({
     data: {
       id: crypto.randomUUID(),
       startedAt: now,
       status: "RUNNING",
-      metadata: JSON.stringify({ source: "scheduler" }),
+      metadata: buildSchedulerRunMetadata("lease_acquired", "completed", {
+        phaseFinishedAt: now.toISOString(),
+      }),
     },
   });
 
@@ -4529,6 +4519,7 @@ async function runAutomationSchedulerUnlocked(options: { immediate?: boolean; on
   let failedCount = 0;
   let skippedCount = 0;
   let fastForwardedCount = 0;
+  let runAutoPipeline: typeof import("@/lib/auto-pipeline").runAutoPipeline;
   let pipeline = {
     enriched: 0,
     enrichFailed: 0,
@@ -4540,7 +4531,154 @@ async function runAutomationSchedulerUnlocked(options: { immediate?: boolean; on
   let runClosed = false;
   const schedulerDeadline = Date.now() + SCHEDULER_TOTAL_TIMEOUT_MS;
 
+  const runPhase = <T>(phase: string, timeoutMs: number, operation: () => Promise<T> | T) => {
+    const remainingMs = schedulerDeadline - Date.now();
+    if (remainingMs <= 0) {
+      throw new Error(`scheduler exceeded total timeout before ${phase}`);
+    }
+    return runSchedulerRecordedPhase({
+      prisma,
+      runId: run.id,
+      phase,
+      timeoutMs: Math.min(timeoutMs, remainingMs),
+      operation,
+      failRunOnError: true,
+    });
+  };
+
   try {
+    const modules = await runPhase("load_modules", 10_000, async () => {
+      const [pipelineModule, envModule] = await Promise.all([
+        import("@/lib/auto-pipeline"),
+        import("@/lib/env"),
+      ]);
+      return {
+        runAutoPipeline: pipelineModule.runAutoPipeline,
+        getServerEnv: envModule.getServerEnv,
+      };
+    });
+    runAutoPipeline = modules.runAutoPipeline;
+    const env = await runPhase("load_env", 5_000, () => modules.getServerEnv());
+    await runPhase("mailbox_sync", 20_000, () => syncMailboxesForGmailConnections());
+    const settings = await runPhase("load_settings", 10_000, () => getSettings(prisma));
+    const staleRunThreshold = addMinutes(now, -5);
+
+    await runPhase("recover_stale_runs", 20_000, async () => {
+      const staleRuns = await prisma.outreachRun.findMany({
+        where: {
+          status: "RUNNING",
+          startedAt: { lte: staleRunThreshold },
+          id: { not: run.id },
+        },
+      }) as OutreachRunRecord[];
+      await Promise.all(staleRuns.map((staleRun) => prisma.outreachRun.update({
+        where: { id: staleRun.id },
+        data: {
+          status: "FAILED",
+          finishedAt: now,
+          metadata: JSON.stringify({
+            source: "scheduler",
+            error: "stale running run recovered before scheduler start",
+          }),
+        },
+      })));
+      return staleRuns.length;
+    });
+
+    const activeRun = await runPhase("check_active_run", 10_000, () => prisma.outreachRun.findFirst({
+      where: {
+        status: "RUNNING",
+        startedAt: { gt: staleRunThreshold },
+        id: { not: run.id },
+      },
+      orderBy: { startedAt: "desc" },
+    }) as Promise<OutreachRunRecord | null>);
+
+    if (activeRun && !options.immediate) {
+      console.log(`[scheduler] Skipped because run ${activeRun.id} is still active`);
+      await prisma.outreachRun.update({
+        where: { id: run.id },
+        data: {
+          finishedAt: new Date(),
+          status: "SKIPPED",
+          metadata: buildSchedulerRunMetadata("check_active_run", "completed", {
+            reason: "active_run",
+            activeRunId: activeRun.id,
+          }),
+        },
+      });
+      runClosed = true;
+      return {
+        runId: run.id,
+        claimed: 0,
+        sent: 0,
+        failed: 0,
+        skipped: 0,
+        pipeline,
+        replySync: { checked: 0, stopped: 0 },
+        bounceSync: { scanned: 0, suppressed: 0 },
+      };
+    }
+
+    const healed = await runPhase("self_heal", 30_000, () => healStaleSchedulerState(prisma));
+    if (healed.steps > 0 || healed.sequences > 0) {
+      console.log(`[scheduler] Self-healed: ${healed.steps} steps, ${healed.sequences} sequences`);
+    }
+
+    if (!env.AUTONOMOUS_QUEUE_ENABLED && !env.AUTONOMOUS_SEND_ENABLED) {
+      console.log("[scheduler] Skipped - both AUTONOMOUS_QUEUE_ENABLED and AUTONOMOUS_SEND_ENABLED are false");
+      await prisma.outreachRun.update({
+        where: { id: run.id },
+        data: {
+          finishedAt: new Date(),
+          status: "SKIPPED",
+          metadata: buildSchedulerRunMetadata("kill_switch_check", "completed", {
+            reason: "queue_and_send_disabled",
+          }),
+        },
+      });
+      runClosed = true;
+      return {
+        runId: run.id,
+        claimed: 0,
+        sent: 0,
+        failed: 0,
+        skipped: 0,
+        pipeline,
+        replySync: { checked: 0, stopped: 0 },
+        bounceSync: { scanned: 0, suppressed: 0 },
+      };
+    }
+
+    if (settings.emergencyPaused) {
+      console.log("[scheduler] Skipped - emergency kill switch is active");
+      await prisma.outreachRun.update({
+        where: { id: run.id },
+        data: {
+          finishedAt: new Date(),
+          status: "SKIPPED",
+          metadata: buildSchedulerRunMetadata("emergency_check", "completed", {
+            reason: "emergency_stop",
+          }),
+        },
+      });
+      runClosed = true;
+      return {
+        runId: run.id,
+        claimed: 0,
+        sent: 0,
+        failed: 0,
+        skipped: 0,
+        pipeline,
+        replySync: { checked: 0, stopped: 0 },
+        bounceSync: { scanned: 0, suppressed: 0 },
+      };
+    }
+
+    console.log(
+      `[scheduler] Run starting at ${now.toISOString()} | enabled=${settings.enabled} paused=${settings.globalPaused} emergency=${settings.emergencyPaused}`,
+    );
+
     if (!settings.enabled || settings.globalPaused) {
       await prisma.outreachRun.update({
         where: { id: run.id },
@@ -4620,7 +4758,7 @@ async function runAutomationSchedulerUnlocked(options: { immediate?: boolean; on
         const dueTotal = claimResult.claimDiagnostics.dueInitialCount + claimResult.claimDiagnostics.dueFollowUpCount;
         if (dueTotal > 0) {
           console.warn(
-            `[scheduler] ZERO CLAIMS from ${dueTotal} due steps — all mailboxes rate-limited or blocked`,
+            `[scheduler] ZERO CLAIMS from ${dueTotal} due steps - all mailboxes rate-limited or blocked`,
           );
         } else {
           console.log("[scheduler] No due steps to claim");
@@ -4863,7 +5001,7 @@ async function runAutomationSchedulerUnlocked(options: { immediate?: boolean; on
         console.error("[scheduler] Auto-pipeline error (non-fatal):", pipelineError);
       }
     } else {
-      console.log("[scheduler] AUTONOMOUS_QUEUE_ENABLED=false — skipping enrich/qualify/queue");
+      console.log("[scheduler] AUTONOMOUS_QUEUE_ENABLED=false - skipping enrich/qualify/queue");
     }
 
     let replySync = { checked: 0, stopped: 0 };
@@ -4888,11 +5026,8 @@ async function runAutomationSchedulerUnlocked(options: { immediate?: boolean; on
       console.error("[scheduler] Bounce sync error (non-fatal):", bounceError);
     }
 
-    // Send loop is gated by AUTONOMOUS_SEND_ENABLED (default OFF). When off
-    // we still run reply-sync and pipeline, but don't claim or send any
-    // sequence steps.
     if (!env.AUTONOMOUS_SEND_ENABLED) {
-      console.log("[scheduler] AUTONOMOUS_SEND_ENABLED=false — skipping send loop");
+      console.log("[scheduler] AUTONOMOUS_SEND_ENABLED=false - skipping send loop");
       await prisma.outreachRun.update({
         where: { id: run.id },
         data: {
@@ -4923,10 +5058,14 @@ async function runAutomationSchedulerUnlocked(options: { immediate?: boolean; on
         bounceSync,
       };
     }
-
   } catch (error) {
     console.error("[scheduler] Run failed:", error instanceof Error ? error.message : String(error));
     if (!runClosed) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const schedulerPhase =
+        error && typeof error === "object"
+          ? (error as Error & { schedulerPhase?: string }).schedulerPhase
+          : null;
       await prisma.outreachRun.update({
         where: { id: run.id },
         data: {
@@ -4936,10 +5075,12 @@ async function runAutomationSchedulerUnlocked(options: { immediate?: boolean; on
           sentCount,
           failedCount: failedCount + 1,
           skippedCount,
-          metadata: JSON.stringify({
-            source: "scheduler",
-            error: error instanceof Error ? error.message : String(error),
-          }),
+          metadata: schedulerPhase
+            ? buildSchedulerRunMetadata(schedulerPhase, "failed", { error: errorMessage })
+            : JSON.stringify({
+                source: "scheduler",
+                error: errorMessage,
+              }),
         },
       }).catch(() => null);
       runClosed = true;
@@ -4974,4 +5115,3 @@ async function runAutomationSchedulerUnlocked(options: { immediate?: boolean; on
     }
   }
 }
-

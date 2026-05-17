@@ -9,6 +9,7 @@ import {
   getStepType,
   isBounceNotificationMessage,
   orderDueStepsForClaiming,
+  runSchedulerRecordedPhase,
   selectAutomationReadyLeads,
   withSchedulerTimeout,
 } from "./outreach-automation";
@@ -322,6 +323,35 @@ test("scheduler watchdog rejects hung operations", async () => {
     withSchedulerTimeout(new Promise(() => undefined), 5, "test phase"),
     /test phase timed out after 5ms/,
   );
+});
+
+test("scheduler recorded phase marks run failed when pre-run work times out", async () => {
+  const updates: Array<Record<string, unknown>> = [];
+  const prisma = {
+    outreachRun: {
+      update: async (args: { data: Record<string, unknown> }) => {
+        updates.push(args.data);
+      },
+    },
+  };
+
+  await assert.rejects(
+    runSchedulerRecordedPhase({
+      prisma,
+      runId: "run_1",
+      phase: "mailbox_sync",
+      timeoutMs: 5,
+      operation: () => new Promise(() => undefined),
+      failRunOnError: true,
+    }),
+    /mailbox_sync timed out after 5ms/,
+  );
+
+  assert.equal(updates.length, 2);
+  assert.match(String(updates[0].metadata), /"phase":"mailbox_sync"/);
+  assert.equal(updates[1].status, "FAILED");
+  assert.match(String(updates[1].metadata), /"phase":"mailbox_sync"/);
+  assert.match(String(updates[1].metadata), /timed out/);
 });
 
 test("bounce parsing detects Gmail address-not-found snippets without X-Failed-Recipients", () => {
