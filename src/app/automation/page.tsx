@@ -476,7 +476,7 @@ export default async function AutomationPage() {
               const when = s.when;
               const isImminent = when && when.getTime() - Date.now() <= 15 * 60_000;
               const formattedWhen = when ? formatAppDateTime(when, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }, "—") : "—";
-              const senderInbox = s.mailbox?.gmailAddress ?? null;
+              const senderInbox = (s as { mailbox?: { gmailAddress?: string } | null }).mailbox?.gmailAddress ?? null;
               return (
                 <div key={s.id} className="flex items-start gap-4 px-5 py-3.5">
                   <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500/[0.12] text-xs font-semibold text-emerald-300">
@@ -511,7 +511,7 @@ export default async function AutomationPage() {
               {laterSends.map((s, idx) => {
                 const when = s.when;
                 const formattedWhen = when ? formatAppDateTime(when, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }, "—") : "—";
-                const senderInbox = s.mailbox?.gmailAddress ?? null;
+                const senderInbox = (s as { mailbox?: { gmailAddress?: string } | null }).mailbox?.gmailAddress ?? null;
                 return (
                   <div key={s.id} className="flex items-start gap-4 px-5 py-3">
                     <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/[0.05] text-xs font-medium text-zinc-400">
