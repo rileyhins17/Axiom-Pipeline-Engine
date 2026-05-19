@@ -2676,9 +2676,15 @@ async function canMailboxSend(prisma: PrismaLike, mailbox: OutreachMailboxRecord
 
   const lastSentAt = coerceDate(mailbox.lastSentAt);
   if (lastSentAt) {
-    const minGapMs = mailbox.minDelaySeconds * 1000;
-    if (now.getTime() - lastSentAt.getTime() < minGapMs) {
-      return { allowed: false, reason: "mailbox_cooldown" as AutomationBlockerReason };
+    // Defensive: a lastSentAt > now is a bogus sentinel (a stuck Gmail-429
+    // cooldownUntil that healStaleSchedulerState hasn't cleared yet). Treat
+    // such values as "no recent send" so we don't block forever.
+    const lastSentMs = lastSentAt.getTime();
+    if (lastSentMs <= now.getTime()) {
+      const minGapMs = mailbox.minDelaySeconds * 1000;
+      if (now.getTime() - lastSentMs < minGapMs) {
+        return { allowed: false, reason: "mailbox_cooldown" as AutomationBlockerReason };
+      }
     }
   }
 
@@ -3843,7 +3849,78 @@ const TRANSIENT_BLOCKER_REASONS = new Set([
 
 export async function healStaleSchedulerState(prisma: PrismaLike) {
   const now = new Date();
-  const healed = { steps: 0, sequences: 0 };
+  const healed: { steps: number; sequences: number; mailboxes: number; reactivated: number } = {
+    steps: 0,
+    sequences: 0,
+    mailboxes: 0,
+    reactivated: 0,
+  };
+
+  // Self-heal #1: mailbox cooldown sentinel stuck in the future.
+  // Gmail 429 backpressure writes `lastSentAt = now + 15min` as a sentinel.
+  // If repeated 429s push it forward, or any other failure mode leaves a
+  // future-dated lastSentAt, the cooldown gate keeps rejecting forever.
+  // Anything more than 30 minutes in the future is impossible from a real
+  // send and must be a stuck sentinel — clear it.
+  const cooldownCutoff = new Date(now.getTime() + 30 * 60 * 1000);
+  const stuckCooldowns = await prisma.outreachMailbox.findMany({
+    where: { lastSentAt: { gt: cooldownCutoff } },
+    select: { id: true, gmailAddress: true, lastSentAt: true },
+    take: 50,
+  }) as Array<{ id: string; gmailAddress: string; lastSentAt: Date | string | null }>;
+  for (const mailbox of stuckCooldowns) {
+    await prisma.outreachMailbox.update({
+      where: { id: mailbox.id },
+      data: { lastSentAt: null, updatedAt: now },
+    }).catch(() => null);
+    healed.mailboxes += 1;
+    console.warn(
+      `[scheduler] Cleared stuck cooldown sentinel on ${mailbox.gmailAddress} (was set to ${mailbox.lastSentAt})`,
+    );
+  }
+
+  // Self-heal #2: auto-retry token refresh on DISCONNECTED mailboxes that
+  // still have a gmailConnectionId. If the refresh succeeds, the connection
+  // is healthy and the mailbox is reactivated automatically.
+  const disconnectedMailboxes = await prisma.outreachMailbox.findMany({
+    where: { status: "DISCONNECTED", gmailConnectionId: { not: null } },
+    take: 10,
+  }) as OutreachMailboxRecord[];
+  if (disconnectedMailboxes.length > 0) {
+    const { getValidAccessToken } = await import("@/lib/gmail");
+    for (const mailbox of disconnectedMailboxes) {
+      if (!mailbox.gmailConnectionId) continue;
+      const connection = await prisma.gmailConnection.findUnique({
+        where: { id: mailbox.gmailConnectionId },
+      }) as GmailConnectionRecord | null;
+      if (!connection) continue;
+      try {
+        const tokenResult = await getValidAccessToken({
+          accessToken: connection.accessToken,
+          refreshToken: connection.refreshToken,
+          tokenExpiresAt: connection.tokenExpiresAt,
+        });
+        if (tokenResult.updated) {
+          await prisma.gmailConnection.update({
+            where: { id: connection.id },
+            data: tokenResult.updated,
+          });
+        }
+        await prisma.outreachMailbox.update({
+          where: { id: mailbox.id },
+          data: { status: "ACTIVE", lastSentAt: null, updatedAt: now },
+        });
+        healed.reactivated += 1;
+        console.log(`[scheduler] Auto-reactivated ${mailbox.gmailAddress} (token refresh ok)`);
+      } catch (refreshError) {
+        console.warn(
+          `[scheduler] Auto-reactivate skipped for ${mailbox.gmailAddress}: token refresh failed (${
+            refreshError instanceof Error ? refreshError.message : "unknown"
+          })`,
+        );
+      }
+    }
+  }
 
   const overdueSteps = await prisma.outreachSequenceStep.findMany({
     where: {
