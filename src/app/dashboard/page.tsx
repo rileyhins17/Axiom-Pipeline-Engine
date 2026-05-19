@@ -63,6 +63,7 @@ function emptyAutomationOverview() {
     engine: {
       mode: "ACTIVE" as const,
       nextSendAt: null,
+      overdueSendAt: null,
       scheduledToday: 0,
       blockedCount: 0,
       replyStoppedCount: 0,
@@ -149,6 +150,21 @@ function relativeAgo(date: Date | string | null | undefined): string {
   if (h < 24) return `${h}h ago`;
   const days = Math.floor(h / 24);
   return `${days}d ago`;
+}
+
+function relativeFuture(date: Date | string | null | undefined): string {
+  if (!date) return "—";
+  const d = typeof date === "string" ? new Date(date) : date;
+  const diff = d.getTime() - Date.now();
+  if (!Number.isFinite(diff)) return "—";
+  if (diff <= 0) return "now";
+  const m = Math.round(diff / 60_000);
+  if (m < 1) return "<1m";
+  if (m < 60) return `in ${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `in ${h}h`;
+  const days = Math.floor(h / 24);
+  return `in ${days}d`;
 }
 
 async function getSendsToday(): Promise<{ total: number; perSender: Record<string, number> }> {
@@ -599,6 +615,14 @@ export default async function DashboardPage() {
           icon: <ShieldAlert className="size-4" />,
           tone: "amber" as ToneKey,
         }
+      : automation.engine.overdueSendAt
+      ? {
+          label: "Scheduler behind",
+          detail: `Oldest scheduled ${relativeAgo(automation.engine.overdueSendAt)} — ${automation.engine.queuedCount} queued, ${automation.engine.waitingCount} waiting.`,
+          href: "/automation" as Route,
+          icon: <ShieldAlert className="size-4" />,
+          tone: "amber" as ToneKey,
+        }
       : {
           label: "Scheduler clear",
           detail: `${automation.engine.queuedCount} queued, ${automation.engine.waitingCount} waiting.`,
@@ -662,6 +686,7 @@ export default async function DashboardPage() {
         waiting={automation.engine.waitingCount}
         blocked={automation.engine.blockedCount}
         nextSendAt={automation.engine.nextSendAt}
+        overdueSendAt={automation.engine.overdueSendAt ?? null}
         nextTarget={nextTarget ? `${nextTarget.niche} in ${nextTarget.city}` : "No active target"}
         runbookItems={runbookItems}
       />
@@ -721,6 +746,34 @@ export default async function DashboardPage() {
           </Link>
         </div>
       ) : null}
+
+      <SendsTimeline
+        upcoming={
+          (automation.sequences ?? [])
+            .map((s) => ({
+              id: s.id,
+              businessName: s.lead?.businessName ?? `Lead #${s.leadId}`,
+              city: s.lead?.city ?? "",
+              email: s.lead?.email ?? "",
+              currentStep: s.currentStep,
+              nextSendAt: s.nextSendAt,
+              blockerLabel: s.blockerLabel ?? null,
+            }))
+            .filter((s) => s.nextSendAt && new Date(s.nextSendAt).getTime() >= Date.now())
+            .sort((a, b) => new Date(a.nextSendAt as Date).getTime() - new Date(b.nextSendAt as Date).getTime())
+            .slice(0, 10)
+        }
+        recent={
+          (automation.recentSent ?? []).slice(0, 10).map((e) => ({
+            id: e.id,
+            sentAt: e.sentAt,
+            subject: e.subject,
+            senderEmail: e.senderEmail,
+            recipientEmail: e.recipientEmail,
+            businessName: e.lead?.businessName ?? null,
+          }))
+        }
+      />
 
       <section className="grid gap-4 xl:grid-cols-4">
         <Panel
@@ -947,6 +1000,120 @@ export default async function DashboardPage() {
   );
 }
 
+type UpcomingSend = {
+  id: string;
+  businessName: string;
+  city: string;
+  email: string;
+  currentStep: string;
+  nextSendAt: Date | string | null;
+  blockerLabel: string | null;
+};
+
+type RecentSend = {
+  id: string;
+  sentAt: Date | string;
+  subject: string;
+  senderEmail: string;
+  recipientEmail: string;
+  businessName: string | null;
+};
+
+function SendsTimeline({ upcoming, recent }: { upcoming: UpcomingSend[]; recent: RecentSend[] }) {
+  return (
+    <section className="grid gap-4 xl:grid-cols-2">
+      <div className="v2-card overflow-hidden">
+        <header className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
+          <div>
+            <div className="flex items-center gap-2 text-sm font-semibold text-white">
+              <Clock3 className="size-4 text-emerald-300" />
+              Upcoming sends
+            </div>
+            <div className="mt-0.5 text-[11px] text-zinc-500">
+              Exact dispatch time for the next {upcoming.length || 0} email{upcoming.length === 1 ? "" : "s"}
+            </div>
+          </div>
+          <Link href={"/automation" as Route} className="text-[11px] text-zinc-400 hover:text-white inline-flex items-center gap-1">
+            All sequences <ArrowRight className="size-3" />
+          </Link>
+        </header>
+        <div className="divide-y divide-white/[0.06]">
+          {upcoming.length === 0 ? (
+            <div className="px-4 py-6 text-center text-xs text-zinc-600">
+              No sends scheduled. Scheduler is either idle or every sequence is blocked.
+            </div>
+          ) : (
+            upcoming.map((s) => {
+              const when = s.nextSendAt ? new Date(s.nextSendAt) : null;
+              const diffMs = when ? when.getTime() - Date.now() : 0;
+              const isImminent = diffMs > 0 && diffMs <= 15 * 60_000;
+              return (
+                <div key={s.id} className="flex items-start justify-between gap-3 px-4 py-2.5">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm text-white">{s.businessName}</div>
+                    <div className="mt-0.5 truncate font-mono text-[11px] text-zinc-500">
+                      {s.email || "—"} · {s.currentStep}
+                      {s.blockerLabel ? <span className="text-amber-300"> · {s.blockerLabel}</span> : null}
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <div className={`font-mono text-[11px] tabular-nums ${isImminent ? "text-emerald-300" : "text-zinc-300"}`}>
+                      {when ? formatAppDateTime(when, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }, "—") : "—"}
+                    </div>
+                    <div className="text-[10px] text-zinc-600 mt-0.5">{when ? relativeFuture(when) : "—"}</div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+
+      <div className="v2-card overflow-hidden">
+        <header className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
+          <div>
+            <div className="flex items-center gap-2 text-sm font-semibold text-white">
+              <Mail className="size-4 text-cyan-300" />
+              Recently sent
+            </div>
+            <div className="mt-0.5 text-[11px] text-zinc-500">
+              Last {recent.length} outbound email{recent.length === 1 ? "" : "s"} with exact send timestamp
+            </div>
+          </div>
+          <Link href={"/automation" as Route} className="text-[11px] text-zinc-400 hover:text-white inline-flex items-center gap-1">
+            Full history <ArrowRight className="size-3" />
+          </Link>
+        </header>
+        <div className="divide-y divide-white/[0.06]">
+          {recent.length === 0 ? (
+            <div className="px-4 py-6 text-center text-xs text-zinc-600">No emails sent yet.</div>
+          ) : (
+            recent.map((e) => (
+              <div key={e.id} className="flex items-start justify-between gap-3 px-4 py-2.5">
+                <div className="min-w-0">
+                  <div className="truncate text-sm text-white">
+                    {e.businessName || e.recipientEmail}
+                  </div>
+                  <div className="mt-0.5 truncate text-[11px] text-zinc-400">{e.subject}</div>
+                  <div className="mt-0.5 truncate font-mono text-[10.5px] text-zinc-600">
+                    {e.senderEmail} → {e.recipientEmail}
+                  </div>
+                </div>
+                <div className="shrink-0 text-right">
+                  <div className="font-mono text-[11px] tabular-nums text-zinc-300">
+                    {formatAppDateTime(e.sentAt, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }, "—")}
+                  </div>
+                  <div className="text-[10px] text-zinc-600 mt-0.5">{relativeAgo(e.sentAt)}</div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function ControlRoomHero({
   mode,
   hasRisk,
@@ -960,6 +1127,7 @@ function ControlRoomHero({
   waiting,
   blocked,
   nextSendAt,
+  overdueSendAt,
   nextTarget,
   runbookItems,
 }: {
@@ -975,6 +1143,7 @@ function ControlRoomHero({
   waiting: number;
   blocked: number;
   nextSendAt: Date | string | null;
+  overdueSendAt: Date | string | null;
   nextTarget: string;
   runbookItems: Array<{
     label: string;
@@ -1031,12 +1200,34 @@ function ControlRoomHero({
               tone="emerald"
             />
             <div className="v2-tile flex flex-col justify-between p-4">
-              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                <Clock3 className="size-4" />
-                Next send
-              </div>
-              <div className="mt-3 text-sm font-semibold text-white">{relativeAgo(nextSendAt)}</div>
-              <div className="mt-1 truncate text-xs text-zinc-500">{nextTarget}</div>
+              {nextSendAt ? (
+                <>
+                  <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                    <Clock3 className="size-4" />
+                    Next send
+                  </div>
+                  <div className="mt-3 text-sm font-semibold text-white">{relativeFuture(nextSendAt)}</div>
+                  <div className="mt-1 truncate text-xs text-zinc-500">{nextTarget}</div>
+                </>
+              ) : overdueSendAt ? (
+                <>
+                  <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-400">
+                    <Clock3 className="size-4" />
+                    Overdue send
+                  </div>
+                  <div className="mt-3 text-sm font-semibold text-amber-300">scheduled {relativeAgo(overdueSendAt)}</div>
+                  <div className="mt-1 truncate text-xs text-zinc-500">scheduler not advancing — {nextTarget}</div>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                    <Clock3 className="size-4" />
+                    Next send
+                  </div>
+                  <div className="mt-3 text-sm font-semibold text-white">idle</div>
+                  <div className="mt-1 truncate text-xs text-zinc-500">{nextTarget}</div>
+                </>
+              )}
             </div>
           </div>
         </div>

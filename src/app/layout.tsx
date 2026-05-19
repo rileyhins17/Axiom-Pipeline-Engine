@@ -1,5 +1,4 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
 
 import { AppShell } from "@/components/app-shell";
 import { PwaServiceWorker } from "@/components/pwa-service-worker";
@@ -8,16 +7,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { PerformanceProvider } from "@/lib/ui/performance";
 
 import "./globals.css";
-
-const inter = Inter({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const jetbrainsMono = JetBrains_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: "Axiom Pipeline Engine",
@@ -60,7 +49,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark">
-      <body className={`${inter.variable} ${jetbrainsMono.variable} antialiased`}>
+      <body className="font-sans antialiased">
         <PerformanceProvider>
           <TooltipProvider delayDuration={0}>
             <ToastProvider>

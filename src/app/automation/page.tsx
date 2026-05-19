@@ -395,16 +395,20 @@ export default async function AutomationPage() {
             {overview.recentSent.length === 0 ? (
               <Empty>No emails sent yet.</Empty>
             ) : (
-              overview.recentSent.slice(0, 8).map((e) => (
+              overview.recentSent.slice(0, 12).map((e) => (
                 <div key={e.id} className="flex items-start justify-between gap-3 py-2.5">
                   <div className="min-w-0">
                     <div className="truncate text-sm text-white">{e.lead?.businessName || e.recipientEmail}</div>
-                    <div className="mt-0.5 truncate font-mono text-[11px] text-zinc-500">
+                    <div className="mt-0.5 truncate text-[11px] text-zinc-400">{e.subject}</div>
+                    <div className="mt-0.5 truncate font-mono text-[10.5px] text-zinc-600">
                       {e.senderEmail} → {e.recipientEmail}
                     </div>
                   </div>
                   <div className="shrink-0 text-right">
-                    <div className="font-mono text-[11px] text-zinc-500">{relativeAgo(e.sentAt)}</div>
+                    <div className="font-mono text-[11px] tabular-nums text-zinc-300">
+                      {formatAppDateTime(e.sentAt, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }, "—")}
+                    </div>
+                    <div className="text-[10px] text-zinc-600 mt-0.5">{relativeAgo(e.sentAt)}</div>
                   </div>
                 </div>
               ))
@@ -749,18 +753,31 @@ function SequenceList({
         {sequences.length === 0 ? (
           <Empty>{empty}</Empty>
         ) : (
-          sequences.slice(0, 8).map((s) => (
-            <div key={s.id} className="px-4 py-2.5">
-              <div className="truncate text-sm text-white">{s.lead?.businessName || `Lead #${s.leadId}`}</div>
-              <div className="mt-0.5 flex items-center justify-between gap-2 text-[11px] text-zinc-500">
-                <span className="truncate">
-                  {s.lead?.city || "—"} · <span className="font-mono">{s.currentStep}</span>
-                  {s.blockerLabel ? <span className="text-amber-300"> · {s.blockerLabel}</span> : null}
-                </span>
-                <span className="shrink-0 font-mono">{relativeAgo(s.nextSendAt || s.lastSentAt)}</span>
+          sequences.slice(0, 8).map((s) => {
+            const when = s.nextSendAt ? new Date(s.nextSendAt) : s.lastSentAt ? new Date(s.lastSentAt) : null;
+            const isFuture = when && when.getTime() > Date.now();
+            return (
+              <div key={s.id} className="px-4 py-2.5">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm text-white">{s.lead?.businessName || `Lead #${s.leadId}`}</div>
+                    <div className="mt-0.5 text-[11px] text-zinc-500 truncate">
+                      {s.lead?.city || "—"} · <span className="font-mono">{s.currentStep}</span>
+                      {s.blockerLabel ? <span className="text-amber-300"> · {s.blockerLabel}</span> : null}
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <div className={`font-mono text-[11px] tabular-nums ${isFuture ? "text-emerald-300" : "text-zinc-400"}`}>
+                      {when ? formatAppDateTime(when, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }, "—") : "—"}
+                    </div>
+                    <div className="text-[10px] text-zinc-600 mt-0.5">
+                      {isFuture ? (s.nextSendAt ? "next send" : "—") : when ? relativeAgo(when) : "—"}
+                    </div>
+                  </div>
+                </div>
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>

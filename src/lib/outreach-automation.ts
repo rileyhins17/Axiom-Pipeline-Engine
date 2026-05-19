@@ -202,6 +202,7 @@ export type AutomationOverview = {
   engine: {
     mode: "ACTIVE" | "PAUSED" | "DISABLED";
     nextSendAt: Date | null;
+    overdueSendAt: Date | null;
     scheduledToday: number;
     blockedCount: number;
     replyStoppedCount: number;
@@ -2481,10 +2482,16 @@ export async function listAutomationOverview() {
     sequence.state === "SENDING" || sequence.state === "WAITING" || sequence.state === "BLOCKED",
   );
   const finished = summaries.filter((sequence) => sequence.state === "STOPPED" || sequence.state === "COMPLETED");
+  const nowMs = now.getTime();
   const nextSendAt =
     summaries
       .map((sequence) => sequence.nextSendAt)
-      .filter((value): value is Date => value instanceof Date)
+      .filter((value): value is Date => value instanceof Date && value.getTime() >= nowMs)
+      .sort((a, b) => a.getTime() - b.getTime())[0] || null;
+  const overdueSendAt =
+    summaries
+      .map((sequence) => sequence.nextSendAt)
+      .filter((value): value is Date => value instanceof Date && value.getTime() < nowMs)
       .sort((a, b) => a.getTime() - b.getTime())[0] || null;
   const todayEnd = startOfDay(addMinutes(now, 24 * 60));
   const scheduledToday = summaries.filter(
@@ -2511,6 +2518,7 @@ export async function listAutomationOverview() {
     engine: {
       mode: !settings.enabled ? "DISABLED" : settings.emergencyPaused ? "DISABLED" : settings.globalPaused ? "PAUSED" : "ACTIVE",
       nextSendAt,
+      overdueSendAt,
       scheduledToday,
       blockedCount,
       replyStoppedCount: repliedCount,
