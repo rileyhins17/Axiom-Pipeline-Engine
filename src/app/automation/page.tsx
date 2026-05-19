@@ -1,16 +1,10 @@
 import type { ReactNode } from "react";
 import {
   Activity,
-  BarChart3,
   Bot,
   CheckCircle2,
-  Clock3,
   Mail,
-  Pause,
-  Play,
-  Reply,
   ShieldAlert,
-  TrendingUp,
 } from "lucide-react";
 
 import { AUTOMATION_SETTINGS_DEFAULTS, MAILBOX_DAILY_SEND_TARGET } from "@/lib/automation-policy";
@@ -240,6 +234,43 @@ function relativeAgo(date: Date | string | null | undefined): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
+const BLOCKER_COPY: Record<string, { label: string; detail: string }> = {
+  mailbox_cooldown: { label: "Inbox cooling down", detail: "Brief pause between sends so the inbox stays healthy. Resumes shortly." },
+  hourly_cap_reached: { label: "Hourly limit reached", detail: "Hit the per-hour send cap. Resumes at the top of the next hour." },
+  daily_cap_reached: { label: "Daily limit reached", detail: "Hit today's send cap. Resumes tomorrow morning." },
+  follow_up_daily_cap_reached: { label: "Follow-up cap reached", detail: "All follow-ups for today are sent. Resumes tomorrow." },
+  global_daily_cap_reached: { label: "Daily limit reached", detail: "All inboxes hit the combined daily cap. Resumes tomorrow." },
+  outside_send_window: { label: "Outside send hours", detail: "Sends only during business hours. Will queue for the next window." },
+  domain_cooldown: { label: "Recently emailed this domain", detail: "We already contacted someone at the same company. Waiting before reaching out again." },
+  reply_detected: { label: "They replied", detail: "Reply received — automation stopped so you can take over." },
+  awaiting_follow_up_window: { label: "Waiting for follow-up", detail: "First email sent. Holding the next touch until the right time." },
+  mailbox_disconnected: { label: "Mailbox disconnected", detail: "Reconnect Gmail in Settings to resume sending." },
+  bounced: { label: "Email bounced", detail: "Address rejected delivery. Removed from sending." },
+  no_email: { label: "Missing email", detail: "No deliverable address on file. Skipped." },
+  duplicate_sibling: { label: "Duplicate contact", detail: "Already being emailed from another sequence." },
+  terminal_sequence_cleaned: { label: "Sequence finished", detail: "All planned touches sent. Closed out." },
+};
+
+function humanizeBlocker(reason: string | null | undefined): { label: string; detail: string } {
+  if (!reason) return { label: "Unknown", detail: "No reason recorded." };
+  const direct = BLOCKER_COPY[reason];
+  if (direct) return direct;
+  const pretty = reason.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  return { label: pretty, detail: "—" };
+}
+
+function humanizeStep(stepType: string | null | undefined): string {
+  if (!stepType) return "First email";
+  const map: Record<string, string> = {
+    INITIAL: "First email",
+    FOLLOWUP_1: "Follow-up 1",
+    FOLLOWUP_2: "Follow-up 2",
+    FOLLOWUP_3: "Follow-up 3",
+    BREAKUP: "Final touch",
+  };
+  return map[stepType.toUpperCase()] ?? stepType.replace(/_/g, " ").toLowerCase();
+}
+
 function parseRunMetadata(metadata: string | null | undefined) {
   if (!metadata) return {} as { phase?: string; phaseStatus?: string; error?: string };
   try {
@@ -276,61 +307,79 @@ export default async function AutomationPage() {
   const dailyCapacity = overview.mailboxes.reduce((sum, mailbox) => sum + mailbox.dailyLimit, 0);
   const activeMailboxes = overview.mailboxes.filter((mailbox) => ["ACTIVE", "WARMING"].includes(mailbox.status)).length;
 
+  const activeSequences = [...queued, ...waiting, ...blocked]
+    .map((s) => {
+      const when = s.nextSendAt ? new Date(s.nextSendAt) : null;
+      return { ...s, when };
+    })
+    .sort((a, b) => {
+      const aTime = a.when?.getTime() ?? Number.POSITIVE_INFINITY;
+      const bTime = b.when?.getTime() ?? Number.POSITIVE_INFINITY;
+      return aTime - bTime;
+    })
+    .slice(0, 20);
+
+  const topMarkets = [
+    ...nichePerf.slice(0, 3).map((n) => ({ kind: "Industry", label: n.niche, sent: n.sent, replyRate: n.replyRate })),
+    ...cityPerf.slice(0, 3).map((c) => ({ kind: "City", label: c.city, sent: c.sent, replyRate: c.replyRate })),
+  ].sort((a, b) => b.replyRate - a.replyRate || b.sent - a.sent).slice(0, 6);
+
+  const engineRunning = overview.engine.mode === "ACTIVE" && !overview.settings.emergencyPaused;
+  const sentTodayCopy = sentToday === 0
+    ? "No emails have gone out yet today."
+    : `${sentToday} email${sentToday === 1 ? "" : "s"} sent today.`;
+  const scheduledTodayCopy = overview.engine.scheduledToday > 0
+    ? `${overview.engine.scheduledToday} more scheduled to go out today.`
+    : "Nothing else scheduled for today.";
+
   return (
-    <div className="mx-auto flex max-w-[1440px] flex-col gap-5">
+    <div className="mx-auto flex max-w-[1200px] flex-col gap-6">
       <header className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
           <span className="v2-eyebrow inline-flex items-center gap-2 text-[10px]">
             <span
-              className={`v2-dot ${overview.settings.emergencyPaused ? "text-red-400" : "text-cyan-400"}`}
+              className={`v2-dot ${engineRunning ? "text-emerald-400" : overview.settings.emergencyPaused ? "text-red-400" : "text-amber-400"}`}
               aria-hidden="true"
             />
-            Automation · {overview.settings.emergencyPaused ? "halted" : "live"}
+            {engineRunning ? "Running" : overview.settings.emergencyPaused ? "Stopped" : "Paused"}
           </span>
-          <h1 className="mt-2 text-[34px] font-semibold tracking-[-0.025em] text-white">Autonomous outbound</h1>
+          <h1 className="mt-2 text-[34px] font-semibold tracking-[-0.025em] text-white">Email outreach</h1>
           <p className="mt-1 text-sm text-zinc-400">
-            Clean readout for nonstop lead intake, scheduling, and email sends.
+            {engineRunning
+              ? "Your outbox is sending automatically. Here's what it's doing today."
+              : overview.settings.emergencyPaused
+                ? "Sending is stopped. Resume from the controls below when ready."
+                : "Sending is paused. Resume from the controls below when ready."}
           </p>
         </div>
-        <EngineBadge mode={overview.engine.mode} />
       </header>
 
-      <section className="v2-card overflow-hidden p-4 sm:p-5" role="status" aria-live="polite">
-        <div className="grid gap-5 xl:grid-cols-[1fr_1.25fr] xl:items-end">
+      {/* Today at a glance */}
+      <section className="v2-card overflow-hidden p-5">
+        <div className="grid gap-5 md:grid-cols-[1.1fr_0.9fr] md:items-center">
           <div>
-            <div className="v2-eyebrow">Autopilot state</div>
-            <div className="mt-3 flex flex-wrap items-center gap-3">
-              <span
-                className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold ${
-                  overview.settings.emergencyPaused
-                    ? "border-red-400/30 bg-red-500/[0.1] text-red-200"
-                    : "border-emerald-400/30 bg-emerald-500/[0.1] text-emerald-200"
-                }`}
-              >
-                <span className={`v2-dot ${overview.settings.emergencyPaused ? "text-red-400" : "text-emerald-400"}`} />
-                {overview.settings.emergencyPaused ? "Stopped by emergency control" : "Running without operator input"}
-              </span>
-            </div>
-            <p className="mt-3 hidden max-w-2xl text-sm leading-6 text-zinc-400 sm:block">
-              Scheduler sends from available mailbox capacity, waits through cooldowns and domain spacing automatically,
-              and recovers stale work on the next cron tick.
+            <div className="v2-eyebrow">Today</div>
+            <p className="mt-2 text-lg text-zinc-100 leading-7">
+              {sentTodayCopy} {scheduledTodayCopy}
+              {overview.engine.blockedCount > 0
+                ? ` ${overview.engine.blockedCount} contact${overview.engine.blockedCount === 1 ? "" : "s"} need a look — see "Needs review" below.`
+                : ""}
+            </p>
+            <p className="mt-2 text-sm text-zinc-500">
+              {activeMailboxes} of {overview.mailboxes.length || 2} inbox{(overview.mailboxes.length || 2) === 1 ? "" : "es"} ready · capacity {dailyCapacity || MAILBOX_DAILY_SEND_TARGET * 2}/day
             </p>
           </div>
-          <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-            <MiniStat label="Sent today" value={sentToday} tone={sentToday > 0 ? "cyan" : "zinc"} />
-            <MiniStat label="Daily capacity" value={dailyCapacity || MAILBOX_DAILY_SEND_TARGET * 2} tone="emerald" />
-            <MiniStat label="Queued" value={overview.engine.queuedCount} tone="cyan" />
-            <MiniStat label="Mailboxes" value={activeMailboxes} tone={activeMailboxes > 0 ? "emerald" : "amber"} />
+          <div className="grid grid-cols-3 gap-3">
+            <BigStat label="Sent today" value={sentToday} tone="cyan" />
+            <BigStat label="Scheduled" value={overview.engine.queuedCount + overview.engine.waitingCount} tone="emerald" />
+            <BigStat label="Replies" value={perfStats.replied} tone="violet" />
           </div>
         </div>
       </section>
 
-      <section
-        className="grid items-start gap-4 xl:grid-cols-[1.15fr_0.85fr]"
-        aria-label="Automation health and controls"
-      >
+      {/* Controls */}
+      <section className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]" aria-label="Health and controls">
         <SchedulerHealthCard />
-
         <div className="grid gap-4">
           <IntakeControlCard
             initialPaused={overview.settings.intakePaused}
@@ -348,40 +397,112 @@ export default async function AutomationPage() {
         </div>
       </section>
 
-      <SchedulerRunLedger runs={overview.recentRuns} />
-
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat label="Queued" value={overview.engine.queuedCount} icon={<Clock3 className="size-4" />} tone="cyan" />
-        <Stat label="Waiting (follow-up)" value={overview.engine.waitingCount} icon={<Clock3 className="size-4" />} tone="violet" />
-        <Stat label="Blocked" value={overview.engine.blockedCount} icon={<Pause className="size-4" />} tone={overview.engine.blockedCount > 0 ? "amber" : "zinc"} />
-        <Stat label="Replies (stop)" value={overview.engine.replyStoppedCount} icon={<Reply className="size-4" />} tone="emerald" />
+      {/* Active conversations — unified queued/waiting/blocked */}
+      <section className="v2-card overflow-hidden">
+        <header className="flex items-start justify-between gap-3 border-b border-white/[0.06] p-5">
+          <div>
+            <h2 className="text-base font-semibold text-white">Active conversations</h2>
+            <p className="mt-1 text-sm text-zinc-400">
+              Every lead currently in an email sequence, sorted by what's going out next.
+            </p>
+          </div>
+          <div className="hidden gap-2 md:flex">
+            <Legend dot="bg-cyan-400" label={`${queued.length} sending soon`} />
+            <Legend dot="bg-violet-400" label={`${waiting.length} between follow-ups`} />
+            <Legend dot="bg-amber-400" label={`${blocked.length} needs review`} />
+          </div>
+        </header>
+        <div className="divide-y divide-white/[0.06]">
+          {activeSequences.length === 0 ? (
+            <div className="px-5 py-8 text-center text-sm text-zinc-500">
+              No active conversations right now. New leads will appear here as the pipeline picks them up.
+            </div>
+          ) : (
+            activeSequences.map((s) => {
+              const tone =
+                s.state === "BLOCKED" ? "amber" :
+                s.state === "WAITING" ? "violet" : "cyan";
+              const statusLabel =
+                s.state === "BLOCKED" ? "Needs review" :
+                s.state === "WAITING" ? "Between follow-ups" : "Sending soon";
+              const blocker = s.blockerLabel ? humanizeBlocker(s.blockerLabel.toLowerCase().replace(/\s+/g, "_")) : null;
+              const when = s.when;
+              const isFuture = when && when.getTime() > Date.now();
+              const stepLabel = humanizeStep(s.currentStep);
+              return (
+                <div key={s.id} className="flex items-start gap-4 px-5 py-3.5">
+                  <span className={`mt-1.5 inline-flex h-2 w-2 shrink-0 rounded-full ${tone === "cyan" ? "bg-cyan-400" : tone === "violet" ? "bg-violet-400" : "bg-amber-400"}`} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                      <span className="text-sm font-medium text-white truncate">{s.lead?.businessName || `Lead #${s.leadId}`}</span>
+                      {s.lead?.city ? <span className="text-xs text-zinc-500">· {s.lead.city}</span> : null}
+                      <span className={`ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-medium ${
+                        tone === "amber" ? "border-amber-400/30 bg-amber-400/[0.08] text-amber-200" :
+                        tone === "violet" ? "border-violet-400/30 bg-violet-400/[0.08] text-violet-200" :
+                        "border-cyan-400/30 bg-cyan-400/[0.08] text-cyan-200"
+                      }`}>{statusLabel}</span>
+                    </div>
+                    <p className="mt-1 text-sm text-zinc-300 leading-relaxed">
+                      {s.state === "BLOCKED" && blocker
+                        ? <><span className="text-amber-200">{blocker.label}.</span> {blocker.detail}</>
+                        : s.state === "WAITING"
+                          ? <>Waiting to send <span className="text-white">{stepLabel}</span>{when ? <> on <span className="text-white">{formatAppDateTime(when, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }, "—")}</span></> : null}.</>
+                          : <>Sending <span className="text-white">{stepLabel}</span> {when ? <>on <span className="text-white">{formatAppDateTime(when, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }, "—")}</span></> : "as soon as a slot opens"}.</>}
+                    </p>
+                    <p className="mt-1 text-[11px] text-zinc-500">
+                      {s.lead?.email ? <span className="font-mono">{s.lead.email}</span> : null}
+                      {when ? <span className="ml-2">{isFuture ? relativeAgo(when) : `last activity ${relativeAgo(when)}`}</span> : null}
+                    </p>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+        {activeSequences.length >= 20 ? (
+          <div className="border-t border-white/[0.06] px-5 py-2.5 text-center text-[11px] text-zinc-500">
+            Showing the next 20. {overview.sequences.length - 20} more in the queue.
+          </div>
+        ) : null}
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
-        <Card title="Mailbox health" subtitle="Per-sender daily and hourly load">
+      {/* Inboxes + Recently sent */}
+      <section className="grid gap-4 xl:grid-cols-2">
+        <Card title="Inboxes" subtitle="How much each inbox has sent today">
           <div className="space-y-3">
             {overview.mailboxes.length === 0 ? (
-              <Empty>No mailboxes connected. Visit Settings to connect Gmail.</Empty>
+              <Empty>No inboxes connected. Connect Gmail in Settings.</Empty>
             ) : (
               overview.mailboxes.map((m) => {
                 const dailyPct = Math.min(100, (m.sentToday / Math.max(1, m.dailyLimit)) * 100);
-                const hourlyPct = Math.min(100, (m.sentThisHour / Math.max(1, m.hourlyLimit)) * 100);
+                const remaining = Math.max(0, m.dailyLimit - m.sentToday);
+                const healthLabel =
+                  m.status === "ACTIVE" ? "Ready to send" :
+                  m.status === "WARMING" ? "Warming up" :
+                  m.status === "PAUSED" ? "Paused" :
+                  m.status === "DISCONNECTED" ? "Disconnected" :
+                  m.status;
+                const healthTone =
+                  m.status === "ACTIVE" ? "text-emerald-300" :
+                  m.status === "WARMING" ? "text-cyan-300" :
+                  m.status === "PAUSED" ? "text-amber-300" : "text-red-300";
                 return (
-                  <div key={m.id} className="rounded-md border border-white/[0.06] bg-black/20 p-3">
+                  <div key={m.id} className="rounded-md border border-white/[0.06] bg-black/20 p-4">
                     <div className="flex items-center justify-between gap-3">
                       <div className="min-w-0">
-                        <div className="truncate font-mono text-sm text-white">{m.gmailAddress}</div>
-                        <div className="mt-0.5 text-[11px] text-zinc-500">
-                          {m.status} · warmup L{m.warmupLevel} · last sent {relativeAgo(m.lastSentAt)}
-                        </div>
+                        <div className="truncate text-sm font-medium text-white">{m.gmailAddress}</div>
+                        <div className={`mt-0.5 text-[11px] ${healthTone}`}>{healthLabel}</div>
                       </div>
-                      <span className="font-mono text-sm tabular-nums text-zinc-300">
-                        {m.sentToday}/{m.dailyLimit}
-                      </span>
+                      <div className="shrink-0 text-right">
+                        <div className="text-sm font-semibold text-white tabular-nums">{m.sentToday} / {m.dailyLimit}</div>
+                        <div className="text-[11px] text-zinc-500">{remaining} left today</div>
+                      </div>
                     </div>
-                    <div className="mt-2 grid gap-1.5">
-                      <Bar label="Today" pct={dailyPct} value={`${m.sentToday}/${m.dailyLimit}`} tone={dailyPct >= 100 ? "amber" : "cyan"} />
-                      <Bar label="This hour" pct={hourlyPct} value={`${m.sentThisHour}/${m.hourlyLimit}`} tone={hourlyPct >= 100 ? "amber" : "violet"} />
+                    <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/[0.05]">
+                      <div className={`h-full ${dailyPct >= 100 ? "bg-amber-400" : "bg-emerald-400"} progress-animate`} style={{ width: `${dailyPct}%` }} />
+                    </div>
+                    <div className="mt-2 text-[11px] text-zinc-500">
+                      Last email {relativeAgo(m.lastSentAt)}
                     </div>
                   </div>
                 );
@@ -390,22 +511,22 @@ export default async function AutomationPage() {
           </div>
         </Card>
 
-        <Card title="Recently sent" subtitle="Last outbound emails">
+        <Card title="Recently sent" subtitle="The last emails that went out">
           <div className="divide-y divide-white/[0.06]">
             {overview.recentSent.length === 0 ? (
               <Empty>No emails sent yet.</Empty>
             ) : (
-              overview.recentSent.slice(0, 12).map((e) => (
-                <div key={e.id} className="flex items-start justify-between gap-3 py-2.5">
+              overview.recentSent.slice(0, 10).map((e) => (
+                <div key={e.id} className="flex items-start justify-between gap-3 py-3">
                   <div className="min-w-0">
                     <div className="truncate text-sm text-white">{e.lead?.businessName || e.recipientEmail}</div>
-                    <div className="mt-0.5 truncate text-[11px] text-zinc-400">{e.subject}</div>
-                    <div className="mt-0.5 truncate font-mono text-[10.5px] text-zinc-600">
-                      {e.senderEmail} → {e.recipientEmail}
+                    <div className="mt-0.5 truncate text-[12px] text-zinc-400">{e.subject}</div>
+                    <div className="mt-0.5 truncate text-[11px] text-zinc-600">
+                      <span className="font-mono">{e.senderEmail}</span> sent to <span className="font-mono">{e.recipientEmail}</span>
                     </div>
                   </div>
                   <div className="shrink-0 text-right">
-                    <div className="font-mono text-[11px] tabular-nums text-zinc-300">
+                    <div className="text-[11px] tabular-nums text-zinc-300">
                       {formatAppDateTime(e.sentAt, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }, "—")}
                     </div>
                     <div className="text-[10px] text-zinc-600 mt-0.5">{relativeAgo(e.sentAt)}</div>
@@ -417,123 +538,71 @@ export default async function AutomationPage() {
         </Card>
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-3">
-        <SequenceList title="Queued" subtitle={`${queued.length} sequences scheduled to send`} sequences={queued} tone="cyan" />
-        <SequenceList title="Waiting" subtitle={`${waiting.length} between follow-ups`} sequences={waiting} tone="violet" />
-        <SequenceList title="Blocked" subtitle={`${blocked.length} need attention`} sequences={blocked} tone="amber" empty="None blocked." />
-      </section>
+      {/* What's working */}
+      {(topMarkets.length > 0 || strategyPerf.length > 0) ? (
+        <section className="grid gap-4 xl:grid-cols-2">
+          <Card title="What's working best" subtitle="Industries and cities with the highest reply rates">
+            <div className="space-y-2.5">
+              {topMarkets.length === 0 ? (
+                <Empty>Not enough data yet.</Empty>
+              ) : (
+                topMarkets.map((m, i) => (
+                  <div key={`${m.kind}-${m.label}-${i}`} className="flex items-center justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-white truncate">
+                          <span className="text-[10px] uppercase tracking-wider text-zinc-500 mr-1.5">{m.kind}</span>
+                          {m.label}
+                        </span>
+                        <span className="text-[11px] text-zinc-400 shrink-0 ml-2">{m.sent} sent</span>
+                      </div>
+                      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/[0.05]">
+                        <div className="h-full bg-emerald-400 progress-animate" style={{ width: `${m.replyRate}%` }} />
+                      </div>
+                    </div>
+                    <span className="text-sm font-semibold tabular-nums text-emerald-300 shrink-0 w-12 text-right">{m.replyRate}%</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </Card>
 
-      {/* Performance Analytics */}
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat label="Total sent" value={perfStats.totalSent} icon={<Mail className="size-4" />} tone="cyan" />
-        <Stat label="Sent status" value={perfStats.delivered} icon={<TrendingUp className="size-4" />} tone="emerald" />
-        <Stat label="Replies" value={perfStats.replied} icon={<Reply className="size-4" />} tone="violet" />
-        <div className="v2-stat stat-card">
-          <div className="flex items-center justify-between text-zinc-500">
-            <span className="text-[11px] font-medium uppercase tracking-[0.16em]">Lead reply rate</span>
-            <BarChart3 className="size-4 text-emerald-300" />
-          </div>
-          <div className="mt-2 font-mono text-3xl font-semibold tabular-nums text-emerald-300">{perfStats.replyRate}%</div>
-        </div>
-      </section>
-
-      {/* Niche & City Heatmap */}
-      <section className="grid gap-4 xl:grid-cols-2">
-        <Card title="Niche performance" subtitle="Reply rates by niche">
-          <div className="space-y-2">
-            {nichePerf.length === 0 ? (
-              <Empty>No niche data yet.</Empty>
-            ) : (
-              nichePerf.map((n) => (
-                <div key={n.niche} className="flex items-center justify-between gap-3">
-                  <div className="min-w-0 flex-1">
+          <Card title="Best email approaches" subtitle="Reply rates by message style">
+            <div className="space-y-3">
+              {strategyPerf.length === 0 ? (
+                <Empty>Not enough data yet.</Empty>
+              ) : (
+                strategyPerf.slice(0, 5).map((s) => (
+                  <div key={s.strategy} className="rounded-md border border-white/[0.06] bg-black/20 p-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-sm text-white truncate">{n.niche}</span>
-                      <span className="font-mono text-[11px] text-zinc-400 shrink-0 ml-2">{n.sent} sent</span>
+                      <span className="text-sm font-medium text-white">{s.strategy}</span>
+                      <span className="text-sm font-semibold text-emerald-300">{s.replyRate}%</span>
                     </div>
-                    <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/[0.05]">
-                      <div className="h-full bg-cyan-400 progress-animate" style={{ width: `${n.replyRate}%` }} />
+                    <div className="mt-1 text-[11px] text-zinc-500">
+                      {s.sent} sent · {s.replied} replied
                     </div>
-                  </div>
-                  <span className="font-mono text-sm font-semibold tabular-nums text-cyan-300 shrink-0 w-10 text-right">{n.replyRate}%</span>
-                </div>
-              ))
-            )}
-          </div>
-        </Card>
-
-        <Card title="City performance" subtitle="Reply rates by city">
-          <div className="space-y-2">
-            {cityPerf.length === 0 ? (
-              <Empty>No city data yet.</Empty>
-            ) : (
-              cityPerf.map((c) => (
-                <div key={c.city} className="flex items-center justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-white truncate">{c.city}</span>
-                      <span className="font-mono text-[11px] text-zinc-400 shrink-0 ml-2">{c.sent} sent</span>
-                    </div>
-                    <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/[0.05]">
-                      <div className="h-full bg-violet-400 progress-animate" style={{ width: `${c.replyRate}%` }} />
+                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/[0.05]">
+                      <div className="h-full bg-emerald-400 progress-animate" style={{ width: `${s.replyRate}%` }} />
                     </div>
                   </div>
-                  <span className="font-mono text-sm font-semibold tabular-nums text-violet-300 shrink-0 w-10 text-right">{c.replyRate}%</span>
-                </div>
-              ))
-            )}
-          </div>
-        </Card>
-      </section>
+                ))
+              )}
+            </div>
+          </Card>
+        </section>
+      ) : null}
 
-      {/* Send Window & Strategy */}
-      <section className="grid gap-4 xl:grid-cols-2">
-        <Card title="Send window" subtitle="Distribution by hour (UTC)">
-          {sendWindow.length === 0 ? (
-            <Empty>No send data yet.</Empty>
-          ) : (
-            <SendWindowChart data={sendWindow} />
-          )}
-        </Card>
-
-        <Card title="Strategy performance" subtitle="Reply rates by engagement approach">
-          <div className="space-y-3">
-            {strategyPerf.length === 0 ? (
-              <Empty>No strategy data yet.</Empty>
-            ) : (
-              strategyPerf.map((s) => (
-                <div key={s.strategy} className="rounded-md border border-white/[0.06] bg-black/20 p-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-white">{s.strategy}</span>
-                    <span className="font-mono text-sm font-semibold text-emerald-300">{s.replyRate}%</span>
-                  </div>
-                  <div className="mt-1.5 flex items-center gap-4 text-[11px] text-zinc-500">
-                    <span>{s.sent} sent</span>
-                    <span>{s.replied} replied</span>
-                  </div>
-                  <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/[0.05]">
-                    <div className="h-full bg-emerald-400 progress-animate" style={{ width: `${s.replyRate}%` }} />
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </Card>
-      </section>
-
-      {/* Suppression List */}
-      <Card title="Suppression list" subtitle={`${suppressed.length} suppressed contacts`}>
-        <div className="divide-y divide-white/[0.06]">
-          {suppressed.length === 0 ? (
-            <Empty>No suppressed contacts.</Empty>
-          ) : (
-            suppressed.map((s) => (
+      {/* Contacts we won't email */}
+      {suppressed.length > 0 ? (
+        <Card title="Contacts we won't email" subtitle={`${suppressed.length} address${suppressed.length === 1 ? "" : "es"} removed from sending`}>
+          <div className="divide-y divide-white/[0.06]">
+            {suppressed.slice(0, 12).map((s) => (
               <div key={s.id} className="flex items-center justify-between gap-3 py-2.5">
                 <div className="min-w-0">
                   <div className="truncate text-sm text-white">{s.businessName}</div>
-                  <div className="truncate font-mono text-[11px] text-zinc-500">{s.email || "No email"}</div>
+                  <div className="truncate font-mono text-[11px] text-zinc-500">{s.email || "No email on file"}</div>
                 </div>
-                <span className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
+                <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium ${
                   s.reason === "Bounced" ? "border-red-500/20 bg-red-500/10 text-red-300" :
                   s.reason === "Opted out" ? "border-amber-500/20 bg-amber-500/10 text-amber-300" :
                   "border-zinc-600/20 bg-zinc-600/10 text-zinc-400"
@@ -541,17 +610,69 @@ export default async function AutomationPage() {
                   {s.reason}
                 </span>
               </div>
-            ))
-          )}
+            ))}
+          </div>
+        </Card>
+      ) : null}
+
+      {/* Engine details — collapsed */}
+      <details className="v2-card overflow-hidden">
+        <summary className="cursor-pointer list-none p-5 flex items-center justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold text-white">Engine details</div>
+            <div className="mt-0.5 text-[11px] text-zinc-500">
+              Technical: recent scheduler runs, send-hour distribution, totals. Open if you're debugging.
+            </div>
+          </div>
+          <span className="text-[11px] text-zinc-400">show</span>
+        </summary>
+        <div className="border-t border-white/[0.06]">
+          <SchedulerRunLedger runs={overview.recentRuns} />
+          <div className="grid gap-4 p-5 xl:grid-cols-2">
+            <Card title="Send hours" subtitle="When emails have historically gone out (UTC)">
+              {sendWindow.length === 0 ? <Empty>No send data yet.</Empty> : <SendWindowChart data={sendWindow} />}
+            </Card>
+            <Card title="Lifetime totals" subtitle="All-time outbound numbers">
+              <div className="grid grid-cols-2 gap-3">
+                <BigStat label="Emails sent" value={perfStats.totalSent} tone="cyan" />
+                <BigStat label="Delivered" value={perfStats.delivered} tone="emerald" />
+                <BigStat label="Replies" value={perfStats.replied} tone="violet" />
+                <div className="v2-tile px-4 py-3">
+                  <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">Reply rate</div>
+                  <div className="mt-1 text-2xl font-semibold tabular-nums text-emerald-300">{perfStats.replyRate}%</div>
+                </div>
+              </div>
+            </Card>
+          </div>
         </div>
-      </Card>
+      </details>
 
       <footer className="rounded-md border border-white/[0.06] bg-[#0b131d] p-4 text-[11px] text-zinc-500">
-        <span className="text-zinc-300">Caps:</span> {MAILBOX_DAILY_SEND_TARGET}/day per mailbox · {MAILBOX_DAILY_SEND_TARGET * 2}/day total ·
-        sends only to owner/staff inboxes (no info@ / contact@ / etc.). Engine is fully autonomous; no manual queueing or sending.
-        Last engine run: {formatAppDateTime(overview.recentRuns?.[0]?.startedAt ?? null, undefined, "—")}.
+        Sending limits: up to {MAILBOX_DAILY_SEND_TARGET} emails per inbox per day ({MAILBOX_DAILY_SEND_TARGET * 2} total). Only owners and named staff are contacted — generic addresses like info@ or contact@ are skipped. Last automated run: {formatAppDateTime(overview.recentRuns?.[0]?.startedAt ?? null, undefined, "—")}.
       </footer>
     </div>
+  );
+}
+
+function BigStat({ label, value, tone }: { label: string; value: number; tone: "cyan" | "emerald" | "violet" | "amber" }) {
+  const text =
+    tone === "cyan" ? "text-cyan-300" :
+    tone === "emerald" ? "text-emerald-300" :
+    tone === "violet" ? "text-violet-300" : "text-amber-300";
+  return (
+    <div className="v2-tile px-4 py-3">
+      <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">{label}</div>
+      <div className={`mt-1 text-2xl font-semibold tabular-nums ${text}`}>{value.toLocaleString()}</div>
+    </div>
+  );
+}
+
+function Legend({ dot, label }: { dot: string; label: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 text-[11px] text-zinc-400">
+      <span className={`inline-block h-2 w-2 rounded-full ${dot}`} />
+      {label}
+    </span>
   );
 }
 
@@ -662,55 +783,6 @@ function SchedulerRunLedger({
   );
 }
 
-function EngineBadge({ mode }: { mode: "ACTIVE" | "PAUSED" | "DISABLED" }) {
-  const tone =
-    mode === "ACTIVE"
-      ? "border-emerald-400/30 bg-emerald-400/[0.08] text-emerald-300"
-      : mode === "PAUSED"
-        ? "border-amber-400/30 bg-amber-400/[0.08] text-amber-300"
-        : "border-red-400/30 bg-red-400/[0.08] text-red-300";
-  const Icon = mode === "ACTIVE" ? Play : Pause;
-  return (
-    <span className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-[11px] font-mono uppercase tracking-widest ${tone}`}>
-      <Icon className="size-3.5" />
-      Engine · {mode}
-    </span>
-  );
-}
-
-function Stat({ label, value, icon, tone }: { label: string; value: number; icon: ReactNode; tone: "cyan" | "violet" | "amber" | "emerald" | "zinc" }) {
-  const text =
-    tone === "cyan" ? "text-cyan-300" : tone === "violet" ? "text-violet-300" : tone === "amber" ? "text-amber-300" : tone === "emerald" ? "text-emerald-300" : "text-zinc-300";
-  return (
-    <div className="v2-stat stat-card">
-      <div className="flex items-center justify-between text-zinc-500">
-        <span className="text-[11px] font-medium uppercase tracking-[0.16em]">{label}</span>
-        <span className={text}>{icon}</span>
-      </div>
-      <div className={`mt-2 animate-counter-up font-mono text-3xl font-semibold tabular-nums ${text}`}>{value.toLocaleString()}</div>
-    </div>
-  );
-}
-
-function MiniStat({ label, value, tone }: { label: string; value: number; tone: "cyan" | "violet" | "amber" | "emerald" | "zinc" }) {
-  const text =
-    tone === "cyan"
-      ? "text-cyan-300"
-      : tone === "violet"
-        ? "text-violet-300"
-        : tone === "amber"
-          ? "text-amber-300"
-          : tone === "emerald"
-            ? "text-emerald-300"
-            : "text-zinc-300";
-  return (
-    <div className="v2-tile px-4 py-3">
-      <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">{label}</div>
-      <div className={`mt-1 font-mono text-2xl font-semibold tabular-nums ${text}`}>{value.toLocaleString()}</div>
-    </div>
-  );
-}
-
 function Card({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
   return (
     <div className="v2-card overflow-hidden">
@@ -722,79 +794,6 @@ function Card({ title, subtitle, children }: { title: string; subtitle: string; 
         <Bot className="size-4 text-zinc-600" />
       </header>
       <div className="p-4">{children}</div>
-    </div>
-  );
-}
-
-function SequenceList({
-  title,
-  subtitle,
-  sequences,
-  tone,
-  empty = "Nothing here.",
-}: {
-  title: string;
-  subtitle: string;
-  sequences: Array<{ id: string; leadId: number; lead?: { businessName: string; city: string } | null; nextSendAt: Date | null; lastSentAt: Date | null; currentStep: string; blockerLabel?: string | null }>;
-  tone: "cyan" | "violet" | "amber";
-  empty?: string;
-}) {
-  const dot = tone === "cyan" ? "bg-cyan-400" : tone === "violet" ? "bg-violet-400" : "bg-amber-400";
-  return (
-    <div className="overflow-hidden rounded-md border border-white/[0.06] bg-[#0b131d]">
-      <header className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
-        <div className="flex items-center gap-2">
-          <span className={`inline-flex h-2 w-2 rounded-full ${dot}`} />
-          <div className="text-sm font-semibold text-white">{title}</div>
-        </div>
-        <span className="text-[11px] text-zinc-500">{subtitle}</span>
-      </header>
-      <div className="divide-y divide-white/[0.06]">
-        {sequences.length === 0 ? (
-          <Empty>{empty}</Empty>
-        ) : (
-          sequences.slice(0, 8).map((s) => {
-            const when = s.nextSendAt ? new Date(s.nextSendAt) : s.lastSentAt ? new Date(s.lastSentAt) : null;
-            const isFuture = when && when.getTime() > Date.now();
-            return (
-              <div key={s.id} className="px-4 py-2.5">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="truncate text-sm text-white">{s.lead?.businessName || `Lead #${s.leadId}`}</div>
-                    <div className="mt-0.5 text-[11px] text-zinc-500 truncate">
-                      {s.lead?.city || "—"} · <span className="font-mono">{s.currentStep}</span>
-                      {s.blockerLabel ? <span className="text-amber-300"> · {s.blockerLabel}</span> : null}
-                    </div>
-                  </div>
-                  <div className="shrink-0 text-right">
-                    <div className={`font-mono text-[11px] tabular-nums ${isFuture ? "text-emerald-300" : "text-zinc-400"}`}>
-                      {when ? formatAppDateTime(when, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }, "—") : "—"}
-                    </div>
-                    <div className="text-[10px] text-zinc-600 mt-0.5">
-                      {isFuture ? (s.nextSendAt ? "next send" : "—") : when ? relativeAgo(when) : "—"}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          })
-        )}
-      </div>
-    </div>
-  );
-}
-
-function Bar({ label, pct, value, tone }: { label: string; pct: number; value: string; tone: "cyan" | "violet" | "amber" }) {
-  const bar = tone === "cyan" ? "bg-cyan-400" : tone === "violet" ? "bg-violet-400" : "bg-amber-400";
-  return (
-    <div>
-      <div className="flex items-center justify-between text-[10.5px]">
-        <span className="text-zinc-500">{label}</span>
-        <span className="font-mono tabular-nums text-zinc-400">{value}</span>
-      </div>
-      <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/[0.05]">
-        <div className={`h-full ${bar} progress-animate`} style={{ width: `${pct}%` }} />
-      </div>
     </div>
   );
 }
