@@ -3819,6 +3819,7 @@ const TRANSIENT_BLOCKER_REASONS = new Set([
   "follow_up_daily_cap_reached",
   "global_daily_cap_reached",
   "outside_send_window",
+  "domain_cooldown_active",
   "generation_failed_retryable",
   "send_failed_retryable",
   "below_send_min_score",

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { writeAuditEvent } from "@/lib/audit";
+import { AUTOMATION_SETTINGS_DEFAULTS } from "@/lib/automation-policy";
 import { getDatabase } from "@/lib/cloudflare";
 import {
   forceResetAllBlockedState,
@@ -8,7 +9,13 @@ import {
   runAutomationScheduler,
 } from "@/lib/outreach-automation";
 import { getPrisma } from "@/lib/prisma";
+import {
+  isOperatorActionableBlockerReason,
+  isRecoverableSchedulerBlockerReason,
+  isSchedulerRecoveryRunError,
+} from "@/lib/scheduler-state";
 import { requireAdminApiSession } from "@/lib/session";
+import { isSendableMailbox } from "@/lib/ui/data-accuracy";
 
 export type SchedulerHealthData = {
   lastRun: {
@@ -21,6 +28,7 @@ export type SchedulerHealthData = {
     failed: number;
     skipped: number;
     error: string | null;
+    actionRequired: boolean;
   } | null;
   recentFailedRuns: Array<{
     id: string;
@@ -28,8 +36,16 @@ export type SchedulerHealthData = {
     finishedAt: string | null;
     error: string | null;
   }>;
-  stuckSteps: Array<{ reason: string; count: number }>;
+  recentRecoveredRuns: Array<{
+    id: string;
+    startedAt: string | null;
+    finishedAt: string | null;
+    error: string | null;
+  }>;
+  stuckSteps: Array<{ reason: string; count: number; dueCount: number; nextReadyAt: string | null }>;
+  waitingSteps: Array<{ reason: string; count: number; dueCount: number; nextReadyAt: string | null }>;
   blockedSequences: number;
+  recoverableSequences: number;
   staleClaimedSteps: number;
   mailboxes: Array<{
     address: string;
@@ -69,7 +85,9 @@ async function getHealthDiagnostics(): Promise<SchedulerHealthData> {
 
 async function getHealthDiagnosticsUncached(): Promise<SchedulerHealthData> {
   const db = getDatabase();
-  const settings = await getAutomationSettings();
+  const settings = await getAutomationSettings().catch(() => ({
+    ...AUTOMATION_SETTINGS_DEFAULTS,
+  }));
 
   const [
     lastRunRow,
@@ -129,7 +147,11 @@ async function getHealthDiagnosticsUncached(): Promise<SchedulerHealthData> {
 
     db
       .prepare(
-        `SELECT "errorMessage" AS reason, COUNT(*) AS count
+        `SELECT
+           "errorMessage" AS reason,
+           COUNT(*) AS count,
+           SUM(CASE WHEN datetime("scheduledFor") <= datetime('now') THEN 1 ELSE 0 END) AS dueCount,
+           MIN("scheduledFor") AS nextReadyAt
          FROM "OutreachSequenceStep"
          WHERE "status" = 'SCHEDULED'
            AND "errorMessage" IS NOT NULL
@@ -137,17 +159,18 @@ async function getHealthDiagnosticsUncached(): Promise<SchedulerHealthData> {
          ORDER BY count DESC
          LIMIT 20`,
       )
-      .all<{ reason: string; count: number }>()
-      .catch(() => ({ results: [] as Array<{ reason: string; count: number }> })),
+      .all<{ reason: string; count: number; dueCount: number; nextReadyAt: string | null }>()
+      .catch(() => ({ results: [] as Array<{ reason: string; count: number; dueCount: number; nextReadyAt: string | null }> })),
 
     db
       .prepare(
-        `SELECT COUNT(*) AS count FROM "OutreachSequence"
+        `SELECT "stopReason" AS reason, COUNT(*) AS count FROM "OutreachSequence"
          WHERE "status" IN ('QUEUED', 'ACTIVE', 'SENDING', 'WAITING', 'BLOCKED')
-           AND "stopReason" IS NOT NULL`,
+           AND "stopReason" IS NOT NULL
+         GROUP BY "stopReason"`,
       )
-      .first<{ count: number }>()
-      .catch(() => null),
+      .all<{ reason: string; count: number }>()
+      .catch(() => ({ results: [] as Array<{ reason: string; count: number }> })),
 
     db
       .prepare(
@@ -163,7 +186,7 @@ async function getHealthDiagnosticsUncached(): Promise<SchedulerHealthData> {
         `SELECT
            m."gmailAddress" AS address,
            m."status",
-           CASE WHEN m."gmailConnectionId" IS NOT NULL THEN 1 ELSE 0 END AS connected,
+           m."gmailConnectionId",
            m."dailyLimit",
            (SELECT COUNT(*) FROM "OutreachEmail" e
             WHERE e."mailboxId" = m."id" AND e."status" = 'sent'
@@ -174,7 +197,7 @@ async function getHealthDiagnosticsUncached(): Promise<SchedulerHealthData> {
       .all<{
         address: string;
         status: string;
-        connected: number;
+        gmailConnectionId: string | null;
         dailyLimit: number;
         sentToday: number;
       }>()
@@ -182,7 +205,7 @@ async function getHealthDiagnosticsUncached(): Promise<SchedulerHealthData> {
         results: [] as Array<{
           address: string;
           status: string;
-          connected: number;
+          gmailConnectionId: string | null;
           dailyLimit: number;
           sentToday: number;
         }>,
@@ -215,6 +238,38 @@ async function getHealthDiagnosticsUncached(): Promise<SchedulerHealthData> {
     }
   }
 
+  const blockerRows = (stuckStepRows.results ?? []).map((r) => ({
+    reason: r.reason,
+    count: Number(r.count || 0),
+    dueCount: Number(r.dueCount || 0),
+    nextReadyAt: r.nextReadyAt ?? null,
+  }));
+  const stuckSteps = blockerRows.filter(
+    (row) => isOperatorActionableBlockerReason(row.reason) || (!isRecoverableSchedulerBlockerReason(row.reason) && row.dueCount > 0),
+  );
+  const waitingSteps = blockerRows.filter(
+    (row) => !stuckSteps.includes(row),
+  );
+  const blockedSequenceRows = (blockedSeqRow.results ?? []).map((r) => ({
+    reason: r.reason,
+    count: Number(r.count || 0),
+  }));
+  const blockedSequences = blockedSequenceRows
+    .filter((row) => isOperatorActionableBlockerReason(row.reason))
+    .reduce((sum, row) => sum + row.count, 0);
+  const recoverableSequences = blockedSequenceRows
+    .filter((row) => !isOperatorActionableBlockerReason(row.reason))
+    .reduce((sum, row) => sum + row.count, 0);
+  const recentRunRows = (recentFailedRows.results ?? []).map((r) => ({
+    id: r.id,
+    startedAt: r.startedAt,
+    finishedAt: r.finishedAt,
+    error: extractError(r.metadata),
+  }));
+  const recentFailedRuns = recentRunRows.filter((run) => !isSchedulerRecoveryRunError(run.error));
+  const recentRecoveredRuns = recentRunRows.filter((run) => isSchedulerRecoveryRunError(run.error));
+  const lastRunError = extractError(lastRunRow?.metadata);
+
   return {
     lastRun: lastRunRow
       ? {
@@ -226,25 +281,21 @@ async function getHealthDiagnosticsUncached(): Promise<SchedulerHealthData> {
           sent: Number(lastRunRow.sent || 0),
           failed: Number(lastRunRow.failed || 0),
           skipped: Number(lastRunRow.skipped || 0),
-          error: extractError(lastRunRow.metadata),
+          error: lastRunError,
+          actionRequired: lastRunRow.status === "FAILED" && !isSchedulerRecoveryRunError(lastRunError),
         }
       : null,
-    recentFailedRuns: (recentFailedRows.results ?? []).map((r) => ({
-      id: r.id,
-      startedAt: r.startedAt,
-      finishedAt: r.finishedAt,
-      error: extractError(r.metadata),
-    })),
-    stuckSteps: (stuckStepRows.results ?? []).map((r) => ({
-      reason: r.reason,
-      count: Number(r.count),
-    })),
-    blockedSequences: Number(blockedSeqRow?.count || 0),
+    recentFailedRuns,
+    recentRecoveredRuns,
+    stuckSteps,
+    waitingSteps,
+    blockedSequences,
+    recoverableSequences,
     staleClaimedSteps: Number(staleClaimRow?.count || 0),
     mailboxes: (mailboxRows.results ?? []).map((m) => ({
       address: m.address,
       status: m.status,
-      connected: Boolean(m.connected),
+      connected: isSendableMailbox(m),
       sentToday: Number(m.sentToday || 0),
       dailyLimit: Number(m.dailyLimit || 40),
     })),

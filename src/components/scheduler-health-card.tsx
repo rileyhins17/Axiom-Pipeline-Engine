@@ -36,6 +36,8 @@ const BLOCKER_LABELS: Record<string, string> = {
   manual_pause: "Manual pause",
   stale_claim_recovered: "Stale claim",
   stale_sender_claim_recovered: "Stale sender claim",
+  domain_cooldown_active: "Domain cooldown",
+  awaiting_follow_up_window: "Follow-up window",
 };
 
 function blockerLabel(reason: string) {
@@ -87,8 +89,8 @@ export function SchedulerHealthCard({ compact = false }: Props) {
   const [triggering, setTriggering] = useState(false);
   const [triggerResult, setTriggerResult] = useState<TriggerResult | null>(null);
 
-  const fetchHealth = useCallback(async () => {
-    setLoading(true);
+  const fetchHealth = useCallback(async (options?: { silent?: boolean }) => {
+    if (!options?.silent) setLoading(true);
     setError(null);
     try {
       const res = await fetch("/api/outreach/automation/health");
@@ -98,12 +100,19 @@ export function SchedulerHealthCard({ compact = false }: Props) {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load");
     } finally {
-      setLoading(false);
+      if (!options?.silent) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     fetchHealth();
+  }, [fetchHealth]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      void fetchHealth({ silent: true });
+    }, 30_000);
+    return () => window.clearInterval(interval);
   }, [fetchHealth]);
 
   async function runRepair() {
@@ -160,11 +169,13 @@ export function SchedulerHealthCard({ compact = false }: Props) {
 
   const totalStuck =
     health?.stuckSteps.reduce((sum, s) => sum + s.count, 0) ?? 0;
-  const hasIssues =
+  const totalWaiting =
+    health?.waitingSteps.reduce((sum, s) => sum + s.count, 0) ?? 0;
+  const hasAttention =
     totalStuck > 0 ||
     (health?.staleClaimedSteps ?? 0) > 0 ||
     (health?.blockedSequences ?? 0) > 0 ||
-    health?.lastRun?.status === "FAILED" ||
+    Boolean(health?.lastRun?.actionRequired) ||
     health?.mailboxes.some((m) => !m.connected) ||
     health?.emergencyPaused ||
     health?.intakePaused;
@@ -173,14 +184,14 @@ export function SchedulerHealthCard({ compact = false }: Props) {
   const statusTone = healthUnavailable
     ? "border-red-400/30 bg-red-500/[0.06]"
     : health
-    ? hasIssues
+    ? hasAttention
       ? "border-amber-400/30 bg-amber-500/[0.06]"
       : "border-emerald-400/25 bg-emerald-500/[0.06]"
     : "border-white/[0.06] bg-[#0b131d]";
   const topGradient = healthUnavailable
     ? "from-red-400/40 via-rose-400/18 to-transparent"
     : health
-    ? hasIssues
+    ? hasAttention
       ? "from-amber-400/40 via-orange-400/20 to-transparent"
       : "from-emerald-400/30 via-cyan-400/20 to-transparent"
     : "from-zinc-400/20 to-transparent";
@@ -194,33 +205,35 @@ export function SchedulerHealthCard({ compact = false }: Props) {
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <span
-                className={`v2-pill ${hasIssues ? "border-amber-400/30 bg-amber-500/[0.12] text-amber-200" : "v2-pill-accent"}`}
+                className={`v2-pill ${hasAttention ? "border-amber-400/30 bg-amber-500/[0.12] text-amber-200" : "v2-pill-accent"}`}
               >
                 <Activity className="size-3.5" />
                 {loading
                   ? "Loading"
                   : healthUnavailable
                     ? "Unavailable"
-                    : hasIssues
-                    ? "Issues detected"
-                    : "Healthy"}
+                    : hasAttention
+                    ? "Attention needed"
+                    : "Autopilot running"}
               </span>
               <span className="v2-pill">
                 <Wrench className="size-3.5" />
-                Scheduler health
+                Self-healing
               </span>
             </div>
             <h3 className="mt-3 text-base font-semibold text-white">
-              Pipeline diagnostics
+              Outbound automation
             </h3>
             <p className="mt-1 text-sm leading-6 text-zinc-400">
               {loading
                 ? "Checking scheduler health..."
                 : healthUnavailable
-                  ? "Diagnostics could not load. Refresh or use Repair if sends appear stalled."
-                  : hasIssues
-                  ? "Issues found that may slow or stop sends. Use Repair to clear stale state."
-                  : "No issues detected. The scheduler is operating normally."}
+                  ? "Diagnostics could not load. Refresh to retry."
+                  : hasAttention
+                  ? "A real blocker needs attention. Normal cooldowns and caps stay automatic."
+                  : totalWaiting > 0
+                    ? "Sending is healthy. Waiting items are normal cooldowns, caps, windows, or domain spacing."
+                    : "Sending is healthy. Scheduler, mailboxes, and queue are clean."}
             </p>
           </div>
 
@@ -236,7 +249,7 @@ export function SchedulerHealthCard({ compact = false }: Props) {
               ) : (
                 <Wrench className="size-4" />
               )}
-              Repair
+              Repair state
             </button>
             <button
               type="button"
@@ -249,11 +262,11 @@ export function SchedulerHealthCard({ compact = false }: Props) {
               ) : (
                 <Play className="size-4" />
               )}
-              Force Run
+              Run now
             </button>
             <button
               type="button"
-              onClick={fetchHealth}
+              onClick={() => fetchHealth()}
               disabled={loading}
               className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/[0.08] bg-white/[0.03] px-4 py-2 text-sm font-semibold text-zinc-300 transition hover:border-white/[0.14] hover:bg-white/[0.06]"
             >
@@ -270,11 +283,11 @@ export function SchedulerHealthCard({ compact = false }: Props) {
           <div className="mt-3 flex items-start gap-2 rounded-lg border border-emerald-400/20 bg-emerald-400/[0.08] px-3 py-2 text-sm text-emerald-200">
             <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
             <span>
-              Reset {repairResult.healedSteps} blocked steps,{" "}
+              Reset {repairResult.healedSteps} steps,{" "}
               {repairResult.healedSequences} sequences,{" "}
               {repairResult.recoveredClaims} stuck claims,{" "}
               {repairResult.clearedStaleRuns} stale runs,{" "}
-              {repairResult.clearedSchedulerLeases} scheduler locks - all ready to send on next tick
+              {repairResult.clearedSchedulerLeases} scheduler locks. Next cron can send naturally.
             </span>
           </div>
         )}
@@ -337,11 +350,11 @@ export function SchedulerHealthCard({ compact = false }: Props) {
               />
             </div>
 
-            {/* Issues section */}
-            {hasIssues && (
+            {/* Attention section */}
+            {hasAttention && (
               <div className="space-y-2">
                 <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-zinc-500">
-                  Issues
+                  Needs attention
                 </div>
 
                 {/* Emergency / Intake pause */}
@@ -363,7 +376,7 @@ export function SchedulerHealthCard({ compact = false }: Props) {
                   <div className="rounded-md border border-white/[0.06] bg-black/20 p-3">
                     <div className="flex items-center gap-2 text-sm font-medium text-amber-200">
                       <AlertTriangle className="size-3.5" />
-                      {totalStuck} steps stuck with stale blockers
+                      {totalStuck} steps need intervention
                     </div>
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {health.stuckSteps.map((s) => (
@@ -397,7 +410,7 @@ export function SchedulerHealthCard({ compact = false }: Props) {
                 )}
 
                 {/* Failed last run */}
-                {health.lastRun?.status === "FAILED" && (
+                {health.lastRun?.actionRequired && (
                   <div className="rounded-md border border-red-500/20 bg-red-500/[0.08] p-3">
                     <div className="flex items-center gap-2 text-sm font-medium text-red-200">
                       <XCircle className="size-3.5" />
@@ -432,6 +445,31 @@ export function SchedulerHealthCard({ compact = false }: Props) {
                     </div>
                   </div>
                 )}
+              </div>
+            )}
+
+            {health.waitingSteps.length > 0 && (
+              <div>
+                <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.16em] text-zinc-500">
+                  Autonomous waits
+                </div>
+                <div className="rounded-md border border-emerald-500/15 bg-emerald-500/[0.05] p-3">
+                  <div className="flex items-center gap-2 text-sm font-medium text-emerald-200">
+                    <CheckCircle2 className="size-3.5" />
+                    {totalWaiting} steps are waiting by design
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {health.waitingSteps.map((s) => (
+                      <span
+                        key={s.reason}
+                        className="inline-flex items-center gap-1.5 rounded border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-mono text-emerald-300"
+                      >
+                        {blockerLabel(s.reason)}
+                        <span className="font-semibold">{s.count}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
               </div>
             )}
 
@@ -483,6 +521,29 @@ export function SchedulerHealthCard({ compact = false }: Props) {
                     >
                       <span className="font-mono text-zinc-400">
                         {r.error || "Unknown error"}
+                      </span>
+                      <span className="shrink-0 font-mono text-zinc-500">
+                        {relativeAgo(r.startedAt)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {health.recentRecoveredRuns.length > 0 && (
+              <div>
+                <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.16em] text-zinc-500">
+                  Auto-recovered runs
+                </div>
+                <div className="space-y-1.5">
+                  {health.recentRecoveredRuns.slice(0, 3).map((r) => (
+                    <div
+                      key={r.id}
+                      className="flex items-center justify-between rounded-md border border-emerald-500/15 bg-emerald-500/[0.05] px-3 py-2 text-[11px]"
+                    >
+                      <span className="font-mono text-emerald-300/80">
+                        {r.error || "Recovered automatically"}
                       </span>
                       <span className="shrink-0 font-mono text-zinc-500">
                         {relativeAgo(r.startedAt)}

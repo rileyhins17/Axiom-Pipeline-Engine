@@ -1422,7 +1422,8 @@ function createModel<T extends Record<string, unknown>>(spec: TableSpec<T>) {
       const params: unknown[] = [];
       const whereClause = buildWhereClause(args?.where, params);
       const availableColumns = (await getExistingTableColumns(spec.tableName)) as Array<keyof T>;
-      const selectClause = buildSelectClause(availableColumns, args?.select);
+      const queryColumns = availableColumns.length > 0 ? availableColumns : spec.columns;
+      const selectClause = buildSelectClause(queryColumns, args?.select);
       const orderByClause = buildOrderByClause(args?.orderBy as Record<string, SortDirection> | undefined);
       const limitClause = args?.take ? " LIMIT ?" : "";
 
@@ -1449,7 +1450,8 @@ function createModel<T extends Record<string, unknown>>(spec: TableSpec<T>) {
       }
 
       const availableColumns = (await getExistingTableColumns(spec.tableName)) as Array<keyof T>;
-      const selectClause = buildSelectClause(availableColumns, args.select);
+      const queryColumns = availableColumns.length > 0 ? availableColumns : spec.columns;
+      const selectClause = buildSelectClause(queryColumns, args.select);
       const query = `SELECT ${selectClause} FROM ${quoteIdentifier(spec.tableName)} WHERE ${whereClause} LIMIT 1`;
       const row = await firstRow(query, params);
       return row ? projectSelection(hydrateRow(spec, row as DatabaseRow), args.select) : null;

@@ -272,6 +272,9 @@ export default async function AutomationPage() {
   const queued = overview.sequences.filter((s) => s.state === "QUEUED");
   const waiting = overview.sequences.filter((s) => s.state === "WAITING");
   const blocked = overview.sequences.filter((s) => s.state === "BLOCKED");
+  const sentToday = overview.mailboxes.reduce((sum, mailbox) => sum + mailbox.sentToday, 0);
+  const dailyCapacity = overview.mailboxes.reduce((sum, mailbox) => sum + mailbox.dailyLimit, 0);
+  const activeMailboxes = overview.mailboxes.filter((mailbox) => ["ACTIVE", "WARMING"].includes(mailbox.status)).length;
 
   return (
     <div className="mx-auto flex max-w-[1440px] flex-col gap-5">
@@ -284,50 +287,55 @@ export default async function AutomationPage() {
             />
             Automation · {overview.settings.emergencyPaused ? "halted" : "live"}
           </span>
-          <h1 className="mt-2 text-[34px] font-semibold tracking-[-0.025em] text-white">Sequences &amp; sends</h1>
+          <h1 className="mt-2 text-[34px] font-semibold tracking-[-0.025em] text-white">Autonomous outbound</h1>
           <p className="mt-1 text-sm text-zinc-400">
-            Operator status, queue management, and diagnostics for outbound sequencing.
+            Clean readout for nonstop lead intake, scheduling, and email sends.
           </p>
         </div>
         <EngineBadge mode={overview.engine.mode} />
       </header>
 
-      <section
-        className="grid items-start gap-4 xl:grid-cols-[1.3fr_0.7fr]"
-        aria-label="Operator status and emergency controls"
-      >
-        <div className="grid gap-4">
-          <div className="v2-card overflow-hidden p-5" role="status" aria-live="polite">
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <div className="v2-eyebrow">Live posture</div>
-                <div className="mt-2 text-sm text-zinc-300">
-                  {overview.settings.emergencyPaused
-                    ? "The engine is halted at the emergency-stop gate. Clear the stop in Settings to resume."
-                    : "Automation is live — the scheduler can send on the next eligible tick."}
-                </div>
-              </div>
+      <section className="v2-card overflow-hidden p-4 sm:p-5" role="status" aria-live="polite">
+        <div className="grid gap-5 xl:grid-cols-[1fr_1.25fr] xl:items-end">
+          <div>
+            <div className="v2-eyebrow">Autopilot state</div>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
               <span
-                className={`v2-pill shrink-0 ${overview.settings.emergencyPaused ? "border-red-400/30 bg-red-500/[0.12] text-red-200" : "v2-pill-accent"}`}
-                aria-label={overview.settings.emergencyPaused ? "Engine halted by emergency stop" : "Engine live"}
+                className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold ${
+                  overview.settings.emergencyPaused
+                    ? "border-red-400/30 bg-red-500/[0.1] text-red-200"
+                    : "border-emerald-400/30 bg-emerald-500/[0.1] text-emerald-200"
+                }`}
               >
-                {overview.settings.emergencyPaused ? "Emergency stop" : "Live"}
+                <span className={`v2-dot ${overview.settings.emergencyPaused ? "text-red-400" : "text-emerald-400"}`} />
+                {overview.settings.emergencyPaused ? "Stopped by emergency control" : "Running without operator input"}
               </span>
             </div>
-            <div className="mt-4 grid gap-3 sm:grid-cols-3" role="list" aria-label="Queue summary">
-              <MiniStat label="Queued" value={overview.engine.queuedCount} tone="cyan" />
-              <MiniStat label="Waiting" value={overview.engine.waitingCount} tone="violet" />
-              <MiniStat label="Blocked" value={overview.engine.blockedCount} tone={overview.engine.blockedCount > 0 ? "amber" : "zinc"} />
-            </div>
+            <p className="mt-3 hidden max-w-2xl text-sm leading-6 text-zinc-400 sm:block">
+              Scheduler sends from available mailbox capacity, waits through cooldowns and domain spacing automatically,
+              and recovers stale work on the next cron tick.
+            </p>
           </div>
+          <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+            <MiniStat label="Sent today" value={sentToday} tone={sentToday > 0 ? "cyan" : "zinc"} />
+            <MiniStat label="Daily capacity" value={dailyCapacity || MAILBOX_DAILY_SEND_TARGET * 2} tone="emerald" />
+            <MiniStat label="Queued" value={overview.engine.queuedCount} tone="cyan" />
+            <MiniStat label="Mailboxes" value={activeMailboxes} tone={activeMailboxes > 0 ? "emerald" : "amber"} />
+          </div>
+        </div>
+      </section>
 
+      <section
+        className="grid items-start gap-4 xl:grid-cols-[1.15fr_0.85fr]"
+        aria-label="Automation health and controls"
+      >
+        <SchedulerHealthCard />
+
+        <div className="grid gap-4">
           <IntakeControlCard
             initialPaused={overview.settings.intakePaused}
             initialPausedBy={overview.settings.intakePausedBy}
           />
-        </div>
-
-        <div className="grid gap-4">
           <EmergencyControlCard
             compact
             initialState={{
@@ -337,7 +345,6 @@ export default async function AutomationPage() {
               emergencyPauseReason: overview.settings.emergencyPauseReason,
             }}
           />
-          <SchedulerHealthCard compact />
         </div>
       </section>
 
@@ -681,9 +688,17 @@ function Stat({ label, value, icon, tone }: { label: string; value: number; icon
   );
 }
 
-function MiniStat({ label, value, tone }: { label: string; value: number; tone: "cyan" | "violet" | "amber" | "zinc" }) {
+function MiniStat({ label, value, tone }: { label: string; value: number; tone: "cyan" | "violet" | "amber" | "emerald" | "zinc" }) {
   const text =
-    tone === "cyan" ? "text-cyan-300" : tone === "violet" ? "text-violet-300" : tone === "amber" ? "text-amber-300" : "text-zinc-300";
+    tone === "cyan"
+      ? "text-cyan-300"
+      : tone === "violet"
+        ? "text-violet-300"
+        : tone === "amber"
+          ? "text-amber-300"
+          : tone === "emerald"
+            ? "text-emerald-300"
+            : "text-zinc-300";
   return (
     <div className="v2-tile px-4 py-3">
       <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">{label}</div>

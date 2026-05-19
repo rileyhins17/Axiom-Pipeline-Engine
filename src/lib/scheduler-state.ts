@@ -107,6 +107,7 @@ export const TRANSIENT_BLOCKER_REASONS = new Set([
   "follow_up_daily_cap_reached",
   "global_daily_cap_reached",
   "outside_send_window",
+  "domain_cooldown_active",
   "generation_failed_retryable",
   "send_failed_retryable",
   "below_send_min_score",
@@ -133,6 +134,48 @@ export const REQUEUEABLE_STALE_STOP_REASONS = new Set([
   "global_daily_cap_reached",
   "domain_cooldown_active",
 ]);
+
+export const RECOVERABLE_SCHEDULER_BLOCKER_REASONS = new Set<AutomationBlockerReason>([
+  "mailbox_cooldown",
+  "hourly_cap_reached",
+  "daily_cap_reached",
+  "follow_up_daily_cap_reached",
+  "global_daily_cap_reached",
+  "outside_send_window",
+  "domain_cooldown_active",
+  "awaiting_follow_up_window",
+  "generation_failed_retryable",
+  "send_failed_retryable",
+  "below_send_min_score",
+  "missing_enrichment",
+]);
+
+export const OPERATOR_ACTIONABLE_BLOCKER_REASONS = new Set<AutomationBlockerReason>([
+  "manual_pause",
+  "global_pause",
+  "emergency_stop",
+  "mailbox_disconnected",
+  "mailbox_disabled",
+]);
+
+export function isRecoverableSchedulerBlockerReason(value: string | null | undefined) {
+  const reason = normalizeBlockerReason(value);
+  return Boolean(reason && RECOVERABLE_SCHEDULER_BLOCKER_REASONS.has(reason));
+}
+
+export function isOperatorActionableBlockerReason(value: string | null | undefined) {
+  const reason = normalizeBlockerReason(value);
+  return !reason || OPERATOR_ACTIONABLE_BLOCKER_REASONS.has(reason);
+}
+
+export function isSchedulerRecoveryRunError(value: string | null | undefined) {
+  if (!value) return false;
+  const normalized = value.trim().toLowerCase();
+  return (
+    normalized === "stale running run recovered before scheduler start" ||
+    normalized === "cleared by manual repair"
+  );
+}
 
 export class AutomationSkipError extends Error {
   reason: AutomationBlockerReason;
