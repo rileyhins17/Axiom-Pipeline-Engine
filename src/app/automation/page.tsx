@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 
 import { SentEmailViewerTrigger } from "@/components/sent-email-viewer";
+import { MailboxReactivateButton } from "@/components/mailbox-reactivate-button";
 
 import { AUTOMATION_SETTINGS_DEFAULTS, MAILBOX_DAILY_SEND_TARGET } from "@/lib/automation-policy";
 import { EmergencyControlCard } from "@/components/emergency-control-card";
@@ -585,12 +586,14 @@ export default async function AutomationPage() {
                   m.status === "ACTIVE" ? "text-emerald-300" :
                   m.status === "WARMING" ? "text-cyan-300" :
                   m.status === "PAUSED" ? "text-amber-300" : "text-red-300";
+                const stale = m.lastSentAt && Date.now() - new Date(m.lastSentAt).getTime() > 24 * 60 * 60 * 1000;
+                const needsAttention = m.status !== "ACTIVE" || stale;
                 return (
-                  <div key={m.id} className="rounded-md border border-white/[0.06] bg-black/20 p-4">
+                  <div key={m.id} className={`rounded-md border p-4 ${needsAttention ? "border-amber-400/30 bg-amber-500/[0.04]" : "border-white/[0.06] bg-black/20"}`}>
                     <div className="flex items-center justify-between gap-3">
                       <div className="min-w-0">
                         <div className="truncate text-sm font-medium text-white">{m.gmailAddress}</div>
-                        <div className={`mt-0.5 text-[11px] ${healthTone}`}>{healthLabel}</div>
+                        <div className={`mt-0.5 text-[11px] ${healthTone}`}>{healthLabel}{stale && m.status === "ACTIVE" ? " · no sends in 24h+" : ""}</div>
                       </div>
                       <div className="shrink-0 text-right">
                         <div className="text-sm font-semibold text-white tabular-nums">{m.sentToday} / {m.dailyLimit}</div>
@@ -600,8 +603,11 @@ export default async function AutomationPage() {
                     <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/[0.05]">
                       <div className={`h-full ${dailyPct >= 100 ? "bg-amber-400" : "bg-emerald-400"} progress-animate`} style={{ width: `${dailyPct}%` }} />
                     </div>
-                    <div className="mt-2 text-[11px] text-zinc-500">
-                      Last email {relativeAgo(m.lastSentAt)}
+                    <div className="mt-2 flex items-center justify-between gap-2">
+                      <div className="text-[11px] text-zinc-500">Last email {relativeAgo(m.lastSentAt)}</div>
+                      {needsAttention ? (
+                        <MailboxReactivateButton mailboxId={m.id} gmailAddress={m.gmailAddress} />
+                      ) : null}
                     </div>
                   </div>
                 );
