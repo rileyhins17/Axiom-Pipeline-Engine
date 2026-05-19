@@ -256,6 +256,8 @@ function buildRfc2822Message(options: {
   subject: string;
   bodyHtml: string;
   bodyPlain: string;
+  inReplyTo?: string;
+  references?: string;
 }): string {
   const boundary = `boundary_${crypto.randomUUID().replace(/-/g, "")}`;
   const fromHeader = formatAddressHeader(options.from, options.fromName);
@@ -266,8 +268,13 @@ function buildRfc2822Message(options: {
     `To: ${sanitizeHeaderValue(options.to)}`,
     `Subject: ${encodeMimeHeader(options.subject)}`,
     `MIME-Version: 1.0`,
+    // RFC 8058: List-Unsubscribe-Post=One-Click requires an HTTPS URL in
+    // List-Unsubscribe. We only have a mailto unsubscribe, so emit just that
+    // header — pairing it with the one-click post header is invalid and trips
+    // Gmail/Yahoo bulk-sender compliance checks.
     `List-Unsubscribe: <mailto:${unsubEmail}?subject=unsubscribe>`,
-    `List-Unsubscribe-Post: List-Unsubscribe=One-Click`,
+    ...(options.inReplyTo ? [`In-Reply-To: ${sanitizeHeaderValue(options.inReplyTo)}`] : []),
+    ...(options.references ? [`References: ${sanitizeHeaderValue(options.references)}`] : []),
     `Content-Type: multipart/alternative; boundary="${boundary}"`,
     ``,
     `--${boundary}`,
@@ -372,6 +379,8 @@ export async function sendGmailEmail(options: {
   bodyHtml: string;
   bodyPlain: string;
   threadId?: string;
+  inReplyTo?: string;
+  references?: string;
 }): Promise<SendEmailResult> {
   const rawMessage = buildRfc2822Message(options);
   const encoded = base64UrlEncodeUtf8(rawMessage);
@@ -468,6 +477,8 @@ export type GmailMessageMeta = {
     to: string;
     subject: string;
     xFailedRecipients: string;
+    messageId: string;
+    references: string;
   };
 };
 
@@ -507,7 +518,7 @@ export async function getGmailMessageMetadata(
   messageId: string,
 ): Promise<GmailMessageMeta> {
   // Gmail API needs repeated metadataHeaders params
-  const url = `${GMAIL_MESSAGES_URL}/${encodeURIComponent(messageId)}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=X-Failed-Recipients`;
+  const url = `${GMAIL_MESSAGES_URL}/${encodeURIComponent(messageId)}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=X-Failed-Recipients&metadataHeaders=Message-ID&metadataHeaders=References`;
 
   const timeout = withTimeout(GMAIL_REQUEST_TIMEOUT_MS);
   const response = await fetch(url, {
@@ -540,6 +551,8 @@ export async function getGmailMessageMetadata(
       to: getHeaderValue(payload.payload?.headers, "To"),
       subject: getHeaderValue(payload.payload?.headers, "Subject"),
       xFailedRecipients: getHeaderValue(payload.payload?.headers, "X-Failed-Recipients"),
+      messageId: getHeaderValue(payload.payload?.headers, "Message-ID"),
+      references: getHeaderValue(payload.payload?.headers, "References"),
     },
   };
 }
@@ -685,6 +698,8 @@ export async function sendGmailReply(options: {
     bodyHtml: options.bodyHtml,
     bodyPlain: options.bodyPlain,
     threadId: options.threadId,
+    inReplyTo: options.inReplyTo,
+    references: options.inReplyTo,
   });
 }
 

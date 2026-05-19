@@ -304,7 +304,9 @@ export function classifySendFailure(error: unknown) {
 
   if (
     message.includes("rate limit") ||
+    message.includes("ratelimit") ||
     message.includes("too many requests") ||
+    message.includes("quota") ||
     message.includes("429")
   ) {
     return { kind: "rate_limited" as const, reason: "mailbox_cooldown" as AutomationBlockerReason };

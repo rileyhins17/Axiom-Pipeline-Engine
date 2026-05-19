@@ -2941,7 +2941,10 @@ async function detectReplyForSequence(
     const fromHeader = normalizeEmail(message.headers.from);
 
     // Must have a sender, and it must not be our own mailbox.
-    if (!fromHeader || fromHeader.includes(mailboxEmail)) {
+    // Use strict equality on normalized addresses — substring matching
+    // produces false positives when one address is a substring of another
+    // (e.g. mailbox "john@x.io" inside sender "bjohn@x.io").
+    if (!fromHeader || fromHeader === mailboxEmail) {
       continue;
     }
 
@@ -2962,8 +2965,9 @@ async function detectReplyForSequence(
 
     // If we know the lead's email, require the reply to come from that address.
     // This is the primary guard against NDR/bounce messages that slip past the
-    // automated-sender patterns above.
-    if (leadEmail && !fromHeader.includes(leadEmail)) {
+    // automated-sender patterns above. Strict equality — substring matching
+    // produces false positives when one address is a substring of another.
+    if (leadEmail && fromHeader !== leadEmail) {
       continue;
     }
 
@@ -3235,10 +3239,15 @@ function classifySendFailure(error: unknown) {
     return { kind: "blocked" as const, reason: "mailbox_disconnected" as AutomationBlockerReason };
   }
 
-  // Gmail 429 / rate limit: trigger per-mailbox backpressure cooldown
+  // Gmail 429 / rate limit / quota: trigger per-mailbox backpressure cooldown.
+  // Gmail surfaces quota errors as "Quota exceeded" / "quotaExceeded" without
+  // mentioning "rate limit" — match those too so we trip the cooldown instead
+  // of burning generic retries.
   if (
     message.includes("rate limit") ||
+    message.includes("ratelimit") ||
     message.includes("too many requests") ||
+    message.includes("quota") ||
     message.includes("429")
   ) {
     return { kind: "rate_limited" as const, reason: "mailbox_cooldown" as AutomationBlockerReason };
@@ -3663,6 +3672,29 @@ async function sendScheduledStep(
 
   await _advancePhase(claim.step.id, "SENDING").catch(() => null);
 
+  // For follow-ups, pull the previous message's RFC Message-ID + References so
+  // we can emit proper In-Reply-To/References headers. Gmail handles threading
+  // server-side via threadId, but recipient clients (Outlook, Apple Mail) rely
+  // on these headers — without them, follow-ups appear as new threads.
+  let inReplyTo: string | undefined;
+  let references: string | undefined;
+  if (context.previousStep?.gmailMessageId) {
+    try {
+      const prevMeta = await getGmailMessageMetadata(
+        tokenResult.accessToken,
+        context.previousStep.gmailMessageId,
+      );
+      if (prevMeta.headers.messageId) {
+        inReplyTo = prevMeta.headers.messageId;
+        references = prevMeta.headers.references
+          ? `${prevMeta.headers.references} ${prevMeta.headers.messageId}`
+          : prevMeta.headers.messageId;
+      }
+    } catch (metaError) {
+      console.warn(`[scheduler] Could not fetch prev message metadata for threading:`, metaError);
+    }
+  }
+
   let sendResult: Awaited<ReturnType<typeof sendGmailEmail>>;
   try {
     sendResult = await sendGmailEmail({
@@ -3674,6 +3706,8 @@ async function sendScheduledStep(
       bodyHtml: email.bodyHtml,
       bodyPlain: email.bodyPlain,
       threadId: context.previousStep?.gmailThreadId || undefined,
+      inReplyTo,
+      references,
     });
   } catch (error) {
     const classification = classifySendFailure(error);
