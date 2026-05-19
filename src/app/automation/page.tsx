@@ -234,29 +234,31 @@ function relativeAgo(date: Date | string | null | undefined): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-const BLOCKER_COPY: Record<string, { label: string; detail: string }> = {
-  mailbox_cooldown: { label: "Inbox cooling down", detail: "Brief pause between sends so the inbox stays healthy. Resumes shortly." },
-  hourly_cap_reached: { label: "Hourly limit reached", detail: "Hit the per-hour send cap. Resumes at the top of the next hour." },
-  daily_cap_reached: { label: "Daily limit reached", detail: "Hit today's send cap. Resumes tomorrow morning." },
-  follow_up_daily_cap_reached: { label: "Follow-up cap reached", detail: "All follow-ups for today are sent. Resumes tomorrow." },
-  global_daily_cap_reached: { label: "Daily limit reached", detail: "All inboxes hit the combined daily cap. Resumes tomorrow." },
-  outside_send_window: { label: "Outside send hours", detail: "Sends only during business hours. Will queue for the next window." },
-  domain_cooldown: { label: "Recently emailed this domain", detail: "We already contacted someone at the same company. Waiting before reaching out again." },
-  reply_detected: { label: "They replied", detail: "Reply received — automation stopped so you can take over." },
-  awaiting_follow_up_window: { label: "Waiting for follow-up", detail: "First email sent. Holding the next touch until the right time." },
-  mailbox_disconnected: { label: "Mailbox disconnected", detail: "Reconnect Gmail in Settings to resume sending." },
-  bounced: { label: "Email bounced", detail: "Address rejected delivery. Removed from sending." },
-  no_email: { label: "Missing email", detail: "No deliverable address on file. Skipped." },
-  duplicate_sibling: { label: "Duplicate contact", detail: "Already being emailed from another sequence." },
-  terminal_sequence_cleaned: { label: "Sequence finished", detail: "All planned touches sent. Closed out." },
+type BlockerKind = "transient" | "action" | "terminal";
+
+const BLOCKER_COPY: Record<string, { label: string; detail: string; kind: BlockerKind }> = {
+  mailbox_cooldown: { label: "Pausing between sends", detail: "Short cooldown so the inbox stays healthy. Sending resumes automatically.", kind: "transient" },
+  hourly_cap_reached: { label: "Hourly send limit hit", detail: "We've sent the max for this hour. Resumes at the top of the next hour.", kind: "transient" },
+  daily_cap_reached: { label: "Daily send limit hit", detail: "We've sent the max for today. Resumes tomorrow morning.", kind: "transient" },
+  follow_up_daily_cap_reached: { label: "Follow-up cap hit for today", detail: "All follow-ups for today are sent. Resumes tomorrow.", kind: "transient" },
+  global_daily_cap_reached: { label: "Daily send limit hit", detail: "Combined inbox cap reached for today. Resumes tomorrow.", kind: "transient" },
+  outside_send_window: { label: "Outside business hours", detail: "We only send during business hours. Will go out in the next window.", kind: "transient" },
+  domain_cooldown: { label: "Recently emailed this company", detail: "We already contacted someone at this domain. Spacing it out before the next touch.", kind: "transient" },
+  awaiting_follow_up_window: { label: "Holding for follow-up timing", detail: "First email already sent. Waiting before the next touch.", kind: "transient" },
+  reply_detected: { label: "They replied", detail: "Automation stopped — take over from the client board.", kind: "terminal" },
+  mailbox_disconnected: { label: "Inbox needs reconnecting", detail: "Gmail authorization expired. Reconnect in Settings to resume sending.", kind: "action" },
+  bounced: { label: "Email address bounced", detail: "Their server rejected the message. Removed from sending.", kind: "terminal" },
+  no_email: { label: "No email address", detail: "Nothing to send to. Skipped.", kind: "terminal" },
+  duplicate_sibling: { label: "Already being emailed", detail: "Another sequence is contacting this person. This one was closed.", kind: "terminal" },
+  terminal_sequence_cleaned: { label: "Sequence finished", detail: "All planned touches sent.", kind: "terminal" },
 };
 
-function humanizeBlocker(reason: string | null | undefined): { label: string; detail: string } {
-  if (!reason) return { label: "Unknown", detail: "No reason recorded." };
+function humanizeBlocker(reason: string | null | undefined): { label: string; detail: string; kind: BlockerKind } {
+  if (!reason) return { label: "Unknown", detail: "No reason recorded.", kind: "action" };
   const direct = BLOCKER_COPY[reason];
   if (direct) return direct;
   const pretty = reason.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-  return { label: pretty, detail: "—" };
+  return { label: pretty, detail: "—", kind: "action" };
 }
 
 function humanizeStep(stepType: string | null | undefined): string {
@@ -307,17 +309,38 @@ export default async function AutomationPage() {
   const dailyCapacity = overview.mailboxes.reduce((sum, mailbox) => sum + mailbox.dailyLimit, 0);
   const activeMailboxes = overview.mailboxes.filter((mailbox) => ["ACTIVE", "WARMING"].includes(mailbox.status)).length;
 
-  const activeSequences = [...queued, ...waiting, ...blocked]
-    .map((s) => {
-      const when = s.nextSendAt ? new Date(s.nextSendAt) : null;
-      return { ...s, when };
-    })
+  function classifyRow(s: { state: string; blockerLabel: string | null; nextSendAt: Date | null }) {
+    const when = s.nextSendAt ? new Date(s.nextSendAt) : null;
+    if (s.state === "BLOCKED") {
+      const reasonKey = (s.blockerLabel || "").toLowerCase().replace(/\s+/g, "_");
+      const blocker = humanizeBlocker(reasonKey);
+      if (blocker.kind === "action") {
+        return { bucket: "action" as const, blocker, when };
+      }
+      if (blocker.kind === "terminal") {
+        return { bucket: "terminal" as const, blocker, when };
+      }
+      return { bucket: "transient" as const, blocker, when };
+    }
+    if (s.state === "WAITING") return { bucket: "waiting" as const, blocker: null, when };
+    return { bucket: "sending" as const, blocker: null, when };
+  }
+
+  const classifiedSequences = [...queued, ...waiting, ...blocked]
+    .map((s) => ({ ...s, ...classifyRow(s) }))
+    .filter((s) => s.bucket !== "terminal");
+
+  const actionNeeded = classifiedSequences.filter((s) => s.bucket === "action");
+  const otherActive = classifiedSequences
+    .filter((s) => s.bucket !== "action")
     .sort((a, b) => {
       const aTime = a.when?.getTime() ?? Number.POSITIVE_INFINITY;
       const bTime = b.when?.getTime() ?? Number.POSITIVE_INFINITY;
       return aTime - bTime;
     })
     .slice(0, 20);
+
+  const totalActiveShown = actionNeeded.length + otherActive.length;
 
   const topMarkets = [
     ...nichePerf.slice(0, 3).map((n) => ({ kind: "Industry", label: n.niche, sent: n.sent, replyRate: n.replyRate })),
@@ -361,9 +384,6 @@ export default async function AutomationPage() {
             <div className="v2-eyebrow">Today</div>
             <p className="mt-2 text-lg text-zinc-100 leading-7">
               {sentTodayCopy} {scheduledTodayCopy}
-              {overview.engine.blockedCount > 0
-                ? ` ${overview.engine.blockedCount} contact${overview.engine.blockedCount === 1 ? "" : "s"} need a look — see "Needs review" below.`
-                : ""}
             </p>
             <p className="mt-2 text-sm text-zinc-500">
               {activeMailboxes} of {overview.mailboxes.length || 2} inbox{(overview.mailboxes.length || 2) === 1 ? "" : "es"} ready · capacity {dailyCapacity || MAILBOX_DAILY_SEND_TARGET * 2}/day
@@ -397,58 +417,110 @@ export default async function AutomationPage() {
         </div>
       </section>
 
-      {/* Active conversations — unified queued/waiting/blocked */}
+      {/* Action needed — only if something actually requires operator intervention */}
+      {actionNeeded.length > 0 ? (
+        <section className="v2-card overflow-hidden border-amber-400/25 bg-amber-500/[0.04]">
+          <header className="border-b border-amber-400/15 p-5">
+            <div className="flex items-center gap-2 text-amber-200">
+              <ShieldAlert className="size-4" />
+              <h2 className="text-base font-semibold">Action needed</h2>
+            </div>
+            <p className="mt-1 text-sm text-amber-100/70">
+              These sequences can't move forward until you do something. Everything else is handled automatically.
+            </p>
+          </header>
+          <div className="divide-y divide-amber-400/10">
+            {actionNeeded.map((s) => (
+              <div key={s.id} className="flex items-start gap-4 px-5 py-3.5">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-baseline gap-x-2">
+                    <span className="text-sm font-medium text-white truncate">{s.lead?.businessName || `Lead #${s.leadId}`}</span>
+                    {s.lead?.city ? <span className="text-xs text-zinc-500">· {s.lead.city}</span> : null}
+                  </div>
+                  <p className="mt-1 text-sm text-amber-100 leading-relaxed">
+                    <span className="font-medium text-amber-200">{s.blocker?.label}.</span> {s.blocker?.detail}
+                  </p>
+                  {s.lead?.email ? (
+                    <p className="mt-1 font-mono text-[11px] text-zinc-500">{s.lead.email}</p>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {/* Active conversations — sending soon, following up, auto-pausing */}
       <section className="v2-card overflow-hidden">
         <header className="flex items-start justify-between gap-3 border-b border-white/[0.06] p-5">
           <div>
-            <h2 className="text-base font-semibold text-white">Active conversations</h2>
+            <h2 className="text-base font-semibold text-white">What's going out next</h2>
             <p className="mt-1 text-sm text-zinc-400">
-              Every lead currently in an email sequence, sorted by what's going out next.
+              Every lead currently in an email sequence, sorted by when the next email goes out.
             </p>
           </div>
-          <div className="hidden gap-2 md:flex">
-            <Legend dot="bg-cyan-400" label={`${queued.length} sending soon`} />
-            <Legend dot="bg-violet-400" label={`${waiting.length} between follow-ups`} />
-            <Legend dot="bg-amber-400" label={`${blocked.length} needs review`} />
+          <div className="hidden gap-3 md:flex">
+            <Legend dot="bg-cyan-400" label="Sending soon" />
+            <Legend dot="bg-violet-400" label="Following up later" />
+            <Legend dot="bg-zinc-400" label="Auto-pausing" />
           </div>
         </header>
         <div className="divide-y divide-white/[0.06]">
-          {activeSequences.length === 0 ? (
+          {otherActive.length === 0 ? (
             <div className="px-5 py-8 text-center text-sm text-zinc-500">
-              No active conversations right now. New leads will appear here as the pipeline picks them up.
+              No emails scheduled right now. New leads will appear here as the pipeline picks them up.
             </div>
           ) : (
-            activeSequences.map((s) => {
-              const tone =
-                s.state === "BLOCKED" ? "amber" :
-                s.state === "WAITING" ? "violet" : "cyan";
-              const statusLabel =
-                s.state === "BLOCKED" ? "Needs review" :
-                s.state === "WAITING" ? "Between follow-ups" : "Sending soon";
-              const blocker = s.blockerLabel ? humanizeBlocker(s.blockerLabel.toLowerCase().replace(/\s+/g, "_")) : null;
+            otherActive.map((s) => {
+              const stepLabel = humanizeStep(s.currentStep);
               const when = s.when;
               const isFuture = when && when.getTime() > Date.now();
-              const stepLabel = humanizeStep(s.currentStep);
+              const formattedWhen = when ? formatAppDateTime(when, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }, "—") : null;
+
+              let dotClass = "bg-cyan-400";
+              let pillClass = "border-cyan-400/30 bg-cyan-400/[0.08] text-cyan-200";
+              let pillLabel = "Sending soon";
+              let sentence: ReactNode;
+
+              if (s.bucket === "transient" && s.blocker) {
+                dotClass = "bg-zinc-400";
+                pillClass = "border-zinc-500/30 bg-zinc-500/[0.08] text-zinc-300";
+                pillLabel = "Auto-pausing";
+                sentence = (
+                  <>
+                    <span className="text-zinc-200">{s.blocker.label}.</span> {s.blocker.detail}
+                    {when ? <> Next attempt around <span className="text-white">{formattedWhen}</span>.</> : null}
+                  </>
+                );
+              } else if (s.bucket === "waiting") {
+                dotClass = "bg-violet-400";
+                pillClass = "border-violet-400/30 bg-violet-400/[0.08] text-violet-200";
+                pillLabel = "Following up later";
+                sentence = (
+                  <>
+                    Waiting to send <span className="text-white">{stepLabel}</span>
+                    {formattedWhen ? <> on <span className="text-white">{formattedWhen}</span></> : null}.
+                  </>
+                );
+              } else {
+                sentence = (
+                  <>
+                    Sending <span className="text-white">{stepLabel}</span>{" "}
+                    {formattedWhen ? <>on <span className="text-white">{formattedWhen}</span></> : "as soon as a slot opens"}.
+                  </>
+                );
+              }
+
               return (
                 <div key={s.id} className="flex items-start gap-4 px-5 py-3.5">
-                  <span className={`mt-1.5 inline-flex h-2 w-2 shrink-0 rounded-full ${tone === "cyan" ? "bg-cyan-400" : tone === "violet" ? "bg-violet-400" : "bg-amber-400"}`} />
+                  <span className={`mt-1.5 inline-flex h-2 w-2 shrink-0 rounded-full ${dotClass}`} />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                       <span className="text-sm font-medium text-white truncate">{s.lead?.businessName || `Lead #${s.leadId}`}</span>
                       {s.lead?.city ? <span className="text-xs text-zinc-500">· {s.lead.city}</span> : null}
-                      <span className={`ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-medium ${
-                        tone === "amber" ? "border-amber-400/30 bg-amber-400/[0.08] text-amber-200" :
-                        tone === "violet" ? "border-violet-400/30 bg-violet-400/[0.08] text-violet-200" :
-                        "border-cyan-400/30 bg-cyan-400/[0.08] text-cyan-200"
-                      }`}>{statusLabel}</span>
+                      <span className={`ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-medium ${pillClass}`}>{pillLabel}</span>
                     </div>
-                    <p className="mt-1 text-sm text-zinc-300 leading-relaxed">
-                      {s.state === "BLOCKED" && blocker
-                        ? <><span className="text-amber-200">{blocker.label}.</span> {blocker.detail}</>
-                        : s.state === "WAITING"
-                          ? <>Waiting to send <span className="text-white">{stepLabel}</span>{when ? <> on <span className="text-white">{formatAppDateTime(when, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }, "—")}</span></> : null}.</>
-                          : <>Sending <span className="text-white">{stepLabel}</span> {when ? <>on <span className="text-white">{formatAppDateTime(when, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }, "—")}</span></> : "as soon as a slot opens"}.</>}
-                    </p>
+                    <p className="mt-1 text-sm text-zinc-300 leading-relaxed">{sentence}</p>
                     <p className="mt-1 text-[11px] text-zinc-500">
                       {s.lead?.email ? <span className="font-mono">{s.lead.email}</span> : null}
                       {when ? <span className="ml-2">{isFuture ? relativeAgo(when) : `last activity ${relativeAgo(when)}`}</span> : null}
@@ -459,9 +531,9 @@ export default async function AutomationPage() {
             })
           )}
         </div>
-        {activeSequences.length >= 20 ? (
+        {totalActiveShown < overview.sequences.length ? (
           <div className="border-t border-white/[0.06] px-5 py-2.5 text-center text-[11px] text-zinc-500">
-            Showing the next 20. {overview.sequences.length - 20} more in the queue.
+            Showing {totalActiveShown}. {overview.sequences.length - totalActiveShown} more sequences not shown.
           </div>
         ) : null}
       </section>
