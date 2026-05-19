@@ -62,7 +62,7 @@ import { cn } from "@/lib/utils";
 
 type ProfileOutreachEmail = Pick<
   OutreachEmailRecord,
-  "id" | "leadId" | "senderEmail" | "recipientEmail" | "subject" | "status" | "errorMessage" | "sentAt" | "gmailThreadId"
+  "id" | "leadId" | "senderEmail" | "recipientEmail" | "subject" | "bodyHtml" | "bodyPlain" | "status" | "errorMessage" | "sentAt" | "gmailThreadId"
 >;
 
 type SequenceInfo = {
@@ -627,39 +627,57 @@ export function ClientProfile({ lead, initialActivities, outreachEmails, sequenc
             {outreachEmails.length > 0 ? (
               <div className="divide-y divide-white/[0.05]">
                 {outreachEmails.map((email) => {
-                  const step = sequenceSteps.find((s) => s.subject === email.subject && s.bodyPlain);
+                  const body = email.bodyPlain || email.bodyHtml || "";
                   const isExpanded = expandedEmails.has(email.id);
+                  const hasBody = body.trim().length > 0;
                   return (
-                    <div key={email.id} className="py-2.5">
+                    <div key={email.id} className="py-3">
                       <button
                         type="button"
-                        onClick={() => step?.bodyPlain && toggleEmailExpand(email.id)}
-                        className={cn("w-full text-left", step?.bodyPlain && "cursor-pointer")}
+                        onClick={() => hasBody && toggleEmailExpand(email.id)}
+                        className={cn("w-full text-left", hasBody && "cursor-pointer")}
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0 flex items-start gap-2">
-                            {step?.bodyPlain && (
-                              isExpanded ? <ChevronDown className="size-3.5 text-zinc-600 shrink-0 mt-0.5" /> : <ChevronRight className="size-3.5 text-zinc-600 shrink-0 mt-0.5" />
+                            {hasBody && (
+                              isExpanded ? <ChevronDown className="size-3.5 text-zinc-500 shrink-0 mt-1" /> : <ChevronRight className="size-3.5 text-zinc-500 shrink-0 mt-1" />
                             )}
                             <div className="min-w-0">
-                              <div className="truncate text-sm font-medium text-zinc-200">{email.subject || "No subject"}</div>
-                              <div className="mt-0.5 truncate text-[11px] text-zinc-600">
-                                {email.senderEmail} to {email.recipientEmail}
+                              <div className="truncate text-sm font-medium text-zinc-100">{email.subject || "No subject"}</div>
+                              <div className="mt-0.5 truncate text-[11px] text-zinc-500">
+                                From <span className="font-mono text-zinc-300">{email.senderEmail}</span> to <span className="font-mono text-zinc-300">{email.recipientEmail}</span>
                               </div>
+                              <div className="mt-0.5 text-[11px] text-zinc-600">{formatDateTime(email.sentAt)}</div>
                             </div>
                           </div>
-                          <span className="shrink-0 rounded border border-white/[0.08] bg-white/[0.025] px-1.5 py-0.5 text-[10px] uppercase tracking-[0.12em] text-zinc-500">
+                          <span className={cn(
+                            "shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider",
+                            email.status === "sent"
+                              ? "border-emerald-400/30 bg-emerald-400/[0.08] text-emerald-300"
+                              : email.status === "failed"
+                                ? "border-red-400/30 bg-red-400/[0.08] text-red-300"
+                                : "border-white/[0.08] bg-white/[0.025] text-zinc-400",
+                          )}>
                             {email.status}
                           </span>
                         </div>
                       </button>
-                      <div className="mt-1 text-[11px] text-zinc-600">{formatDateTime(email.sentAt)}</div>
-                      {email.errorMessage ? <div className="mt-1 text-xs text-red-300">{email.errorMessage}</div> : null}
-                      {isExpanded && step?.bodyPlain && (
-                        <div className="mt-2 rounded-lg border border-white/[0.06] bg-black/30 p-3 text-xs text-zinc-400 whitespace-pre-wrap leading-5">
-                          {step.bodyPlain}
-                        </div>
-                      )}
+                      {email.errorMessage ? <div className="mt-2 text-xs text-red-300">{email.errorMessage}</div> : null}
+                      {isExpanded && hasBody ? (
+                        email.bodyHtml && email.bodyHtml.trim().length > 0 ? (
+                          <iframe
+                            title={email.subject || "Email body"}
+                            srcDoc={`<base target="_blank"><style>body{font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;color:#e4e4e7;background:#0a121c;padding:16px;margin:0;}a{color:#34d399;}img{max-width:100%;height:auto;}</style>${email.bodyHtml}`}
+                            sandbox=""
+                            className="mt-3 w-full rounded-lg border border-white/[0.06]"
+                            style={{ minHeight: 320, height: 420, background: "#0a121c" }}
+                          />
+                        ) : (
+                          <pre className="mt-3 rounded-lg border border-white/[0.06] bg-black/30 p-3 text-xs leading-5 text-zinc-300 whitespace-pre-wrap font-sans">
+                            {email.bodyPlain}
+                          </pre>
+                        )
+                      ) : null}
                     </div>
                   );
                 })}

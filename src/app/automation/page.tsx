@@ -3,9 +3,12 @@ import {
   Activity,
   Bot,
   CheckCircle2,
+  Clock3,
   Mail,
   ShieldAlert,
 } from "lucide-react";
+
+import { SentEmailViewerTrigger } from "@/components/sent-email-viewer";
 
 import { AUTOMATION_SETTINGS_DEFAULTS, MAILBOX_DAILY_SEND_TARGET } from "@/lib/automation-policy";
 import { EmergencyControlCard } from "@/components/emergency-control-card";
@@ -331,16 +334,16 @@ export default async function AutomationPage() {
     .filter((s) => s.bucket !== "terminal");
 
   const actionNeeded = classifiedSequences.filter((s) => s.bucket === "action");
-  const otherActive = classifiedSequences
-    .filter((s) => s.bucket !== "action")
-    .sort((a, b) => {
-      const aTime = a.when?.getTime() ?? Number.POSITIVE_INFINITY;
-      const bTime = b.when?.getTime() ?? Number.POSITIVE_INFINITY;
-      return aTime - bTime;
-    })
-    .slice(0, 20);
+  const transientPaused = classifiedSequences
+    .filter((s) => s.bucket === "transient")
+    .sort((a, b) => (a.when?.getTime() ?? 0) - (b.when?.getTime() ?? 0));
 
-  const totalActiveShown = actionNeeded.length + otherActive.length;
+  const scheduledSends = classifiedSequences
+    .filter((s) => (s.bucket === "sending" || s.bucket === "waiting") && s.when && s.when.getTime() >= Date.now())
+    .sort((a, b) => (a.when?.getTime() ?? 0) - (b.when?.getTime() ?? 0));
+
+  const nextFive = scheduledSends.slice(0, 5);
+  const laterSends = scheduledSends.slice(5, 25);
 
   const topMarkets = [
     ...nichePerf.slice(0, 3).map((n) => ({ kind: "Industry", label: n.niche, sent: n.sent, replyRate: n.replyRate })),
@@ -450,93 +453,117 @@ export default async function AutomationPage() {
         </section>
       ) : null}
 
-      {/* Active conversations — sending soon, following up, auto-pausing */}
+      {/* Next 5 emails — flat chronological */}
       <section className="v2-card overflow-hidden">
         <header className="flex items-start justify-between gap-3 border-b border-white/[0.06] p-5">
-          <div>
-            <h2 className="text-base font-semibold text-white">What's going out next</h2>
-            <p className="mt-1 text-sm text-zinc-400">
-              Every lead currently in an email sequence, sorted by when the next email goes out.
-            </p>
-          </div>
-          <div className="hidden gap-3 md:flex">
-            <Legend dot="bg-cyan-400" label="Sending soon" />
-            <Legend dot="bg-violet-400" label="Following up later" />
-            <Legend dot="bg-zinc-400" label="Auto-pausing" />
+          <div className="flex items-center gap-2">
+            <Clock3 className="size-4 text-emerald-300" />
+            <div>
+              <h2 className="text-base font-semibold text-white">Next 5 emails going out</h2>
+              <p className="mt-0.5 text-sm text-zinc-400">
+                Who's getting an email next, from which inbox, and exactly when.
+              </p>
+            </div>
           </div>
         </header>
         <div className="divide-y divide-white/[0.06]">
-          {otherActive.length === 0 ? (
+          {nextFive.length === 0 ? (
             <div className="px-5 py-8 text-center text-sm text-zinc-500">
               No emails scheduled right now. New leads will appear here as the pipeline picks them up.
             </div>
           ) : (
-            otherActive.map((s) => {
-              const stepLabel = humanizeStep(s.currentStep);
+            nextFive.map((s, idx) => {
               const when = s.when;
-              const isFuture = when && when.getTime() > Date.now();
-              const formattedWhen = when ? formatAppDateTime(when, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }, "—") : null;
-
-              let dotClass = "bg-cyan-400";
-              let pillClass = "border-cyan-400/30 bg-cyan-400/[0.08] text-cyan-200";
-              let pillLabel = "Sending soon";
-              let sentence: ReactNode;
-
-              if (s.bucket === "transient" && s.blocker) {
-                dotClass = "bg-zinc-400";
-                pillClass = "border-zinc-500/30 bg-zinc-500/[0.08] text-zinc-300";
-                pillLabel = "Auto-pausing";
-                sentence = (
-                  <>
-                    <span className="text-zinc-200">{s.blocker.label}.</span> {s.blocker.detail}
-                    {when ? <> Next attempt around <span className="text-white">{formattedWhen}</span>.</> : null}
-                  </>
-                );
-              } else if (s.bucket === "waiting") {
-                dotClass = "bg-violet-400";
-                pillClass = "border-violet-400/30 bg-violet-400/[0.08] text-violet-200";
-                pillLabel = "Following up later";
-                sentence = (
-                  <>
-                    Waiting to send <span className="text-white">{stepLabel}</span>
-                    {formattedWhen ? <> on <span className="text-white">{formattedWhen}</span></> : null}.
-                  </>
-                );
-              } else {
-                sentence = (
-                  <>
-                    Sending <span className="text-white">{stepLabel}</span>{" "}
-                    {formattedWhen ? <>on <span className="text-white">{formattedWhen}</span></> : "as soon as a slot opens"}.
-                  </>
-                );
-              }
-
+              const isImminent = when && when.getTime() - Date.now() <= 15 * 60_000;
+              const formattedWhen = when ? formatAppDateTime(when, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }, "—") : "—";
+              const senderInbox = s.mailbox?.gmailAddress ?? null;
               return (
                 <div key={s.id} className="flex items-start gap-4 px-5 py-3.5">
-                  <span className={`mt-1.5 inline-flex h-2 w-2 shrink-0 rounded-full ${dotClass}`} />
+                  <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500/[0.12] text-xs font-semibold text-emerald-300">
+                    {idx + 1}
+                  </span>
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                      <span className="text-sm font-medium text-white truncate">{s.lead?.businessName || `Lead #${s.leadId}`}</span>
-                      {s.lead?.city ? <span className="text-xs text-zinc-500">· {s.lead.city}</span> : null}
-                      <span className={`ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-medium ${pillClass}`}>{pillLabel}</span>
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="truncate text-sm font-medium text-white">{s.lead?.businessName || `Lead #${s.leadId}`}</span>
+                      <span className={`shrink-0 text-[12px] tabular-nums ${isImminent ? "text-emerald-300" : "text-zinc-200"}`}>
+                        {formattedWhen}
+                      </span>
                     </div>
-                    <p className="mt-1 text-sm text-zinc-300 leading-relaxed">{sentence}</p>
-                    <p className="mt-1 text-[11px] text-zinc-500">
-                      {s.lead?.email ? <span className="font-mono">{s.lead.email}</span> : null}
-                      {when ? <span className="ml-2">{isFuture ? relativeAgo(when) : `last activity ${relativeAgo(when)}`}</span> : null}
-                    </p>
+                    <div className="mt-1 text-[12px] text-zinc-400">
+                      Sending to <span className="font-mono text-zinc-200">{s.lead?.email || "—"}</span>
+                      {senderInbox ? <> from <span className="font-mono text-zinc-200">{senderInbox}</span></> : null}
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-zinc-500">
+                      {humanizeStep(s.currentStep)} · {when ? relativeAgo(when) : ""}
+                    </div>
                   </div>
                 </div>
               );
             })
           )}
         </div>
-        {totalActiveShown < overview.sequences.length ? (
-          <div className="border-t border-white/[0.06] px-5 py-2.5 text-center text-[11px] text-zinc-500">
-            Showing {totalActiveShown}. {overview.sequences.length - totalActiveShown} more sequences not shown.
-          </div>
+        {laterSends.length > 0 ? (
+          <details className="border-t border-white/[0.06]">
+            <summary className="cursor-pointer list-none px-5 py-3 text-[12px] text-zinc-400 hover:text-white">
+              Show {laterSends.length} more scheduled email{laterSends.length === 1 ? "" : "s"}
+            </summary>
+            <div className="divide-y divide-white/[0.06] border-t border-white/[0.06]">
+              {laterSends.map((s, idx) => {
+                const when = s.when;
+                const formattedWhen = when ? formatAppDateTime(when, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }, "—") : "—";
+                const senderInbox = s.mailbox?.gmailAddress ?? null;
+                return (
+                  <div key={s.id} className="flex items-start gap-4 px-5 py-3">
+                    <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/[0.05] text-xs font-medium text-zinc-400">
+                      {idx + 6}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="truncate text-sm text-white">{s.lead?.businessName || `Lead #${s.leadId}`}</span>
+                        <span className="shrink-0 text-[12px] tabular-nums text-zinc-300">{formattedWhen}</span>
+                      </div>
+                      <div className="mt-0.5 text-[11px] text-zinc-500">
+                        Sending to <span className="font-mono">{s.lead?.email || "—"}</span>
+                        {senderInbox ? <> from <span className="font-mono">{senderInbox}</span></> : null} · {humanizeStep(s.currentStep)}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </details>
         ) : null}
       </section>
+
+      {/* Auto-paused sequences — only shown if any, collapsed by default */}
+      {transientPaused.length > 0 ? (
+        <details className="v2-card overflow-hidden">
+          <summary className="cursor-pointer list-none p-5 flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-white">{transientPaused.length} sequence{transientPaused.length === 1 ? "" : "s"} pausing automatically</div>
+              <div className="mt-0.5 text-[12px] text-zinc-500">
+                Hourly caps, cooldowns, or business-hours pauses. These resume on their own — no action needed.
+              </div>
+            </div>
+            <span className="text-[11px] text-zinc-400">show</span>
+          </summary>
+          <div className="divide-y divide-white/[0.06] border-t border-white/[0.06]">
+            {transientPaused.slice(0, 15).map((s) => (
+              <div key={s.id} className="flex items-start gap-4 px-5 py-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="truncate text-sm text-white">{s.lead?.businessName || `Lead #${s.leadId}`}</span>
+                    {s.when ? <span className="shrink-0 text-[11px] tabular-nums text-zinc-400">retry {formatAppDateTime(s.when, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }, "—")}</span> : null}
+                  </div>
+                  <p className="mt-1 text-[12px] text-zinc-400">
+                    <span className="text-zinc-200">{s.blocker?.label}.</span> {s.blocker?.detail}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </details>
+      ) : null}
 
       {/* Inboxes + Recently sent */}
       <section className="grid gap-4 xl:grid-cols-2">
@@ -583,27 +610,29 @@ export default async function AutomationPage() {
           </div>
         </Card>
 
-        <Card title="Recently sent" subtitle="The last emails that went out">
-          <div className="divide-y divide-white/[0.06]">
+        <Card title="Recent emails" subtitle="Click any row to read the full email that went out">
+          <div className="-mx-4 divide-y divide-white/[0.06]">
             {overview.recentSent.length === 0 ? (
-              <Empty>No emails sent yet.</Empty>
+              <div className="px-4"><Empty>No emails sent yet.</Empty></div>
             ) : (
               overview.recentSent.slice(0, 10).map((e) => (
-                <div key={e.id} className="flex items-start justify-between gap-3 py-3">
-                  <div className="min-w-0">
-                    <div className="truncate text-sm text-white">{e.lead?.businessName || e.recipientEmail}</div>
-                    <div className="mt-0.5 truncate text-[12px] text-zinc-400">{e.subject}</div>
-                    <div className="mt-0.5 truncate text-[11px] text-zinc-600">
-                      <span className="font-mono">{e.senderEmail}</span> sent to <span className="font-mono">{e.recipientEmail}</span>
+                <SentEmailViewerTrigger key={e.id} emailId={e.id}>
+                  <div className="flex items-start justify-between gap-3 px-4 py-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm text-white">{e.lead?.businessName || e.recipientEmail}</div>
+                      <div className="mt-0.5 truncate text-[12px] text-zinc-400">{e.subject}</div>
+                      <div className="mt-0.5 truncate text-[11px] text-zinc-600">
+                        <span className="font-mono">{e.senderEmail}</span> sent to <span className="font-mono">{e.recipientEmail}</span>
+                      </div>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <div className="text-[11px] tabular-nums text-zinc-300">
+                        {formatAppDateTime(e.sentAt, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }, "—")}
+                      </div>
+                      <div className="text-[10px] text-zinc-600 mt-0.5">{relativeAgo(e.sentAt)}</div>
                     </div>
                   </div>
-                  <div className="shrink-0 text-right">
-                    <div className="text-[11px] tabular-nums text-zinc-300">
-                      {formatAppDateTime(e.sentAt, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }, "—")}
-                    </div>
-                    <div className="text-[10px] text-zinc-600 mt-0.5">{relativeAgo(e.sentAt)}</div>
-                  </div>
-                </div>
+                </SentEmailViewerTrigger>
               ))
             )}
           </div>
@@ -739,14 +768,6 @@ function BigStat({ label, value, tone }: { label: string; value: number; tone: "
   );
 }
 
-function Legend({ dot, label }: { dot: string; label: string }) {
-  return (
-    <span className="inline-flex items-center gap-1.5 text-[11px] text-zinc-400">
-      <span className={`inline-block h-2 w-2 rounded-full ${dot}`} />
-      {label}
-    </span>
-  );
-}
 
 function SchedulerRunLedger({
   runs,

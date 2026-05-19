@@ -45,6 +45,7 @@ import { listRecentScrapeTargets, pickNextScrapeTarget, countActiveScrapeTargets
 import { requireSession } from "@/lib/session";
 import { formatAppDateTime } from "@/lib/time";
 import { adequateLeadWhereClause, isSendableMailbox, resolveGlobalDailySendCap, startOfUtcDay } from "@/lib/ui/data-accuracy";
+import { SentEmailViewerTrigger } from "@/components/sent-email-viewer";
 
 export const dynamic = "force-dynamic";
 
@@ -752,16 +753,15 @@ export default async function DashboardPage() {
           (automation.sequences ?? [])
             .map((s) => ({
               id: s.id,
+              leadId: s.leadId,
               businessName: s.lead?.businessName ?? `Lead #${s.leadId}`,
-              city: s.lead?.city ?? "",
-              email: s.lead?.email ?? "",
-              currentStep: s.currentStep,
+              recipientEmail: s.lead?.email ?? "",
+              senderEmail: s.mailbox?.gmailAddress ?? null,
               nextSendAt: s.nextSendAt,
-              blockerLabel: s.blockerLabel ?? null,
             }))
             .filter((s) => s.nextSendAt && new Date(s.nextSendAt).getTime() >= Date.now())
             .sort((a, b) => new Date(a.nextSendAt as Date).getTime() - new Date(b.nextSendAt as Date).getTime())
-            .slice(0, 10)
+            .slice(0, 5)
         }
         recent={
           (automation.recentSent ?? []).slice(0, 10).map((e) => ({
@@ -1002,12 +1002,11 @@ export default async function DashboardPage() {
 
 type UpcomingSend = {
   id: string;
+  leadId: number;
   businessName: string;
-  city: string;
-  email: string;
-  currentStep: string;
+  recipientEmail: string;
+  senderEmail: string | null;
   nextSendAt: Date | string | null;
-  blockerLabel: string | null;
 };
 
 type RecentSend = {
@@ -1027,40 +1026,50 @@ function SendsTimeline({ upcoming, recent }: { upcoming: UpcomingSend[]; recent:
           <div>
             <div className="flex items-center gap-2 text-sm font-semibold text-white">
               <Clock3 className="size-4 text-emerald-300" />
-              Upcoming sends
+              Next 5 emails
             </div>
             <div className="mt-0.5 text-[11px] text-zinc-500">
-              Exact dispatch time for the next {upcoming.length || 0} email{upcoming.length === 1 ? "" : "s"}
+              Who's getting an email next, from which inbox, and exactly when.
             </div>
           </div>
           <Link href={"/automation" as Route} className="text-[11px] text-zinc-400 hover:text-white inline-flex items-center gap-1">
-            All sequences <ArrowRight className="size-3" />
+            See all <ArrowRight className="size-3" />
           </Link>
         </header>
         <div className="divide-y divide-white/[0.06]">
           {upcoming.length === 0 ? (
             <div className="px-4 py-6 text-center text-xs text-zinc-600">
-              No sends scheduled. Scheduler is either idle or every sequence is blocked.
+              No emails scheduled right now.
             </div>
           ) : (
-            upcoming.map((s) => {
+            upcoming.map((s, idx) => {
               const when = s.nextSendAt ? new Date(s.nextSendAt) : null;
               const diffMs = when ? when.getTime() - Date.now() : 0;
               const isImminent = diffMs > 0 && diffMs <= 15 * 60_000;
               return (
-                <div key={s.id} className="flex items-start justify-between gap-3 px-4 py-2.5">
-                  <div className="min-w-0">
-                    <div className="truncate text-sm text-white">{s.businessName}</div>
-                    <div className="mt-0.5 truncate font-mono text-[11px] text-zinc-500">
-                      {s.email || "—"} · {s.currentStep}
-                      {s.blockerLabel ? <span className="text-amber-300"> · {s.blockerLabel}</span> : null}
+                <div key={s.id} className="px-4 py-3">
+                  <div className="flex items-start gap-3">
+                    <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500/[0.12] text-[11px] font-semibold text-emerald-300">
+                      {idx + 1}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <Link
+                          href={`/clients/${s.leadId}` as Route}
+                          className="truncate text-sm font-medium text-white hover:text-emerald-300"
+                        >
+                          {s.businessName}
+                        </Link>
+                        <span className={`shrink-0 font-mono text-[11px] tabular-nums ${isImminent ? "text-emerald-300" : "text-zinc-200"}`}>
+                          {when ? formatAppDateTime(when, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }, "—") : "—"}
+                        </span>
+                      </div>
+                      <div className="mt-0.5 text-[11px] text-zinc-400">
+                        Sending to <span className="font-mono text-zinc-300">{s.recipientEmail || "—"}</span>
+                        {s.senderEmail ? <> from <span className="font-mono text-zinc-300">{s.senderEmail}</span></> : null}
+                      </div>
+                      <div className="mt-0.5 text-[10px] text-zinc-600">{when ? relativeFuture(when) : "—"}</div>
                     </div>
-                  </div>
-                  <div className="shrink-0 text-right">
-                    <div className={`font-mono text-[11px] tabular-nums ${isImminent ? "text-emerald-300" : "text-zinc-300"}`}>
-                      {when ? formatAppDateTime(when, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }, "—") : "—"}
-                    </div>
-                    <div className="text-[10px] text-zinc-600 mt-0.5">{when ? relativeFuture(when) : "—"}</div>
                   </div>
                 </div>
               );
@@ -1074,14 +1083,14 @@ function SendsTimeline({ upcoming, recent }: { upcoming: UpcomingSend[]; recent:
           <div>
             <div className="flex items-center gap-2 text-sm font-semibold text-white">
               <Mail className="size-4 text-cyan-300" />
-              Recently sent
+              Recent emails
             </div>
             <div className="mt-0.5 text-[11px] text-zinc-500">
-              Last {recent.length} outbound email{recent.length === 1 ? "" : "s"} with exact send timestamp
+              Click any row to read the full email that went out.
             </div>
           </div>
           <Link href={"/automation" as Route} className="text-[11px] text-zinc-400 hover:text-white inline-flex items-center gap-1">
-            Full history <ArrowRight className="size-3" />
+            See all <ArrowRight className="size-3" />
           </Link>
         </header>
         <div className="divide-y divide-white/[0.06]">
@@ -1089,23 +1098,25 @@ function SendsTimeline({ upcoming, recent }: { upcoming: UpcomingSend[]; recent:
             <div className="px-4 py-6 text-center text-xs text-zinc-600">No emails sent yet.</div>
           ) : (
             recent.map((e) => (
-              <div key={e.id} className="flex items-start justify-between gap-3 px-4 py-2.5">
-                <div className="min-w-0">
-                  <div className="truncate text-sm text-white">
-                    {e.businessName || e.recipientEmail}
+              <SentEmailViewerTrigger key={e.id} emailId={e.id}>
+                <div className="flex items-start justify-between gap-3 px-4 py-2.5">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm text-white">
+                      {e.businessName || e.recipientEmail}
+                    </div>
+                    <div className="mt-0.5 truncate text-[11px] text-zinc-400">{e.subject}</div>
+                    <div className="mt-0.5 truncate font-mono text-[10.5px] text-zinc-600">
+                      {e.senderEmail} → {e.recipientEmail}
+                    </div>
                   </div>
-                  <div className="mt-0.5 truncate text-[11px] text-zinc-400">{e.subject}</div>
-                  <div className="mt-0.5 truncate font-mono text-[10.5px] text-zinc-600">
-                    {e.senderEmail} → {e.recipientEmail}
+                  <div className="shrink-0 text-right">
+                    <div className="font-mono text-[11px] tabular-nums text-zinc-300">
+                      {formatAppDateTime(e.sentAt, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }, "—")}
+                    </div>
+                    <div className="text-[10px] text-zinc-600 mt-0.5">{relativeAgo(e.sentAt)}</div>
                   </div>
                 </div>
-                <div className="shrink-0 text-right">
-                  <div className="font-mono text-[11px] tabular-nums text-zinc-300">
-                    {formatAppDateTime(e.sentAt, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }, "—")}
-                  </div>
-                  <div className="text-[10px] text-zinc-600 mt-0.5">{relativeAgo(e.sentAt)}</div>
-                </div>
-              </div>
+              </SentEmailViewerTrigger>
             ))
           )}
         </div>

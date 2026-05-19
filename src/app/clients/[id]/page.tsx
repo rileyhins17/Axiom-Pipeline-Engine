@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 type ProfileOutreachEmail = Pick<
   OutreachEmailRecord,
-  "id" | "leadId" | "senderEmail" | "recipientEmail" | "subject" | "status" | "errorMessage" | "sentAt" | "gmailThreadId"
+  "id" | "leadId" | "senderEmail" | "recipientEmail" | "subject" | "bodyHtml" | "bodyPlain" | "status" | "errorMessage" | "sentAt" | "gmailThreadId"
 >;
 
 export default async function ClientProfilePage({
@@ -45,13 +45,15 @@ export default async function ClientProfilePage({
     prisma.outreachEmail.findMany({
       where: { leadId },
       orderBy: { sentAt: "desc" },
-      take: 20,
+      take: 50,
       select: {
         id: true,
         leadId: true,
         senderEmail: true,
         recipientEmail: true,
         subject: true,
+        bodyHtml: true,
+        bodyPlain: true,
         status: true,
         errorMessage: true,
         sentAt: true,
