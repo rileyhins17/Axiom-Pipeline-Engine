@@ -7,6 +7,7 @@ import {
   extractBounceFailureDetails,
   getAutomationSuppressionDomainsForLead,
   getStepType,
+  isExpectedReplySender,
   isBounceNotificationMessage,
   orderDueStepsForClaiming,
   runSchedulerRecordedPhase,
@@ -121,6 +122,14 @@ function makeStep(overrides: Partial<OutreachSequenceStepRecord> & Pick<Outreach
     ...rest,
   } satisfies OutreachSequenceStepRecord;
 }
+
+test("reply sender matching requires exact normalized mailbox and lead addresses", () => {
+  assert.equal(isExpectedReplySender("Owner <owner@example.com>", "sender@example.com", "owner@example.com"), true);
+  assert.equal(isExpectedReplySender("sender@example.com", "sender@example.com", "owner@example.com"), false);
+  assert.equal(isExpectedReplySender("bob@example.com", "ob@example.com", "owner@example.com"), false);
+  assert.equal(isExpectedReplySender("xxowner@example.com", "sender@example.com", "owner@example.com"), false);
+  assert.equal(isExpectedReplySender("billing@example.com", "sender@example.com", null), true);
+});
 
 test("first-touch selection filters ineligible leads before the queue batch limit", () => {
   const ineligibleTopFifty = Array.from({ length: 50 }, (_, index) =>

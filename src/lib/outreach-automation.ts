@@ -420,6 +420,21 @@ function normalizeEmail(email: string | null | undefined) {
   return normalizePipelineEmail(email);
 }
 
+export function isExpectedReplySender(
+  fromHeader: string,
+  mailboxEmail: string,
+  leadEmail: string | null,
+) {
+  const fromEmail = extractEmailAddress(fromHeader);
+  const normalizedMailbox = normalizeEmail(mailboxEmail);
+  const normalizedLead = leadEmail ? normalizeEmail(leadEmail) : null;
+  if (!fromEmail || fromEmail === normalizedMailbox) {
+    return false;
+  }
+
+  return normalizedLead ? fromEmail === normalizedLead : true;
+}
+
 export function createFirstTouchDiagnostics(
   overrides: Partial<AutomationFirstTouchDiagnostics> = {},
 ): AutomationFirstTouchDiagnostics {
@@ -2943,7 +2958,7 @@ async function detectReplyForSequence(
       continue;
     }
 
-    const fromHeader = normalizeEmail(message.headers.from);
+    const fromHeader = extractEmailAddress(message.headers.from);
 
     // Must have a sender, and it must not be our own mailbox.
     // Use strict equality on normalized addresses — substring matching
@@ -2972,7 +2987,7 @@ async function detectReplyForSequence(
     // This is the primary guard against NDR/bounce messages that slip past the
     // automated-sender patterns above. Strict equality — substring matching
     // produces false positives when one address is a substring of another.
-    if (leadEmail && fromHeader !== leadEmail) {
+    if (!isExpectedReplySender(message.headers.from, mailboxEmail, leadEmail)) {
       continue;
     }
 

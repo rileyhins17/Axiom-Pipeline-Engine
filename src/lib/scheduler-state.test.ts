@@ -2,6 +2,7 @@ import { strict as assert } from "node:assert";
 import test from "node:test";
 
 import {
+  classifySendFailure,
   isOperatorActionableBlockerReason,
   isRecoverableSchedulerBlockerReason,
   isSchedulerRecoveryRunError,
@@ -41,4 +42,17 @@ test("scheduler recovery run logs are not actionable failures", () => {
   assert.equal(isSchedulerRecoveryRunError("cleared by manual repair"), true);
   assert.equal(isSchedulerRecoveryRunError("scheduler exited before closing outreach run"), false);
   assert.equal(isSchedulerRecoveryRunError("mailbox_sync timed out after 20000ms"), false);
+});
+
+test("gmail quota errors trigger mailbox cooldown backpressure", () => {
+  for (const message of [
+    "Gmail send failed (429): Quota exceeded",
+    "Gmail API error: quotaExceeded",
+    "User Rate Limit Exceeded",
+  ]) {
+    assert.deepEqual(classifySendFailure(new Error(message)), {
+      kind: "rate_limited",
+      reason: "mailbox_cooldown",
+    }, message);
+  }
 });

@@ -263,7 +263,7 @@ function buildRfc2822Message(options: {
   const fromHeader = formatAddressHeader(options.from, options.fromName);
   const unsubEmail = sanitizeHeaderValue(options.from);
 
-  const lines = [
+  const headers = [
     `From: ${fromHeader}`,
     `To: ${sanitizeHeaderValue(options.to)}`,
     `Subject: ${encodeMimeHeader(options.subject)}`,
@@ -275,6 +275,10 @@ function buildRfc2822Message(options: {
     `List-Unsubscribe: <mailto:${unsubEmail}?subject=unsubscribe>`,
     ...(options.inReplyTo ? [`In-Reply-To: ${sanitizeHeaderValue(options.inReplyTo)}`] : []),
     ...(options.references ? [`References: ${sanitizeHeaderValue(options.references)}`] : []),
+  ];
+
+  const lines = [
+    ...headers,
     `Content-Type: multipart/alternative; boundary="${boundary}"`,
     ``,
     `--${boundary}`,
