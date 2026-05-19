@@ -7,6 +7,7 @@ const PUBLIC_PATH_PREFIXES = [
   "/offline",
   "/api/auth",
   "/api/agent",
+  "/api/mcp",
   "/_next",
   "/favicon.ico",
 ];
