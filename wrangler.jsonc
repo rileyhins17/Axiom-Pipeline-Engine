@@ -56,7 +56,7 @@
     "AUTONOMOUS_MAX_SENDS_PER_DAY": "80",
     // Follow-ups capped low so new-lead first-touches dominate outbound mix.
     // 80 total - 10 follow-ups = up to 70 first-touch emails per day.
-    "AUTONOMOUS_MAX_FOLLOW_UP_SENDS_PER_DAY": "10",
+    "AUTONOMOUS_MAX_FOLLOW_UP_SENDS_PER_DAY": "0",
     "AUTONOMOUS_DOMAIN_COOLDOWN_DAYS": "14"
   },
   "d1_databases": [

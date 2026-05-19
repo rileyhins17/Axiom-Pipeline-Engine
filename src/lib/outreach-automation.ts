@@ -2658,11 +2658,16 @@ async function canMailboxSend(prisma: PrismaLike, mailbox: OutreachMailboxRecord
   if ((_stepNumber || 0) > 1) {
     const { getServerEnv } = await import("@/lib/env");
     const followUpDailyCap = getServerEnv().AUTONOMOUS_MAX_FOLLOW_UP_SENDS_PER_DAY;
-    if (followUpDailyCap > 0) {
-      const followUpsSentToday = await countFollowUpSendsToday(now);
-      if (followUpsSentToday >= followUpDailyCap) {
-        return { allowed: false, reason: "follow_up_daily_cap_reached" as AutomationBlockerReason };
-      }
+    // A cap of 0 means "no follow-ups allowed today" — used as an operator
+    // kill switch when we want a week of pure initial outreach. Any positive
+    // value is a real daily cap. (Negative isn't representable — env schema
+    // is nonnegative.)
+    if (followUpDailyCap === 0) {
+      return { allowed: false, reason: "follow_up_daily_cap_reached" as AutomationBlockerReason };
+    }
+    const followUpsSentToday = await countFollowUpSendsToday(now);
+    if (followUpsSentToday >= followUpDailyCap) {
+      return { allowed: false, reason: "follow_up_daily_cap_reached" as AutomationBlockerReason };
     }
   }
 
